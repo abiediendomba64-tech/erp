@@ -1,4 +1,4 @@
-import { BukuKas, ArsipBukti, PosKewajiban, AuditLog, Tanah, Beko, NotaMaterial } from './types';
+import { BukuKas, ArsipBukti, PosKewajiban, AuditLog, Tanah, Beko, NotaMaterial, StokBarang, Produksi, Penjualan, Pembelian, Penggajian, Anggaran, ArusKas, OCRResult, WhatsAppLog, MenuItem } from './types';
 
 // ============ SAMPLE DATA FROM AUDIT REPORT ============
 
@@ -8,9 +8,7 @@ export const initialTanah: Tanah[] = [
     pemilik: 'Sukiat',
     luas_bt: 18,
     harga_per_bt: 800000,
-    nilai_total: 14400000,
     dp: 1400000,
-    sisa: 13000000,
     status: 'DP',
     kode_bukti: 'BUKTI-001',
     url_bukti: '#',
@@ -21,9 +19,7 @@ export const initialTanah: Tanah[] = [
     pemilik: 'Ija (79 BT)',
     luas_bt: 79,
     harga_per_bt: 800000,
-    nilai_total: 63200000,
     dp: 30000000,
-    sisa: 33200000,
     status: 'DP',
     kode_bukti: 'BUKTI-002',
     url_bukti: '#',
@@ -34,9 +30,7 @@ export const initialTanah: Tanah[] = [
     pemilik: 'Ija (2,5 BT)',
     luas_bt: 2.5,
     harga_per_bt: 800000,
-    nilai_total: 2000000,
     dp: 2000000,
-    sisa: 0,
     status: 'Lunas',
     kode_bukti: 'BUKTI-003',
     url_bukti: '#',
@@ -47,9 +41,7 @@ export const initialTanah: Tanah[] = [
     pemilik: 'Enapsiah',
     luas_bt: 0,
     harga_per_bt: 0,
-    nilai_total: 71000000,
     dp: 0,
-    sisa: 71000000,
     status: 'Belum_Bayar',
     kode_bukti: '',
     url_bukti: '',
@@ -65,7 +57,6 @@ export const initialBeko: Beko[] = [
     lebar: 26,
     tinggi: 2,
     tarif: 25000,
-    nilai: 16900000,
     status: 'Foto_Belum_Tersedia',
     kode_bukti: 'BUKTI-004',
     url_bukti: '',
@@ -78,7 +69,6 @@ export const initialBeko: Beko[] = [
     lebar: 0,
     tinggi: 0,
     tarif: 0,
-    nilai: 41325000,
     status: 'Lunas',
     kode_bukti: 'BUKTI-005',
     url_bukti: '#',
@@ -91,7 +81,6 @@ export const initialBeko: Beko[] = [
     lebar: 0,
     tinggi: 0,
     tarif: 0,
-    nilai: 13125000,
     status: 'Belum_Ada_Kwitansi',
     kode_bukti: '',
     url_bukti: '',
@@ -104,7 +93,6 @@ export const initialBeko: Beko[] = [
     lebar: 0,
     tinggi: 0,
     tarif: 0,
-    nilai: 0,
     status: 'Belum_Ada_Kwitansi',
     kode_bukti: '',
     url_bukti: '',
@@ -117,7 +105,6 @@ export const initialBeko: Beko[] = [
     lebar: 0,
     tinggi: 0,
     tarif: 0,
-    nilai: 0,
     status: 'Belum_Ada_Kwitansi',
     kode_bukti: '',
     url_bukti: '',
@@ -130,7 +117,6 @@ export const initialBeko: Beko[] = [
     lebar: 0,
     tinggi: 0,
     tarif: 0,
-    nilai: 4300000,
     status: 'Belum_Ada_Kwitansi',
     kode_bukti: '',
     url_bukti: '',
@@ -307,7 +293,6 @@ export const initialPosKewajiban: PosKewajiban[] = [
     pihak: 'Sukiat',
     nilai_menurut_dokumen: 14400000,
     nilai_menurut_workbook: 14400000,
-    selisih: 0,
     status: 'Dalam_Penelusuran',
     keterangan: 'DP Rp1.400.000 sudah dibayar. Sisa Rp13.000.000 belum ada bukti.'
   },
@@ -317,7 +302,6 @@ export const initialPosKewajiban: PosKewajiban[] = [
     pihak: 'Ija (79 BT)',
     nilai_menurut_dokumen: 63200000,
     nilai_menurut_workbook: 63200000,
-    selisih: 0,
     status: 'Dalam_Penelusuran',
     keterangan: 'DP Rp30.000.000 sudah dibayar. Sisa Rp33.200.000 belum ada bukti.'
   },
@@ -327,7 +311,6 @@ export const initialPosKewajiban: PosKewajiban[] = [
     pihak: 'Enapsiah & Bonus Ija',
     nilai_menurut_dokumen: 71000000,
     nilai_menurut_workbook: 71000000,
-    selisih: 0,
     status: 'Dalam_Penelusuran',
     keterangan: 'Perlu klarifikasi status pembayaran dan bukti'
   },
@@ -337,7 +320,6 @@ export const initialPosKewajiban: PosKewajiban[] = [
     pihak: 'Selisih Rekonsiliasi',
     nilai_menurut_dokumen: 34700000,
     nilai_menurut_workbook: 37200000,
-    selisih: 2500000,
     status: 'Dalam_Penelusuran',
     keterangan: 'Selisih Rp2.500.000 antara PDF dan workbook — perlu ditelusuri'
   }
@@ -392,57 +374,55 @@ export const initialNotaMaterial: NotaMaterial[] = [
 
 // ============ ERP SAMPLE DATA ============
 
-import { StokBarang, Produksi, Penjualan, Pembelian, Penggajian, Anggaran, ArusKas, OCRResult, WhatsAppLog, MenuItem } from './types';
-
 export const initialStok: StokBarang[] = [
-  { id: 'STK-001', kode: 'BB-001', nama: 'Semen Portland 50kg', kategori: 'Bahan_Baku', satuan: 'zak', stok_awal: 200, masuk: 100, keluar: 180, stok_akhir: 120, harga_pokok: 65000, harga_jual: 75000, min_stok: 50, lokasi: 'Gudang A' },
-  { id: 'STK-002', kode: 'BB-002', nama: 'Pasir Pasang', kategori: 'Bahan_Baku', satuan: 'truk', stok_awal: 30, masuk: 15, keluar: 25, stok_akhir: 20, harga_pokok: 800000, harga_jual: 950000, min_stok: 10, lokasi: 'Yard' },
-  { id: 'STK-003', kode: 'BB-003', nama: 'Besi Beton 10mm', kategori: 'Bahan_Baku', satuan: 'batang', stok_awal: 500, masuk: 200, keluar: 450, stok_akhir: 250, harga_pokok: 85000, harga_jual: 95000, min_stok: 100, lokasi: 'Gudang A' },
-  { id: 'STK-004', kode: 'BJ-001', nama: 'Rumah Type 36', kategori: 'Barang_Jadi', satuan: 'unit', stok_awal: 0, masuk: 5, keluar: 2, stok_akhir: 3, harga_pokok: 250000000, harga_jual: 350000000, min_stok: 0, lokasi: 'Site A' },
-  { id: 'STK-005', kode: 'BJ-002', nama: 'Rumah Type 45', kategori: 'Barang_Jadi', satuan: 'unit', stok_awal: 0, masuk: 3, keluar: 1, stok_akhir: 2, harga_pokok: 320000000, harga_jual: 450000000, min_stok: 0, lokasi: 'Site B' },
-  { id: 'STK-006', kode: 'BD-001', nama: 'Keramik 40x40', kategori: 'Barang_Dagang', satuan: 'dus', stok_awal: 100, masuk: 50, keluar: 80, stok_akhir: 70, harga_pokok: 120000, harga_jual: 150000, min_stok: 20, lokasi: 'Gudang B' },
+  { id: 'STK-001', kode: 'BB-001', nama: 'Semen Portland 50kg', kategori: 'Bahan_Baku', satuan: 'zak', stok_awal: 200, masuk: 100, keluar: 180, harga_pokok: 65000, harga_jual: 75000, min_stok: 50, lokasi: 'Gudang A' },
+  { id: 'STK-002', kode: 'BB-002', nama: 'Pasir Pasang', kategori: 'Bahan_Baku', satuan: 'truk', stok_awal: 30, masuk: 15, keluar: 25, harga_pokok: 800000, harga_jual: 950000, min_stok: 10, lokasi: 'Yard' },
+  { id: 'STK-003', kode: 'BB-003', nama: 'Besi Beton 10mm', kategori: 'Bahan_Baku', satuan: 'batang', stok_awal: 500, masuk: 200, keluar: 450, harga_pokok: 85000, harga_jual: 95000, min_stok: 100, lokasi: 'Gudang A' },
+  { id: 'STK-004', kode: 'BJ-001', nama: 'Rumah Type 36', kategori: 'Barang_Jadi', satuan: 'unit', stok_awal: 0, masuk: 5, keluar: 2, harga_pokok: 250000000, harga_jual: 350000000, min_stok: 0, lokasi: 'Site A' },
+  { id: 'STK-005', kode: 'BJ-002', nama: 'Rumah Type 45', kategori: 'Barang_Jadi', satuan: 'unit', stok_awal: 0, masuk: 3, keluar: 1, harga_pokok: 320000000, harga_jual: 450000000, min_stok: 0, lokasi: 'Site B' },
+  { id: 'STK-006', kode: 'BD-001', nama: 'Keramik 40x40', kategori: 'Barang_Dagang', satuan: 'dus', stok_awal: 100, masuk: 50, keluar: 80, harga_pokok: 120000, harga_jual: 150000, min_stok: 20, lokasi: 'Gudang B' },
 ];
 
 export const initialProduksi: Produksi[] = [
-  { id: 'PRD-001', no_produksi: 'SPK-2024-001', tanggal: '2024-01-10', produk: 'Rumah Type 36', jumlah: 2, bahan_baku: [{ barang_id: 'STK-001', jumlah: 80 }, { barang_id: 'STK-003', jumlah: 200 }], biaya_tenaga_kerja: 25000000, biaya_overhead: 5000000, total_biaya: 30000000, status: 'Selesai', catatan: 'Unit 1 & 2 Site A' },
-  { id: 'PRD-002', no_produksi: 'SPK-2024-002', tanggal: '2024-02-01', produk: 'Rumah Type 45', jumlah: 1, bahan_baku: [{ barang_id: 'STK-001', jumlah: 60 }, { barang_id: 'STK-003', jumlah: 150 }], biaya_tenaga_kerja: 35000000, biaya_overhead: 7000000, total_biaya: 42000000, status: 'Dalam_Proses', catatan: 'Site B - progress 60%' },
-  { id: 'PRD-003', no_produksi: 'SPK-2024-003', tanggal: '2024-03-01', produk: 'Rumah Type 36', jumlah: 3, bahan_baku: [{ barang_id: 'STK-001', jumlah: 120 }, { barang_id: 'STK-003', jumlah: 300 }], biaya_tenaga_kerja: 45000000, biaya_overhead: 8000000, total_biaya: 53000000, status: 'Draft', catatan: 'Rencana Site C' },
+  { id: 'PRD-001', no_produksi: 'SPK-2024-001', tanggal: '2024-01-10', produk: 'Rumah Type 36', jumlah: 2, bahan_baku: [{ barang_id: 'STK-001', jumlah: 80 }, { barang_id: 'STK-003', jumlah: 200 }], biaya_tenaga_kerja: 25000000, biaya_overhead: 5000000, status: 'Selesai', catatan: 'Unit 1 & 2 Site A' },
+  { id: 'PRD-002', no_produksi: 'SPK-2024-002', tanggal: '2024-02-01', produk: 'Rumah Type 45', jumlah: 1, bahan_baku: [{ barang_id: 'STK-001', jumlah: 60 }, { barang_id: 'STK-003', jumlah: 150 }], biaya_tenaga_kerja: 35000000, biaya_overhead: 7000000, status: 'Dalam_Proses', catatan: 'Site B - progress 60%' },
+  { id: 'PRD-003', no_produksi: 'SPK-2024-003', tanggal: '2024-03-01', produk: 'Rumah Type 36', jumlah: 3, bahan_baku: [{ barang_id: 'STK-001', jumlah: 120 }, { barang_id: 'STK-003', jumlah: 300 }], biaya_tenaga_kerja: 45000000, biaya_overhead: 8000000, status: 'Draft', catatan: 'Rencana Site C' },
 ];
 
 export const initialPenjualan: Penjualan[] = [
-  { id: 'PJ-001', no_invoice: 'INV-2024-001', tanggal: '2024-02-15', pelanggan: 'Budi Santoso', items: [{ barang_id: 'STK-004', jumlah: 1, harga: 350000000, subtotal: 350000000 }], total: 350000000, diskon: 10000000, ppn: 0, grand_total: 340000000, status_bayar: 'Lunas', metode_bayar: 'Transfer', jatuh_tempo: '' },
-  { id: 'PJ-002', no_invoice: 'INV-2024-002', tanggal: '2024-03-01', pelanggan: 'Siti Aminah', items: [{ barang_id: 'STK-005', jumlah: 1, harga: 450000000, subtotal: 450000000 }], total: 450000000, diskon: 0, ppn: 0, grand_total: 450000000, status_bayar: 'DP', metode_bayar: 'Kredit', jatuh_tempo: '2024-06-01' },
-  { id: 'PJ-003', no_invoice: 'INV-2024-003', tanggal: '2024-03-10', pelanggan: 'Ahmad Wijaya', items: [{ barang_id: 'STK-006', jumlah: 20, harga: 150000, subtotal: 3000000 }], total: 3000000, diskon: 0, ppn: 330000, grand_total: 3330000, status_bayar: 'Belum_Bayar', metode_bayar: 'Tunai', jatuh_tempo: '2024-04-10' },
+  { id: 'PJ-001', no_invoice: 'INV-2024-001', tanggal: '2024-02-15', pelanggan: 'Budi Santoso', items: [{ barang_id: 'STK-004', jumlah: 1, harga: 350000000, subtotal: 350000000 }], diskon: 10000000, ppn: 0, status_bayar: 'Lunas', metode_bayar: 'Transfer', jatuh_tempo: '' },
+  { id: 'PJ-002', no_invoice: 'INV-2024-002', tanggal: '2024-03-01', pelanggan: 'Siti Aminah', items: [{ barang_id: 'STK-005', jumlah: 1, harga: 450000000, subtotal: 450000000 }], diskon: 0, ppn: 0, status_bayar: 'DP', metode_bayar: 'Kredit', jatuh_tempo: '2024-06-01' },
+  { id: 'PJ-003', no_invoice: 'INV-2024-003', tanggal: '2024-03-10', pelanggan: 'Ahmad Wijaya', items: [{ barang_id: 'STK-006', jumlah: 20, harga: 150000, subtotal: 3000000 }], diskon: 0, ppn: 330000, status_bayar: 'Belum_Bayar', metode_bayar: 'Tunai', jatuh_tempo: '2024-04-10' },
 ];
 
 export const initialPembelian: Pembelian[] = [
-  { id: 'PB-001', no_po: 'PO-2024-001', tanggal: '2024-01-05', supplier: 'PT Semen Indonesia', items: [{ barang_id: 'STK-001', jumlah: 100, harga: 65000, subtotal: 6500000 }], total: 6500000, ppn: 715000, grand_total: 7215000, status_bayar: 'Lunas', status_terima: 'Lengkap', jatuh_tempo: '' },
-  { id: 'PB-002', no_po: 'PO-2024-002', tanggal: '2024-01-20', supplier: 'Toko Besi Jaya', items: [{ barang_id: 'STK-003', jumlah: 200, harga: 85000, subtotal: 17000000 }], total: 17000000, ppn: 1870000, grand_total: 18870000, status_bayar: 'DP', status_terima: 'Lengkap', jatuh_tempo: '2024-02-20' },
-  { id: 'PB-003', no_po: 'PO-2024-003', tanggal: '2024-02-10', supplier: 'CV Pasir Merapi', items: [{ barang_id: 'STK-002', jumlah: 15, harga: 800000, subtotal: 12000000 }], total: 12000000, ppn: 0, grand_total: 12000000, status_bayar: 'Belum_Bayar', status_terima: 'Sebagian', jatuh_tempo: '2024-03-10' },
+  { id: 'PB-001', no_po: 'PO-2024-001', tanggal: '2024-01-05', supplier: 'PT Semen Indonesia', items: [{ barang_id: 'STK-001', jumlah: 100, harga: 65000, subtotal: 6500000 }], ppn: 715000, status_bayar: 'Lunas', status_terima: 'Lengkap', jatuh_tempo: '' },
+  { id: 'PB-002', no_po: 'PO-2024-002', tanggal: '2024-01-20', supplier: 'Toko Besi Jaya', items: [{ barang_id: 'STK-003', jumlah: 200, harga: 85000, subtotal: 17000000 }], ppn: 1870000, status_bayar: 'DP', status_terima: 'Lengkap', jatuh_tempo: '2024-02-20' },
+  { id: 'PB-003', no_po: 'PO-2024-003', tanggal: '2024-02-10', supplier: 'CV Pasir Merapi', items: [{ barang_id: 'STK-002', jumlah: 15, harga: 800000, subtotal: 12000000 }], ppn: 0, status_bayar: 'Belum_Bayar', status_terima: 'Sebagian', jatuh_tempo: '2024-03-10' },
 ];
 
 export const initialPenggajian: Penggajian[] = [
-  { id: 'GJ-001', nip: 'EMP-001', nama: 'Budi Hermawan', jabatan: 'Mandor', departemen: 'Produksi', gaji_pokok: 5000000, tunjangan: 1500000, lembur: 800000, potongan: 200000, pph21: 150000, gaji_bersih: 6950000, periode: '2024-03', status: 'Dibayar' },
-  { id: 'GJ-002', nip: 'EMP-002', nama: 'Sri Wahyuni', jabatan: 'Admin', departemen: 'Keuangan', gaji_pokok: 4500000, tunjangan: 1000000, lembur: 0, potongan: 100000, pph21: 100000, gaji_bersih: 5300000, periode: '2024-03', status: 'Dibayar' },
-  { id: 'GJ-003', nip: 'EMP-003', nama: 'Agus Prasetyo', jabatan: 'Operator Beko', departemen: 'Proyek', gaji_pokok: 5500000, tunjangan: 2000000, lembur: 1200000, potongan: 300000, pph21: 200000, gaji_bersih: 8200000, periode: '2024-03', status: 'Disetujui' },
-  { id: 'GJ-004', nip: 'EMP-004', nama: 'Dewi Lestari', jabatan: 'Staff Gudang', departemen: 'Logistik', gaji_pokok: 4000000, tunjangan: 800000, lembur: 400000, potongan: 150000, pph21: 80000, gaji_bersih: 4970000, periode: '2024-03', status: 'Draft' },
+  { id: 'GJ-001', nip: 'EMP-001', nama: 'Budi Hermawan', jabatan: 'Mandor', departemen: 'Produksi', gaji_pokok: 5000000, tunjangan: 1500000, lembur: 800000, potongan: 200000, pph21: 150000, periode: '2024-03', status: 'Dibayar' },
+  { id: 'GJ-002', nip: 'EMP-002', nama: 'Sri Wahyuni', jabatan: 'Admin', departemen: 'Keuangan', gaji_pokok: 4500000, tunjangan: 1000000, lembur: 0, potongan: 100000, pph21: 100000, periode: '2024-03', status: 'Dibayar' },
+  { id: 'GJ-003', nip: 'EMP-003', nama: 'Agus Prasetyo', jabatan: 'Operator Beko', departemen: 'Proyek', gaji_pokok: 5500000, tunjangan: 2000000, lembur: 1200000, potongan: 300000, pph21: 200000, periode: '2024-03', status: 'Disetujui' },
+  { id: 'GJ-004', nip: 'EMP-004', nama: 'Dewi Lestari', jabatan: 'Staff Gudang', departemen: 'Logistik', gaji_pokok: 4000000, tunjangan: 800000, lembur: 400000, potongan: 150000, pph21: 80000, periode: '2024-03', status: 'Draft' },
 ];
 
 export const initialAnggaran: Anggaran[] = [
-  { id: 'AG-001', kategori: 'Pembebasan Tanah', anggaran: 500000000, realisasi: 192600000, sisa: 307400000, persentase: 38.5, periode: '2024', catatan: 'Termasuk DP Sukiat, Ija, Enapsiah' },
-  { id: 'AG-002', kategori: 'Cut & Fill (Beko)', anggaran: 200000000, realisasi: 75550000, sisa: 124450000, persentase: 37.8, periode: '2024', catatan: 'Item 4, 5, 6, Supriatna' },
-  { id: 'AG-003', kategori: 'Material & Perlengkapan', anggaran: 150000000, realisasi: 21000000, sisa: 129000000, persentase: 14.0, periode: '2024', catatan: 'Nota Tuan Toko' },
-  { id: 'AG-004', kategori: 'Tenaga Kerja', anggaran: 120000000, realisasi: 76440000, sisa: 43560000, persentase: 63.7, periode: '2024', catatan: 'Gaji 4 karyawan + lembur' },
-  { id: 'AG-005', kategori: 'Operasional & Admin', anggaran: 50000000, realisasi: 12500000, sisa: 37500000, persentase: 25.0, periode: '2024', catatan: 'Transport, ATK, komunikasi' },
+  { id: 'AG-001', kategori: 'Pembebasan Tanah', anggaran: 500000000, realisasi: 192600000, periode: '2024', catatan: 'Termasuk DP Sukiat, Ija, Enapsiah' },
+  { id: 'AG-002', kategori: 'Cut & Fill (Beko)', anggaran: 200000000, realisasi: 75550000, periode: '2024', catatan: 'Item 4, 5, 6, Supriatna' },
+  { id: 'AG-003', kategori: 'Material & Perlengkapan', anggaran: 150000000, realisasi: 21000000, periode: '2024', catatan: 'Nota Tuan Toko' },
+  { id: 'AG-004', kategori: 'Tenaga Kerja', anggaran: 120000000, realisasi: 76440000, periode: '2024', catatan: 'Gaji 4 karyawan + lembur' },
+  { id: 'AG-005', kategori: 'Operasional & Admin', anggaran: 50000000, realisasi: 12500000, periode: '2024', catatan: 'Transport, ATK, komunikasi' },
 ];
 
 export const initialArusKas: ArusKas[] = [
-  { id: 'AK-001', tanggal: '2024-01-01', keterangan: 'Saldo Awal', kategori: 'Operasional', masuk: 500000000, keluar: 0, saldo: 500000000, referensi: 'Modal' },
-  { id: 'AK-002', tanggal: '2024-01-15', keterangan: 'DP Tanah Sukiat', kategori: 'Investasi', masuk: 0, keluar: 1400000, saldo: 498600000, referensi: 'KAS-001' },
-  { id: 'AK-003', tanggal: '2024-01-20', keterangan: 'DP Tanah Ija 79 BT', kategori: 'Investasi', masuk: 0, keluar: 30000000, saldo: 468600000, referensi: 'KAS-002' },
-  { id: 'AK-004', tanggal: '2024-02-01', keterangan: 'Pelunasan Ija 2.5 BT', kategori: 'Investasi', masuk: 0, keluar: 2000000, saldo: 466600000, referensi: 'KAS-003' },
-  { id: 'AK-005', tanggal: '2024-02-15', keterangan: 'Penjualan Rumah Type 36', kategori: 'Operasional', masuk: 340000000, keluar: 0, saldo: 806600000, referensi: 'INV-2024-001' },
-  { id: 'AK-006', tanggal: '2024-03-01', keterangan: 'Gaji Karyawan Maret', kategori: 'Operasional', masuk: 0, keluar: 25420000, saldo: 781180000, referensi: 'GJ-001 s/d GJ-004' },
+  { id: 'AK-001', tanggal: '2024-01-01', keterangan: 'Saldo Awal', kategori: 'Operasional', masuk: 500000000, keluar: 0, referensi: 'Modal' },
+  { id: 'AK-002', tanggal: '2024-01-15', keterangan: 'DP Tanah Sukiat', kategori: 'Investasi', masuk: 0, keluar: 1400000, referensi: 'KAS-001' },
+  { id: 'AK-003', tanggal: '2024-01-20', keterangan: 'DP Tanah Ija 79 BT', kategori: 'Investasi', masuk: 0, keluar: 30000000, referensi: 'KAS-002' },
+  { id: 'AK-004', tanggal: '2024-02-01', keterangan: 'Pelunasan Ija 2.5 BT', kategori: 'Investasi', masuk: 0, keluar: 2000000, referensi: 'KAS-003' },
+  { id: 'AK-005', tanggal: '2024-02-15', keterangan: 'Penjualan Rumah Type 36', kategori: 'Operasional', masuk: 340000000, keluar: 0, referensi: 'INV-2024-001' },
+  { id: 'AK-006', tanggal: '2024-03-01', keterangan: 'Gaji Karyawan Maret', kategori: 'Operasional', masuk: 0, keluar: 25420000, referensi: 'GJ-001 s/d GJ-004' },
 ];
 
 export const initialOCR: OCRResult[] = [

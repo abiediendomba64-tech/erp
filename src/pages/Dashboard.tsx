@@ -1,5 +1,6 @@
 import { useAppContext } from '../store';
 import { formatRupiah } from '../data';
+import { getTanahNilaiTotal, getBekoNilai } from '../helpers';
 import {
   TrendingUp, TrendingDown, Wallet, FileCheck,
   FileX, AlertTriangle, Scale, LandPlot, Truck,
@@ -21,8 +22,8 @@ export default function Dashboard() {
   const kewajibanSepakat = state.posKewajiban.filter(p => p.status === 'Sepakat').reduce((sum, p) => sum + p.nilai_menurut_workbook, 0);
   const kewajibanPenelusuran = state.posKewajiban.filter(p => p.status === 'Dalam_Penelusuran').reduce((sum, p) => sum + p.nilai_menurut_workbook, 0);
 
-  const totalTanah = state.tanah.reduce((sum, t) => sum + t.nilai_total, 0);
-  const totalBeko = state.beko.reduce((sum, b) => sum + b.nilai, 0);
+  const totalTanah = state.tanah.reduce((sum, t) => sum + getTanahNilaiTotal(t), 0);
+  const totalBeko = state.beko.reduce((sum, b) => sum + getBekoNilai(b), 0);
   const totalNota = state.notaMaterial.reduce((sum, n) => sum + n.nominal, 0);
 
   const kasTanpaBukti = state.bukuKas.filter(k => k.status_verifikasi === 'TANPA_BUKTI').reduce((sum, k) => sum + k.keluar, 0);

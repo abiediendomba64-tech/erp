@@ -33,9 +33,9 @@ export interface PosKewajiban {
   pihak: string;
   nilai_menurut_dokumen: number;
   nilai_menurut_workbook: number;
-  selisih: number;
   status: 'Sepakat' | 'Dalam_Penelusuran' | 'Sengketa';
   keterangan: string;
+  // COMPUTED: selisih = nilai_menurut_workbook - nilai_menurut_dokumen
 }
 
 // ============ AUDIT LOG ============
@@ -58,13 +58,13 @@ export interface Tanah {
   pemilik: string;
   luas_bt: number;
   harga_per_bt: number;
-  nilai_total: number;
   dp: number;
-  sisa: number;
   status: 'Lunas' | 'DP' | 'Belum_Bayar';
   kode_bukti: string;
   url_bukti: string;
   catatan: string;
+  // COMPUTED: nilai_total = luas_bt × harga_per_bt
+  // COMPUTED: sisa = nilai_total - dp
 }
 
 // ============ BEKO (Excavator Records) ============
@@ -75,11 +75,11 @@ export interface Beko {
   lebar: number;
   tinggi: number;
   tarif: number;
-  nilai: number;
   status: 'Lunas' | 'Belum_Ada_Kwitansi' | 'Foto_Belum_Tersedia';
   kode_bukti: string;
   url_bukti: string;
   catatan: string;
+  // COMPUTED: nilai = panjang × lebar × tinggi × tarif
 }
 
 // ============ NOTA MATERIAL ============
@@ -115,11 +115,11 @@ export interface StokBarang {
   stok_awal: number;
   masuk: number;
   keluar: number;
-  stok_akhir: number;
   harga_pokok: number;
   harga_jual: number;
   min_stok: number;
   lokasi: string;
+  // COMPUTED: stok_akhir = stok_awal + masuk - keluar
 }
 
 // PRODUKSI
@@ -132,9 +132,9 @@ export interface Produksi {
   bahan_baku: { barang_id: string; jumlah: number }[];
   biaya_tenaga_kerja: number;
   biaya_overhead: number;
-  total_biaya: number;
   status: 'Draft' | 'Dalam_Proses' | 'Selesai' | 'Batal';
   catatan: string;
+  // COMPUTED: total_biaya = biaya_tenaga_kerja + biaya_overhead
 }
 
 // PENJUALAN
@@ -144,13 +144,13 @@ export interface Penjualan {
   tanggal: string;
   pelanggan: string;
   items: { barang_id: string; jumlah: number; harga: number; subtotal: number }[];
-  total: number;
   diskon: number;
   ppn: number;
-  grand_total: number;
   status_bayar: 'Lunas' | 'Belum_Bayar' | 'DP' | 'Jatuh_Tempo';
   metode_bayar: 'Tunai' | 'Transfer' | 'Kredit';
   jatuh_tempo: string;
+  // COMPUTED: total = sum(items.subtotal)
+  // COMPUTED: grand_total = total - diskon + ppn
 }
 
 // PEMBELIAN
@@ -160,12 +160,12 @@ export interface Pembelian {
   tanggal: string;
   supplier: string;
   items: { barang_id: string; jumlah: number; harga: number; subtotal: number }[];
-  total: number;
   ppn: number;
-  grand_total: number;
   status_bayar: 'Lunas' | 'Belum_Bayar' | 'DP';
   status_terima: 'Belum' | 'Sebagian' | 'Lengkap';
   jatuh_tempo: string;
+  // COMPUTED: total = sum(items.subtotal)
+  // COMPUTED: grand_total = total + ppn
 }
 
 // PENGGAJIAN
@@ -180,9 +180,9 @@ export interface Penggajian {
   lembur: number;
   potongan: number;
   pph21: number;
-  gaji_bersih: number;
   periode: string;
   status: 'Draft' | 'Disetujui' | 'Dibayar';
+  // COMPUTED: gaji_bersih = gaji_pokok + tunjangan + lembur - potongan - pph21
 }
 
 // ANGGARAN
@@ -191,10 +191,10 @@ export interface Anggaran {
   kategori: string;
   anggaran: number;
   realisasi: number;
-  sisa: number;
-  persentase: number;
   periode: string;
   catatan: string;
+  // COMPUTED: sisa = anggaran - realisasi
+  // COMPUTED: persentase = (realisasi / anggaran) × 100
 }
 
 // ARUS KAS
@@ -205,8 +205,8 @@ export interface ArusKas {
   kategori: 'Operasional' | 'Investasi' | 'Pendanaan';
   masuk: number;
   keluar: number;
-  saldo: number;
   referensi: string;
+  // COMPUTED: saldo = running total (masuk - keluar) dari semua transaksi sebelumnya
 }
 
 // OCR / VISION AI
