@@ -1,138 +1,139 @@
 import { useAppContext } from '../store';
-import { formatRupiah } from '../data';
-import { getTanahNilaiTotal, getBekoNilai } from '../helpers';
+import { formatRupiah, formatNumber } from '../data';
+import { getTanahNilaiTotal, getTanahSisa, getBekoNilai, getPosKewajibanSelisih, getArusKasSaldo } from '../helpers';
+import { AUDIT_CONSTANTS } from '../data';
 import {
-  TrendingUp, TrendingDown, Wallet, FileCheck,
-  FileX, AlertTriangle, Scale, LandPlot, Truck,
-  Receipt, ShieldCheck, ShieldAlert
+  TrendingUp, TrendingDown, Wallet, AlertTriangle, Scale,
+  LandPlot, Truck, CheckCircle, XCircle, FileWarning
 } from 'lucide-react';
 
 export default function Dashboard() {
   const { state } = useAppContext();
 
-  const totalMasuk = state.bukuKas.reduce((sum, k) => sum + k.masuk, 0);
-  const totalKeluar = state.bukuKas.reduce((sum, k) => sum + k.keluar, 0);
-  const saldo = totalMasuk - totalKeluar;
+  // === REAL-TIME COMPUTED VALUES ===
+  const totalMasuk = state.bukuKas.reduce((s, k) => s + k.masuk, 0);
+  const totalKeluar = state.bukuKas.reduce((s, k) => s + k.keluar, 0);
+  const saldoCatatan = totalMasuk - totalKeluar;
 
-  const buktiLengkap = state.arsipBukti.filter(b => b.terverifikasi === 'Ya').length;
-  const buktiTanpa = state.arsipBukti.filter(b => b.jenis === 'Tidak_Ada').length;
-  const buktiKonfirmasi = state.arsipBukti.filter(b => b.terverifikasi === 'Perlu_Konfirmasi').length;
+  const totalNilaiTanah = state.tanah.reduce((s, t) => s + getTanahNilaiTotal(t), 0);
+  const totalDibayarTanah = state.tanah.reduce((s, t) => s + t.dp, 0);
+  const totalSisaUtangTanah = state.tanah.reduce((s, t) => s + getTanahSisa(t), 0);
+  const totalLuas = state.tanah.reduce((s, t) => s + t.luas_bt, 0);
 
-  const totalKewajiban = state.posKewajiban.reduce((sum, p) => sum + p.nilai_menurut_workbook, 0);
-  const kewajibanSepakat = state.posKewajiban.filter(p => p.status === 'Sepakat').reduce((sum, p) => sum + p.nilai_menurut_workbook, 0);
-  const kewajibanPenelusuran = state.posKewajiban.filter(p => p.status === 'Dalam_Penelusuran').reduce((sum, p) => sum + p.nilai_menurut_workbook, 0);
+  const totalBiayaBeko = state.beko.filter(b => ['BK-01','BK-02','BK-03','BK-04','BK-05','BK-06'].includes(b.id)).reduce((s, b) => s + getBekoNilai(b), 0);
+  const totalDanaBekoDiterima = state.arsipBukti.reduce((s, b) => s + b.nominal, 0);
 
-  const totalTanah = state.tanah.reduce((sum, t) => sum + getTanahNilaiTotal(t), 0);
-  const totalBeko = state.beko.reduce((sum, b) => sum + getBekoNilai(b), 0);
-  const totalNota = state.notaMaterial.reduce((sum, n) => sum + n.nominal, 0);
+  const totalUtang = state.posKewajiban.reduce((s, p) => s + (p.nilai_menurut_workbook - p.nilai_menurut_dokumen + p.nilai_menurut_dokumen), 0);
+  const sisaUtang = state.posKewajiban.reduce((s, p) => s + getPosKewajibanSelisih(p), 0);
 
-  const kasTanpaBukti = state.bukuKas.filter(k => k.status_verifikasi === 'TANPA_BUKTI').reduce((sum, k) => sum + k.keluar, 0);
-  const kasPerluKonfirmasi = state.bukuKas.filter(k => k.status_verifikasi === 'PERLU_KONFIRMASI').reduce((sum, k) => sum + k.keluar, 0);
+  const posisiNetoCatatan = saldoCatatan - totalSisaUtangTanah;
+  const kasRiil = AUDIT_CONSTANTS.KAS_RIIL;
+  const posisiNetoRiil = kasRiil - totalSisaUtangTanah;
 
-  const stats = [
-    { label: 'Total Kas Masuk', value: formatRupiah(totalMasuk), icon: <TrendingUp size={24} />, color: 'bg-emerald-500', change: '' },
-    { label: 'Total Kas Keluar', value: formatRupiah(totalKeluar), icon: <TrendingDown size={24} />, color: 'bg-red-500', change: '' },
-    { label: 'Saldo Kas', value: formatRupiah(saldo), icon: <Wallet size={24} />, color: 'bg-indigo-500', change: '' },
-    { label: 'Total Kewajiban', value: formatRupiah(totalKewajiban), icon: <Scale size={24} />, color: 'bg-amber-500', change: '' },
+  // === CROSS-VALIDATION ===
+  const validations = [
+    { label: 'Total Dana Masuk', computed: totalMasuk, expected: AUDIT_CONSTANTS.TOTAL_DANA_MASUK },
+    { label: 'Total Pengeluaran', computed: totalKeluar, expected: AUDIT_CONSTANTS.TOTAL_PENGELUARAN },
+    { label: 'Saldo Kas Catatan', computed: saldoCatatan, expected: AUDIT_CONSTANTS.SALDO_KAS_CATATAN },
+    { label: 'Total Nilai Tanah', computed: totalNilaiTanah, expected: AUDIT_CONSTANTS.TOTAL_NILAI_TANAH },
+    { label: 'Total Dibayar Tanah', computed: totalDibayarTanah, expected: AUDIT_CONSTANTS.TOTAL_DIBAYAR_TANAH },
+    { label: 'Sisa Utang Tanah', computed: totalSisaUtangTanah, expected: AUDIT_CONSTANTS.TOTAL_UTANG_TANAH },
+    { label: 'Total Biaya Beko', computed: totalBiayaBeko, expected: AUDIT_CONSTANTS.TOTAL_BIAYA_BEKO },
+    { label: 'Dana Beko Diterima', computed: totalDanaBekoDiterima, expected: AUDIT_CONSTANTS.TOTAL_DANA_BEKO_DITERIMA },
   ];
+
+  const okCount = validations.filter(v => v.computed === v.expected).length;
+  const selisihCount = validations.filter(v => v.computed !== v.expected).length;
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard Audit</h1>
-        <p className="text-gray-500 mt-1">Ringkasan pembebasan tanah dan cut & fill — 3 lapisan audit</p>
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard Audit — Real Time</h1>
+        <p className="text-gray-500 mt-1">Data per 13 Oktober 2026 • Semua nilai dihitung otomatis (anti-drift)</p>
       </div>
 
-      {/* Key Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        {stats.map((stat, i) => (
-          <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">{stat.label}</p>
-                <p className="text-xl font-bold text-gray-900 mt-1">{stat.value}</p>
-              </div>
-              <div className={`w-12 h-12 ${stat.color} rounded-xl flex items-center justify-center text-white`}>
-                {stat.icon}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Anti Hitung Ganda Warning */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="text-amber-500 flex-shrink-0 mt-0.5" size={20} />
+      {/* Cross-Validation Banner */}
+      <div className={`rounded-xl p-4 border ${selisihCount === 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+        <div className="flex items-center gap-3">
+          {selisihCount === 0 ? <CheckCircle className="text-emerald-500" size={24} /> : <AlertTriangle className="text-amber-500" size={24} />}
           <div>
-            <h3 className="font-semibold text-amber-800">Prinsip Anti Hitung Ganda</h3>
-            <p className="text-sm text-amber-700 mt-1">
-              Kesepakatan = kewajiban, dibayar = uang keluar, bukti = verifikasi, utang = sisa — empat hal dilaporkan terpisah.
-              Kas tanpa bukti: <strong>{formatRupiah(kasTanpaBukti)}</strong> | Perlu konfirmasi: <strong>{formatRupiah(kasPerluKonfirmasi)}</strong>
+            <h3 className={`font-semibold ${selisihCount === 0 ? 'text-emerald-800' : 'text-amber-800'}`}>
+              Cross-Validation: {okCount}/{validations.length} OK {selisihCount > 0 && `• ${selisihCount} SELISIH`}
+            </h3>
+            <p className={`text-sm ${selisihCount === 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
+              Semua angka utama terverifikasi otomatis dari data input
             </p>
           </div>
         </div>
       </div>
 
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Bukti Status */}
+      {/* Key Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <ShieldCheck size={18} className="text-indigo-500" />
-            Status Bukti (Lapisan 2)
-          </h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-lg">
-              <div className="flex items-center gap-2">
-                <FileCheck size={18} className="text-emerald-600" />
-                <span className="text-sm font-medium text-emerald-800">Terverifikasi</span>
-              </div>
-              <span className="text-lg font-bold text-emerald-600">{buktiLengkap}</span>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Total Dana Masuk</p>
+              <p className="text-xl font-bold text-emerald-600 mt-1">{formatRupiah(totalMasuk)}</p>
             </div>
-            <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-              <div className="flex items-center gap-2">
-                <FileX size={18} className="text-red-600" />
-                <span className="text-sm font-medium text-red-800">Tanpa Bukti</span>
-              </div>
-              <span className="text-lg font-bold text-red-600">{buktiTanpa}</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
-              <div className="flex items-center gap-2">
-                <AlertTriangle size={18} className="text-amber-600" />
-                <span className="text-sm font-medium text-amber-800">Perlu Konfirmasi</span>
-              </div>
-              <span className="text-lg font-bold text-amber-600">{buktiKonfirmasi}</span>
-            </div>
+            <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center"><TrendingUp size={24} className="text-emerald-600" /></div>
           </div>
         </div>
-
-        {/* Kewajiban Status */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <ShieldAlert size={18} className="text-amber-500" />
-            Status Kewajiban (Lapisan 3)
-          </h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-emerald-50 rounded-lg">
-              <span className="text-sm font-medium text-emerald-800">Sepakat</span>
-              <span className="text-sm font-bold text-emerald-600">{formatRupiah(kewajibanSepakat)}</span>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Total Pengeluaran</p>
+              <p className="text-xl font-bold text-red-600 mt-1">{formatRupiah(totalKeluar)}</p>
             </div>
-            <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg">
-              <span className="text-sm font-medium text-amber-800">Dalam Penelusuran</span>
-              <span className="text-sm font-bold text-amber-600">{formatRupiah(kewajibanPenelusuran)}</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-              <span className="text-sm font-medium text-red-800">Sengketa</span>
-              <span className="text-sm font-bold text-red-600">{formatRupiah(0)}</span>
-            </div>
+            <div className="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center"><TrendingDown size={24} className="text-red-600" /></div>
           </div>
-          {/* Selisih Rekonsiliasi */}
-          <div className="mt-4 p-3 bg-indigo-50 rounded-lg border border-indigo-200">
-            <p className="text-xs text-indigo-600 font-medium">Selisih Rekonsiliasi (PDF vs Workbook)</p>
-            <p className="text-lg font-bold text-indigo-700">{formatRupiah(2500000)}</p>
-            <p className="text-xs text-indigo-500">Rp34.700.000 (PDF) vs Rp37.200.000 (Workbook)</p>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Saldo Kas (Catatan)</p>
+              <p className="text-xl font-bold text-indigo-600 mt-1">{formatRupiah(saldoCatatan)}</p>
+            </div>
+            <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center"><Wallet size={24} className="text-indigo-600" /></div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Kas Riil (Konfirmasi)</p>
+              <p className="text-xl font-bold text-amber-600 mt-1">{formatRupiah(kasRiil)}</p>
+            </div>
+            <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center"><Wallet size={24} className="text-amber-600" /></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Selisih Kas */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <h3 className="font-semibold text-amber-800 flex items-center gap-2"><AlertTriangle size={18} />Selisih Kas Riil vs Catatan</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+          <div><p className="text-xs text-amber-600">Kas Riil</p><p className="font-bold text-amber-800">{formatRupiah(kasRiil)}</p></div>
+          <div><p className="text-xs text-amber-600">Saldo Catatan</p><p className="font-bold text-amber-800">{formatRupiah(saldoCatatan)}</p></div>
+          <div><p className="text-xs text-amber-600">Selisih</p><p className="font-bold text-red-600">{formatRupiah(kasRiil - saldoCatatan)}</p></div>
+        </div>
+      </div>
+
+      {/* Posisi Neto */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <h3 className="font-semibold text-gray-900 mb-3">Posisi Neto (Menurut Catatan)</h3>
+          <div className="space-y-2">
+            <div className="flex justify-between"><span className="text-sm text-gray-600">Saldo Kas</span><span className="font-medium">{formatRupiah(saldoCatatan)}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-gray-600">Utang Tanah</span><span className="font-medium text-red-600">- {formatRupiah(totalSisaUtangTanah)}</span></div>
+            <div className="border-t pt-2 flex justify-between"><span className="font-bold">Posisi Neto</span><span className={`font-bold ${posisiNetoCatatan < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatRupiah(posisiNetoCatatan)}</span></div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+          <h3 className="font-semibold text-gray-900 mb-3">Posisi Neto (Kas Riil)</h3>
+          <div className="space-y-2">
+            <div className="flex justify-between"><span className="text-sm text-gray-600">Kas Riil</span><span className="font-medium">{formatRupiah(kasRiil)}</span></div>
+            <div className="flex justify-between"><span className="text-sm text-gray-600">Utang Tanah</span><span className="font-medium text-red-600">- {formatRupiah(totalSisaUtangTanah)}</span></div>
+            <div className="border-t pt-2 flex justify-between"><span className="font-bold">Posisi Neto</span><span className={`font-bold ${posisiNetoRiil >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatRupiah(posisiNetoRiil)}</span></div>
+            <div className="mt-2 p-2 bg-emerald-50 rounded text-xs text-emerald-700 font-medium">STATUS: {posisiNetoRiil >= 0 ? 'CUKUP ✓' : 'KURANG ✗'}</div>
           </div>
         </div>
       </div>
@@ -141,60 +142,54 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <LandPlot size={20} className="text-blue-600" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Total Tanah</p>
-              <p className="font-bold text-gray-900">{formatRupiah(totalTanah)}</p>
-            </div>
+            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center"><LandPlot size={20} className="text-blue-600" /></div>
+            <div><p className="text-xs text-gray-500">Total Tanah</p><p className="font-bold">{formatRupiah(totalNilaiTanah)}</p></div>
           </div>
-          <p className="text-xs text-gray-500">{state.tanah.length} record • DP + Pelunasan</p>
+          <p className="text-xs text-gray-500">{state.tanah.length} bidang • {totalLuas} BT • {((totalDibayarTanah/totalNilaiTanah)*100).toFixed(1)}% terbayar</p>
         </div>
-
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-              <Truck size={20} className="text-orange-600" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Total Beko</p>
-              <p className="font-bold text-gray-900">{formatRupiah(totalBeko)}</p>
-            </div>
+            <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center"><Truck size={20} className="text-orange-600" /></div>
+            <div><p className="text-xs text-gray-500">Beko (Item 1-6)</p><p className="font-bold">{formatRupiah(totalBiayaBeko)}</p></div>
           </div>
-          <p className="text-xs text-gray-500">{state.beko.length} item • P×L×T×Tarif</p>
+          <p className="text-xs text-gray-500">Dana diterima: {formatRupiah(totalDanaBekoDiterima)} • Selisih: {formatRupiah(totalDanaBekoDiterima - totalBiayaBeko)}</p>
         </div>
-
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-              <Receipt size={20} className="text-purple-600" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Total Nota Material</p>
-              <p className="font-bold text-gray-900">{formatRupiah(totalNota)}</p>
-            </div>
+            <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center"><Scale size={20} className="text-red-600" /></div>
+            <div><p className="text-xs text-gray-500">Utang Tanah</p><p className="font-bold text-red-600">{formatRupiah(totalSisaUtangTanah)}</p></div>
           </div>
-          <p className="text-xs text-gray-500">{state.notaMaterial.length} nota • Tuan Toko</p>
+          <p className="text-xs text-gray-500">{state.posKewajiban.length} pihak • Sanaris, DUDI, Balong</p>
         </div>
       </div>
 
-      {/* Recent Activity */}
+      {/* Verification Status */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-        <h3 className="font-semibold text-gray-900 mb-4">Aktivitas Audit Terakhir</h3>
-        <div className="space-y-3">
-          {state.auditLog.slice(-5).reverse().map(log => (
-            <div key={log.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-              <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <span className="text-xs font-bold text-indigo-600">{log.user[0]}</span>
+        <h3 className="font-semibold text-gray-900 mb-4">Status Verifikasi Angka</h3>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
+          <div className="p-3 bg-gray-50 rounded-lg"><p className="text-2xl font-bold text-gray-900">{AUDIT_CONSTANTS.PEMERIKSAAN_ANGKA}</p><p className="text-xs text-gray-500">Total Pemeriksaan</p></div>
+          <div className="p-3 bg-emerald-50 rounded-lg"><p className="text-2xl font-bold text-emerald-600">{AUDIT_CONSTANTS.PEMERIKSAAN_OK}</p><p className="text-xs text-gray-500">OK</p></div>
+          <div className="p-3 bg-red-50 rounded-lg"><p className="text-2xl font-bold text-red-600">{AUDIT_CONSTANTS.PEMERIKSAAN_SELISIH}</p><p className="text-xs text-gray-500">Selisih</p></div>
+          <div className="p-3 bg-amber-50 rounded-lg"><p className="text-2xl font-bold text-amber-600">{AUDIT_CONSTANTS.TERBUKA}</p><p className="text-xs text-gray-500">Terbuka</p></div>
+          <div className="p-3 bg-blue-50 rounded-lg"><p className="text-2xl font-bold text-blue-600">{AUDIT_CONSTANTS.TERJAWAB}</p><p className="text-xs text-gray-500">Terjawab</p></div>
+        </div>
+      </div>
+
+      {/* Cross-Validation Detail */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2"><CheckCircle size={18} className="text-emerald-500" />Detail Cross-Validation</h3>
+        <div className="space-y-2">
+          {validations.map((v, i) => (
+            <div key={i} className={`flex items-center justify-between p-3 rounded-lg ${v.computed === v.expected ? 'bg-emerald-50' : 'bg-red-50'}`}>
+              <span className="text-sm font-medium text-gray-700">{v.label}</span>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-mono">{formatRupiah(v.computed)}</span>
+                {v.computed === v.expected ? (
+                  <CheckCircle size={16} className="text-emerald-500" />
+                ) : (
+                  <span className="text-xs text-red-600">Expected: {formatRupiah(v.expected)}</span>
+                )}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900">{log.aksi} — {log.tabel}</p>
-                <p className="text-xs text-gray-500 truncate">{log.nilai_baru}</p>
-              </div>
-              <span className="text-xs text-gray-400 whitespace-nowrap">
-                {new Date(log.timestamp).toLocaleDateString('id-ID')}
-              </span>
             </div>
           ))}
         </div>

@@ -1,8 +1,6 @@
 import {
   LayoutDashboard, BookOpen, FolderArchive, Scale,
-  LandPlot, Truck, History, FileBarChart, Menu, X,
-  Package, Factory, ShoppingCart, Users, PieChart,
-  Scan, MessageCircle, Settings, DollarSign
+  LandPlot, Truck, History, FileBarChart, Menu, X, Shield
 } from 'lucide-react';
 import { Page } from '../App';
 
@@ -11,34 +9,35 @@ interface SidebarProps {
   setCurrentPage: (page: Page) => void;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
+  currentRole: 'ADMIN' | 'VIEWER';
+  setCurrentRole: (role: 'ADMIN' | 'VIEWER') => void;
 }
 
-const menuItems: { id: Page; label: string; icon: React.ReactNode; section: string }[] = [
+// Menu untuk ADMIN (full access)
+const adminMenu: { id: Page; label: string; icon: React.ReactNode; section: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} />, section: 'Utama' },
-  { id: 'stok', label: 'Stok Barang', icon: <Package size={20} />, section: 'ERP' },
-  { id: 'produksi', label: 'Produksi', icon: <Factory size={20} />, section: 'ERP' },
-  { id: 'penjualan', label: 'Penjualan', icon: <ShoppingCart size={20} />, section: 'ERP' },
-  { id: 'pembelian', label: 'Pembelian', icon: <Truck size={20} />, section: 'ERP' },
-  { id: 'bukukas', label: 'Akuntansi', icon: <BookOpen size={20} />, section: 'Akuntansi' },
-  { id: 'penggajian', label: 'Penggajian', icon: <DollarSign size={20} />, section: 'Akuntansi' },
-  { id: 'anggaran', label: 'Anggaran & Arus Kas', icon: <PieChart size={20} />, section: 'Akuntansi' },
-  { id: 'tanah', label: 'Kwitansi Tanah', icon: <LandPlot size={20} />, section: 'Audit 3 Lapisan' },
-  { id: 'beko', label: 'Kwitansi Beko', icon: <Truck size={20} />, section: 'Audit 3 Lapisan' },
-  { id: 'arsipbukti', label: 'Arsip Bukti (L2)', icon: <FolderArchive size={20} />, section: 'Audit 3 Lapisan' },
-  { id: 'poskewajiban', label: 'Pos Kewajiban (L3)', icon: <Scale size={20} />, section: 'Audit 3 Lapisan' },
-  { id: 'ocr', label: 'OCR / Vision AI', icon: <Scan size={20} />, section: 'Integrasi' },
-  { id: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle size={20} />, section: 'Integrasi' },
-  { id: 'laporan', label: 'Laporan', icon: <FileBarChart size={20} />, section: 'Analisis' },
-  { id: 'auditlog', label: 'Audit Log', icon: <History size={20} />, section: 'Analisis' },
-  { id: 'menuconfig', label: 'Konfigurasi Menu', icon: <Settings size={20} />, section: 'Sistem' },
+  { id: 'auditrekap', label: 'Audit Rekap', icon: <FileBarChart size={20} />, section: 'Utama' },
+  { id: 'tanah', label: 'Register Tanah', icon: <LandPlot size={20} />, section: 'Data' },
+  { id: 'beko', label: 'Rincian Beko', icon: <Truck size={20} />, section: 'Data' },
+  { id: 'bukukas', label: 'Buku Kas (L1)', icon: <BookOpen size={20} />, section: '3 Lapisan' },
+  { id: 'arsipbukti', label: 'Arsip Bukti (L2)', icon: <FolderArchive size={20} />, section: '3 Lapisan' },
+  { id: 'poskewajiban', label: 'Utang Tanah (L3)', icon: <Scale size={20} />, section: '3 Lapisan' },
+  { id: 'auditlog', label: 'Audit Log', icon: <History size={20} />, section: 'Sistem' },
 ];
 
-export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen }: SidebarProps) {
+// Menu untuk CLIENT/VIEWER (read-only, tidak ada data sensitif)
+const clientMenu: { id: Page; label: string; icon: React.ReactNode; section: string }[] = [
+  { id: 'dashboard', label: 'Ringkasan', icon: <LayoutDashboard size={20} />, section: 'Info' },
+  { id: 'tanah', label: 'Progress Tanah', icon: <LandPlot size={20} />, section: 'Info' },
+  { id: 'beko', label: 'Progress Beko', icon: <Truck size={20} />, section: 'Info' },
+];
+
+export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen, currentRole, setCurrentRole }: SidebarProps) {
+  const menuItems = currentRole === 'ADMIN' ? adminMenu : clientMenu;
   let currentSection = '';
 
   return (
     <>
-      {/* Mobile toggle */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="fixed top-4 left-4 z-50 lg:hidden bg-indigo-600 text-white p-2 rounded-lg shadow-lg"
@@ -51,45 +50,58 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
         <div className="p-4 border-b border-slate-700">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Scale size={18} />
+              <Shield size={18} />
             </div>
             {isOpen && (
               <div className="overflow-hidden">
-                <h1 className="font-bold text-sm whitespace-nowrap">ERP Audit System</h1>
-                <p className="text-xs text-slate-400 whitespace-nowrap">Akuntansi • Stok • Produksi</p>
+                <h1 className="font-bold text-sm whitespace-nowrap">Audit System</h1>
+                <p className="text-xs text-slate-400 whitespace-nowrap">Real-time • Anti-drift</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Toggle button */}
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="absolute top-4 right-2 text-slate-400 hover:text-white hidden lg:block"
-        >
+        {/* Role Switcher */}
+        {isOpen && (
+          <div className="px-4 py-3 border-b border-slate-700">
+            <p className="text-xs text-slate-500 mb-2">Mode Akses:</p>
+            <div className="flex gap-1">
+              <button
+                onClick={() => { setCurrentRole('ADMIN'); setCurrentPage('dashboard'); }}
+                className={`flex-1 text-xs py-1.5 rounded font-medium transition-colors ${currentRole === 'ADMIN' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+              >
+                🔑 Admin
+              </button>
+              <button
+                onClick={() => { setCurrentRole('VIEWER'); setCurrentPage('dashboard'); }}
+                className={`flex-1 text-xs py-1.5 rounded font-medium transition-colors ${currentRole === 'VIEWER' ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+              >
+                👁 Client
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Toggle */}
+        <button onClick={() => setIsOpen(!isOpen)} className="absolute top-4 right-2 text-slate-400 hover:text-white hidden lg:block">
           {isOpen ? <X size={16} /> : <Menu size={16} />}
         </button>
 
         {/* Navigation */}
-        <nav className="mt-2 px-2 space-y-0.5 overflow-y-auto h-[calc(100%-120px)]">
+        <nav className="mt-2 px-2 space-y-0.5 overflow-y-auto h-[calc(100%-180px)]">
           {menuItems.map((item) => {
             const showSection = item.section !== currentSection;
             if (showSection) currentSection = item.section;
-
             return (
               <div key={item.id}>
                 {isOpen && showSection && (
-                  <div className="text-xs text-slate-500 uppercase tracking-wider px-3 pt-3 pb-1 font-semibold">
-                    {item.section}
-                  </div>
+                  <div className="text-xs text-slate-500 uppercase tracking-wider px-3 pt-3 pb-1 font-semibold">{item.section}</div>
                 )}
                 {!isOpen && showSection && <div className="border-t border-slate-700 my-2 mx-2" />}
                 <button
                   onClick={() => setCurrentPage(item.id)}
                   className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
-                    currentPage === item.id
-                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
-                      : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
+                    currentPage === item.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
                   }`}
                   title={!isOpen ? item.label : undefined}
                 >
@@ -105,10 +117,12 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
         {isOpen && (
           <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-700">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-emerald-500 rounded-full flex items-center justify-center text-xs font-bold">A</div>
+              <div className={`w-8 h-8 ${currentRole === 'ADMIN' ? 'bg-indigo-500' : 'bg-emerald-500'} rounded-full flex items-center justify-center text-xs font-bold`}>
+                {currentRole === 'ADMIN' ? 'A' : 'C'}
+              </div>
               <div>
-                <p className="text-xs font-medium">Admin</p>
-                <p className="text-xs text-slate-400">Role: ADMIN</p>
+                <p className="text-xs font-medium">{currentRole === 'ADMIN' ? 'Administrator' : 'Client / Viewer'}</p>
+                <p className="text-xs text-slate-400">{currentRole === 'ADMIN' ? 'Full access' : 'Read-only'}</p>
               </div>
             </div>
           </div>
