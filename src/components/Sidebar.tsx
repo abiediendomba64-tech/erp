@@ -1,9 +1,10 @@
 import {
   LayoutDashboard, BookOpen, FolderArchive, Scale,
-  LandPlot, Truck, History, FileBarChart, Menu, X
+  LandPlot, Truck, History, FileBarChart, Menu, X,
+  Package, Factory, ShoppingCart, Users, PieChart,
+  Scan, MessageCircle, Settings, DollarSign
 } from 'lucide-react';
-
-type Page = 'dashboard' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan';
+import { Page } from '../App';
 
 interface SidebarProps {
   currentPage: Page;
@@ -14,13 +15,22 @@ interface SidebarProps {
 
 const menuItems: { id: Page; label: string; icon: React.ReactNode; section: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} />, section: 'Utama' },
-  { id: 'tanah', label: 'Kwitansi Tanah', icon: <LandPlot size={20} />, section: 'Data Input' },
-  { id: 'beko', label: 'Kwitansi Beko', icon: <Truck size={20} />, section: 'Data Input' },
-  { id: 'bukukas', label: 'Buku Kas (Lapisan 1)', icon: <BookOpen size={20} />, section: '3 Lapisan Audit' },
-  { id: 'arsipbukti', label: 'Arsip Bukti (Lapisan 2)', icon: <FolderArchive size={20} />, section: '3 Lapisan Audit' },
-  { id: 'poskewajiban', label: 'Pos Kewajiban (Lapisan 3)', icon: <Scale size={20} />, section: '3 Lapisan Audit' },
-  { id: 'laporan', label: 'Laporan & Rekonsiliasi', icon: <FileBarChart size={20} />, section: 'Analisis' },
+  { id: 'stok', label: 'Stok Barang', icon: <Package size={20} />, section: 'ERP' },
+  { id: 'produksi', label: 'Produksi', icon: <Factory size={20} />, section: 'ERP' },
+  { id: 'penjualan', label: 'Penjualan', icon: <ShoppingCart size={20} />, section: 'ERP' },
+  { id: 'pembelian', label: 'Pembelian', icon: <Truck size={20} />, section: 'ERP' },
+  { id: 'bukukas', label: 'Akuntansi', icon: <BookOpen size={20} />, section: 'Akuntansi' },
+  { id: 'penggajian', label: 'Penggajian', icon: <DollarSign size={20} />, section: 'Akuntansi' },
+  { id: 'anggaran', label: 'Anggaran & Arus Kas', icon: <PieChart size={20} />, section: 'Akuntansi' },
+  { id: 'tanah', label: 'Kwitansi Tanah', icon: <LandPlot size={20} />, section: 'Audit 3 Lapisan' },
+  { id: 'beko', label: 'Kwitansi Beko', icon: <Truck size={20} />, section: 'Audit 3 Lapisan' },
+  { id: 'arsipbukti', label: 'Arsip Bukti (L2)', icon: <FolderArchive size={20} />, section: 'Audit 3 Lapisan' },
+  { id: 'poskewajiban', label: 'Pos Kewajiban (L3)', icon: <Scale size={20} />, section: 'Audit 3 Lapisan' },
+  { id: 'ocr', label: 'OCR / Vision AI', icon: <Scan size={20} />, section: 'Integrasi' },
+  { id: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle size={20} />, section: 'Integrasi' },
+  { id: 'laporan', label: 'Laporan', icon: <FileBarChart size={20} />, section: 'Analisis' },
   { id: 'auditlog', label: 'Audit Log', icon: <History size={20} />, section: 'Analisis' },
+  { id: 'menuconfig', label: 'Konfigurasi Menu', icon: <Settings size={20} />, section: 'Sistem' },
 ];
 
 export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen }: SidebarProps) {
@@ -45,8 +55,8 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
             </div>
             {isOpen && (
               <div className="overflow-hidden">
-                <h1 className="font-bold text-sm whitespace-nowrap">Sistem Audit</h1>
-                <p className="text-xs text-slate-400 whitespace-nowrap">Pembebasan Tanah & Cut Fill</p>
+                <h1 className="font-bold text-sm whitespace-nowrap">ERP Audit System</h1>
+                <p className="text-xs text-slate-400 whitespace-nowrap">Akuntansi • Stok • Produksi</p>
               </div>
             )}
           </div>
@@ -61,7 +71,7 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
         </button>
 
         {/* Navigation */}
-        <nav className="mt-4 px-2 space-y-1 overflow-y-auto h-[calc(100%-120px)]">
+        <nav className="mt-2 px-2 space-y-0.5 overflow-y-auto h-[calc(100%-120px)]">
           {menuItems.map((item) => {
             const showSection = item.section !== currentSection;
             if (showSection) currentSection = item.section;
@@ -69,14 +79,14 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
             return (
               <div key={item.id}>
                 {isOpen && showSection && (
-                  <div className="text-xs text-slate-500 uppercase tracking-wider px-3 pt-4 pb-1 font-semibold">
+                  <div className="text-xs text-slate-500 uppercase tracking-wider px-3 pt-3 pb-1 font-semibold">
                     {item.section}
                   </div>
                 )}
                 {!isOpen && showSection && <div className="border-t border-slate-700 my-2 mx-2" />}
                 <button
                   onClick={() => setCurrentPage(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all ${
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
                     currentPage === item.id
                       ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
                       : 'text-slate-300 hover:bg-slate-700/50 hover:text-white'
@@ -84,7 +94,7 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
                   title={!isOpen ? item.label : undefined}
                 >
                   <span className="flex-shrink-0">{item.icon}</span>
-                  {isOpen && <span className="whitespace-nowrap">{item.label}</span>}
+                  {isOpen && <span className="whitespace-nowrap truncate">{item.label}</span>}
                 </button>
               </div>
             );

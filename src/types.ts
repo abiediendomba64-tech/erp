@@ -103,6 +103,154 @@ export interface User {
   role: UserRole;
 }
 
+// ============ ERP MODULES ============
+
+// STOK BARANG
+export interface StokBarang {
+  id: string;
+  kode: string;
+  nama: string;
+  kategori: 'Bahan_Baku' | 'Barang_Jadi' | 'Barang_Dagang' | 'Perlengkapan';
+  satuan: string;
+  stok_awal: number;
+  masuk: number;
+  keluar: number;
+  stok_akhir: number;
+  harga_pokok: number;
+  harga_jual: number;
+  min_stok: number;
+  lokasi: string;
+}
+
+// PRODUKSI
+export interface Produksi {
+  id: string;
+  no_produksi: string;
+  tanggal: string;
+  produk: string;
+  jumlah: number;
+  bahan_baku: { barang_id: string; jumlah: number }[];
+  biaya_tenaga_kerja: number;
+  biaya_overhead: number;
+  total_biaya: number;
+  status: 'Draft' | 'Dalam_Proses' | 'Selesai' | 'Batal';
+  catatan: string;
+}
+
+// PENJUALAN
+export interface Penjualan {
+  id: string;
+  no_invoice: string;
+  tanggal: string;
+  pelanggan: string;
+  items: { barang_id: string; jumlah: number; harga: number; subtotal: number }[];
+  total: number;
+  diskon: number;
+  ppn: number;
+  grand_total: number;
+  status_bayar: 'Lunas' | 'Belum_Bayar' | 'DP' | 'Jatuh_Tempo';
+  metode_bayar: 'Tunai' | 'Transfer' | 'Kredit';
+  jatuh_tempo: string;
+}
+
+// PEMBELIAN
+export interface Pembelian {
+  id: string;
+  no_po: string;
+  tanggal: string;
+  supplier: string;
+  items: { barang_id: string; jumlah: number; harga: number; subtotal: number }[];
+  total: number;
+  ppn: number;
+  grand_total: number;
+  status_bayar: 'Lunas' | 'Belum_Bayar' | 'DP';
+  status_terima: 'Belum' | 'Sebagian' | 'Lengkap';
+  jatuh_tempo: string;
+}
+
+// PENGGAJIAN
+export interface Penggajian {
+  id: string;
+  nip: string;
+  nama: string;
+  jabatan: string;
+  departemen: string;
+  gaji_pokok: number;
+  tunjangan: number;
+  lembur: number;
+  potongan: number;
+  pph21: number;
+  gaji_bersih: number;
+  periode: string;
+  status: 'Draft' | 'Disetujui' | 'Dibayar';
+}
+
+// ANGGARAN
+export interface Anggaran {
+  id: string;
+  kategori: string;
+  anggaran: number;
+  realisasi: number;
+  sisa: number;
+  persentase: number;
+  periode: string;
+  catatan: string;
+}
+
+// ARUS KAS
+export interface ArusKas {
+  id: string;
+  tanggal: string;
+  keterangan: string;
+  kategori: 'Operasional' | 'Investasi' | 'Pendanaan';
+  masuk: number;
+  keluar: number;
+  saldo: number;
+  referensi: string;
+}
+
+// OCR / VISION AI
+export interface OCRResult {
+  id: string;
+  timestamp: string;
+  image_url: string;
+  jenis_dokumen: 'Kwitansi' | 'Nota' | 'Transfer_Bank' | 'Lainnya';
+  data_ekstrak: {
+    penerima?: string;
+    nominal?: number;
+    tanggal?: string;
+    nomor_bukti?: string;
+    keterangan?: string;
+  };
+  confidence: number;
+  status: 'Pending' | 'Terverifikasi' | 'Ditolak';
+  catatan: string;
+}
+
+// WHATSAPP INTEGRATION
+export interface WhatsAppLog {
+  id: string;
+  timestamp: string;
+  nomor: string;
+  nama: string;
+  pesan_masuk: string;
+  respon_sistem: string;
+  tipe: 'Input_Transaksi' | 'Konfirmasi' | 'Laporan' | 'Reminder';
+  status: 'Terkirim' | 'Diproses' | 'Gagal';
+}
+
+// MENU CONFIGURATION
+export interface MenuItem {
+  id: string;
+  label: string;
+  icon: string;
+  page: string;
+  order: number;
+  visible: boolean;
+  parent?: string;
+  role_access: UserRole[];
+}
+
 // ============ DASHBOARD SUMMARY ============
 export interface DashboardSummary {
   total_kas_masuk: number;
