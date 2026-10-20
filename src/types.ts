@@ -31,11 +31,13 @@ export interface PosKewajiban {
   id: string;
   kode_utang: string;
   pihak: string;
-  nilai_menurut_dokumen: number;
-  nilai_menurut_workbook: number;
+  nilai_menurut_dokumen: number; // Nilai total menurut dokumen
+  nilai_menurut_workbook: number; // Nilai total menurut workbook
+  dp_dibayar: number; // DP yang sudah dibayar
   status: 'Sepakat' | 'Dalam_Penelusuran' | 'Sengketa';
   keterangan: string;
-  // COMPUTED: selisih = nilai_menurut_workbook - nilai_menurut_dokumen
+  // COMPUTED: sisa_utang = nilai_menurut_dokumen - dp_dibayar
+  // COMPUTED: selisih_rekonsiliasi = nilai_menurut_workbook - nilai_menurut_dokumen
 }
 
 // ============ AUDIT LOG ============

@@ -1,6 +1,6 @@
 import { useAppContext } from '../store';
 import { formatRupiah } from '../data';
-import { getPosKewajibanSelisih } from '../helpers';
+import { getPosKewajibanSisaUtang, getPosKewajibanSelisihRekonsiliasi } from '../helpers';
 import { Scale, CheckCircle } from 'lucide-react';
 
 export default function PosKewajibanPage() {
@@ -33,12 +33,12 @@ export default function PosKewajibanPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {state.posKewajiban.map(p => {
-                const sisa = getPosKewajibanSelisih(p);
+                const sisa = getPosKewajibanSisaUtang(p);
                 return (
                   <tr key={p.id} className="hover:bg-gray-50 bg-amber-50/30">
                     <td className="px-4 py-3 font-medium text-gray-900">{p.pihak}</td>
                     <td className="px-4 py-3 text-right">{formatRupiah(p.nilai_menurut_dokumen)}</td>
-                    <td className="px-4 py-3 text-right text-emerald-600">{formatRupiah(p.nilai_menurut_dokumen - sisa)}</td>
+                    <td className="px-4 py-3 text-right text-emerald-600">{formatRupiah(p.dp_dibayar)}</td>
                     <td className="px-4 py-3 text-right font-bold text-red-600">{formatRupiah(sisa)}</td>
                     <td className="px-4 py-3 text-center"><span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full">Belum Lunas</span></td>
                   </tr>
@@ -49,8 +49,8 @@ export default function PosKewajibanPage() {
               <tr>
                 <td className="px-4 py-3 font-bold text-gray-700">TOTAL UTANG TANAH</td>
                 <td className="px-4 py-3 text-right font-bold">{formatRupiah(totalDokumen)}</td>
-                <td className="px-4 py-3 text-right font-bold text-emerald-600">{formatRupiah(totalDokumen - state.posKewajiban.reduce((s, p) => s + getPosKewajibanSelisih(p), 0))}</td>
-                <td className="px-4 py-3 text-right font-bold text-red-600">{formatRupiah(state.posKewajiban.reduce((s, p) => s + getPosKewajibanSelisih(p), 0))}</td>
+                <td className="px-4 py-3 text-right font-bold text-emerald-600">{formatRupiah(state.posKewajiban.reduce((s, p) => s + p.dp_dibayar, 0))}</td>
+                <td className="px-4 py-3 text-right font-bold text-red-600">{formatRupiah(state.posKewajiban.reduce((s, p) => s + getPosKewajibanSisaUtang(p), 0))}</td>
                 <td></td>
               </tr>
             </tfoot>
