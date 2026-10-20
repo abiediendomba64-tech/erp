@@ -9,8 +9,18 @@ import PosKewajibanPage from './pages/PosKewajibanPage';
 import TanahPage from './pages/TanahPage';
 import BekoPage from './pages/BekoPage';
 import AuditLogPage from './pages/AuditLogPage';
+import LaporanPage from './pages/LaporanPage';
+import StokPage from './pages/StokPage';
+import ProduksiPage from './pages/ProduksiPage';
+import PenjualanPage from './pages/PenjualanPage';
+import PembelianPage from './pages/PembelianPage';
+import PenggajianPage from './pages/PenggajianPage';
+import AnggaranPage from './pages/AnggaranPage';
+import OCRPage from './pages/OCRPage';
+import WhatsAppPage from './pages/WhatsAppPage';
+import MenuConfigPage from './pages/MenuConfigPage';
 
-export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog';
+export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'ocr' | 'whatsapp' | 'menuconfig';
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
@@ -27,6 +37,16 @@ function AppContent() {
       case 'tanah': return <TanahPage />;
       case 'beko': return <BekoPage />;
       case 'auditlog': return <AuditLogPage />;
+      case 'laporan': return <LaporanPage />;
+      case 'stok': return <StokPage />;
+      case 'produksi': return <ProduksiPage />;
+      case 'penjualan': return <PenjualanPage />;
+      case 'pembelian': return <PembelianPage />;
+      case 'penggajian': return <PenggajianPage />;
+      case 'anggaran': return <AnggaranPage />;
+      case 'ocr': return <OCRPage />;
+      case 'whatsapp': return <WhatsAppPage />;
+      case 'menuconfig': return <MenuConfigPage />;
       default: return <Dashboard />;
     }
   };

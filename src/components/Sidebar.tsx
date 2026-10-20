@@ -1,6 +1,8 @@
 import {
   LayoutDashboard, BookOpen, FolderArchive, Scale,
-  LandPlot, Truck, History, FileBarChart, Menu, X, Shield
+  LandPlot, Truck, History, FileBarChart, Menu, X,
+  Package, Factory, ShoppingCart, Users, PieChart,
+  Scan, MessageCircle, Settings, DollarSign, Shield
 } from 'lucide-react';
 import { Page } from '../App';
 
@@ -17,12 +19,22 @@ interface SidebarProps {
 const adminMenu: { id: Page; label: string; icon: React.ReactNode; section: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={20} />, section: 'Utama' },
   { id: 'auditrekap', label: 'Audit Rekap', icon: <FileBarChart size={20} />, section: 'Utama' },
-  { id: 'tanah', label: 'Register Tanah', icon: <LandPlot size={20} />, section: 'Data' },
-  { id: 'beko', label: 'Rincian Beko', icon: <Truck size={20} />, section: 'Data' },
+  { id: 'laporan', label: 'Laporan', icon: <FileBarChart size={20} />, section: 'Utama' },
+  { id: 'tanah', label: 'Register Tanah', icon: <LandPlot size={20} />, section: 'Audit' },
+  { id: 'beko', label: 'Rincian Beko', icon: <Truck size={20} />, section: 'Audit' },
   { id: 'bukukas', label: 'Buku Kas (L1)', icon: <BookOpen size={20} />, section: '3 Lapisan' },
   { id: 'arsipbukti', label: 'Arsip Bukti (L2)', icon: <FolderArchive size={20} />, section: '3 Lapisan' },
   { id: 'poskewajiban', label: 'Utang Tanah (L3)', icon: <Scale size={20} />, section: '3 Lapisan' },
+  { id: 'stok', label: 'Stok Barang', icon: <Package size={20} />, section: 'ERP' },
+  { id: 'produksi', label: 'Produksi', icon: <Factory size={20} />, section: 'ERP' },
+  { id: 'penjualan', label: 'Penjualan', icon: <ShoppingCart size={20} />, section: 'ERP' },
+  { id: 'pembelian', label: 'Pembelian', icon: <Truck size={20} />, section: 'ERP' },
+  { id: 'penggajian', label: 'Penggajian', icon: <DollarSign size={20} />, section: 'ERP' },
+  { id: 'anggaran', label: 'Anggaran', icon: <PieChart size={20} />, section: 'ERP' },
+  { id: 'ocr', label: 'OCR / Vision AI', icon: <Scan size={20} />, section: 'Integrasi' },
+  { id: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle size={20} />, section: 'Integrasi' },
   { id: 'auditlog', label: 'Audit Log', icon: <History size={20} />, section: 'Sistem' },
+  { id: 'menuconfig', label: 'Konfigurasi', icon: <Settings size={20} />, section: 'Sistem' },
 ];
 
 // Menu untuk CLIENT/VIEWER (read-only, tidak ada data sensitif)
