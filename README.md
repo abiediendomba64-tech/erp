@@ -39,60 +39,25 @@ Repository berisi aplikasi React untuk akuntansi dan operasional proyek, serta i
 
 > Laporan harus direkonsiliasi dengan bukti transaksi, saldo awal, persediaan/HPP, pajak, dan aset tetap sebelum dipakai untuk keputusan resmi.
 
-## 📊 STATUS IMPLEMENTASI
+## 📊 Status Implementasi
 
-### **✅ Yang SUDAH BERFUNGSI (100% Working)**
+### Perbaikan inti pada branch ini
+- State akuntansi bertahan setelah navigasi dan reload pada browser yang sama.
+- Data contoh jurnal/invoice/PO/RAB/schedule di modul akuntansi dihapus sebagai nilai awal; data akuntansi baru dimulai kosong.
+- Laba rugi dan arus kas memakai jurnal Posted sesuai periode; neraca memakai saldo kumulatif hingga tanggal laporan.
+- Input nominal menerima format Indonesia, misalnya 750.000, dan divalidasi sebelum jurnal disimpan.
+- Export laporan menghasilkan file CSV nyata, bukan alert placeholder.
+- Endpoint Apps Script untuk GET akun/transaksi/laporan dan POST transaksi/reversal sudah diselaraskan, tetapi perlu uji pada deployment dan spreadsheet nyata.
 
-#### **1. Core Accounting Functions**
-- ✅ **Parser Angka Indonesia** - Support semua format
-- ✅ **Double-Entry Bookkeeping** - Debit = Kredit selalu balance
-- ✅ **Transaction Guard** - Anti-duplikasi dengan idempotency key
-- ✅ **Laporan Keuangan** - Laba Rugi, Neraca, Arus Kas auto-generate
-- ✅ **Chart of Accounts** - 30+ akun standar
+### Belum terbukti / belum tersedia penuh
+- Belum ada cloud database multi-user yang menjadi source of truth untuk seluruh UI.
+- Belum ada autentikasi dan otorisasi produksi yang kuat pada backend keuangan.
+- OCR serta upload Google Drive belum diverifikasi end-to-end.
+- UI OCR/WhatsApp masih memiliki bagian rancangan dan seed data.
+- Belum ada validasi independen untuk klaim kepatuhan PSAK atau kesiapan audit.
+- Persediaan/HPP, aset tetap, penyusutan, pajak, dan closing period masih butuh pengembangan dan pengujian.
 
-#### **2. Data Management**
-- ✅ **Input Transaksi Manual** - 7 jenis transaksi
-- ✅ **Input Data Master** - Tanah, Beko, Pelanggan, Supplier
-- ✅ **Invoice & Purchase Order** - Multi-item, auto-calculate
-- ✅ **Alokasi Dana** - Per periode dengan detail
-- ✅ **Export CSV/Excel/JSON** - Backup dan reporting
-
-#### **3. UI/UX**
-- ✅ **Dashboard Akuntansi** - Real-time metrics
-- ✅ **Form Input** - Validasi, preview jurnal
-- ✅ **Responsive Design** - Mobile, tablet, desktop
-- ✅ **Multi-role** - Admin, Keuangan, Proyek, Viewer
-
-#### **4. Backend (Full Google Stack)**
-- ✅ **Google Apps Script** - Backend API (20,000 calls/hari)
-- ✅ **Google Sheets** - Database cloud (unlimited)
-- ✅ **Gemini API** - OCR kwitansi (1,500 requests/hari)
-- ✅ **Google Drive** - File storage (15 GB)
-- ✅ **WhatsApp/Telegram** - Auto-input webhook
-
----
-
-### **⚠️ Yang PERLU SETUP (Tapi Kode Sudah Ada)**
-
-#### **1. OCR Gemini**
-- ✅ Kode sudah ada di `google-apps-script/Code.gs`
-- ⚠️ Perlu: Gemini API key dari aistudio.google.com
-- ⚠️ Perlu: Deploy Apps Script sebagai Web App
-- **Waktu setup:** 30 menit
-
-#### **2. WhatsApp/Telegram Integration**
-- ✅ Kode sudah ada di `google-apps-script/Code.gs`
-- ⚠️ Perlu: WhatsApp Business API atau Telegram Bot Token
-- ⚠️ Perlu: Setup webhook
-- **Waktu setup:** 1-2 jam
-
-#### **3. Frontend-Backend Integration**
-- ✅ API service sudah ada di `src/services/api.ts`
-- ⚠️ Perlu: Update URL deployment
-- ⚠️ Perlu: Ganti localStorage dengan API calls
-- **Waktu setup:** 1 jam
-
----
+**Jangan gunakan seed data atau laporan sistem untuk keputusan pajak/audit sebelum direkonsiliasi dengan dokumen asli dan diperiksa akuntan.**
 
 ## 📝 CARA INPUT & UPDATE DATA
 
