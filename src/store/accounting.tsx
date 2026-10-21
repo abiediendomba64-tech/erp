@@ -82,7 +82,14 @@ function loadInitialState(): AccountingState {
       jurnal: Array.isArray(saved.jurnal) ? saved.jurnal : [],
       invoice: Array.isArray(saved.invoice) ? saved.invoice : [],
       purchaseOrder: Array.isArray(saved.purchaseOrder) ? saved.purchaseOrder : [],
-      rab: Array.isArray(saved.rab) ? saved.rab : [],
+      rab: Array.isArray(saved.rab) ? saved.rab.filter((record: RAB) => !(
+        record.id === 'RAB-001' &&
+        record.nama_proyek === 'Pembangunan Gudang' &&
+        record.tanggal === '2026-01-01' &&
+        record.total_biaya === 23000000 &&
+        record.items?.length === 5 &&
+        record.items[0]?.deskripsi === 'Semen'
+      )) : [],
       schedule: Array.isArray(saved.schedule) ? saved.schedule : [],
     };
   } catch (error) {
