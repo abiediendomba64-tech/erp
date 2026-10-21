@@ -1,283 +1,131 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useAppContext } from '../store';
 import { formatRupiah } from '../data';
-import { semuaPeriode, rekapitulasi, temuanAudit, PeriodeDana, AlokasiItem } from '../data/alokasiDana';
-import { AlertTriangle, CheckCircle, XCircle, Clock, DollarSign, TrendingUp, FileWarning } from 'lucide-react';
+import { getBukuKasVerificationStatus } from '../helpers';
+import { AlertTriangle, CheckCircle, FileWarning, DollarSign, Download } from 'lucide-react';
+
+type PeriodSummary = {
+  month: string;
+  records: typeof initialType[];
+  in: number;
+  out: number;
+  opening: number;
+  closing: number;
+  missingEvidence: number;
+};
+type initialType = ReturnType<typeof getEmptyRecord>;
+
+function getEmptyRecord() {
+  return {
+    id: '', tgl: '', no_ref: '', kode_bukti: '', keterangan: '',
+    kategori: 'Operasional' as const, proyek: '', masuk: 0, keluar: 0,
+    status_verifikasi: 'PERLU_KONFIRMASI' as const
+  };
+}
 
 export default function AlokasiDanaPage() {
-  const [selectedPeriode, setSelectedPeriode] = useState<PeriodeDana | null>(null);
-  const [showDetail, setShowDetail] = useState(false);
+  const { state } = useAppContext();
+  const [expandedMonth, setExpandedMonth] = useState<string | null>(null);
 
-  const kategoriColor = (kategori: string) => {
-    switch (kategori) {
-      case 'tanah': return 'bg-blue-100 text-blue-700';
-      case 'beko': return 'bg-orange-100 text-orange-700';
-      case 'material': return 'bg-purple-100 text-purple-700';
-      case 'pajak': return 'bg-red-100 text-red-700';
-      case 'biaya_pt': return 'bg-pink-100 text-pink-700';
-      case 'lainnya': return 'bg-gray-100 text-gray-700';
-      default: return 'bg-gray-100 text-gray-700';
-    }
-  };
+  const totalIn = state.bukuKas.reduce((sum, row) => sum + Math.max(0, Number(row.masuk) || 0), 0);
+  const totalOut = state.bukuKas.reduce((sum, row) => sum + Math.max(0, Number(row.keluar) || 0), 0);
+  const totalMissingEvidence = state.bukuKas.filter(row =>
+    getBukuKasVerificationStatus(row, state.arsipBukti) !== 'LENGKAP'
+  ).length;
 
-  const statusIcon = (status: string) => {
-    switch (status) {
-      case 'terbayar': return <CheckCircle size={16} className="text-emerald-500" />;
-      case 'belum_terbayar': return <XCircle size={16} className="text-red-500" />;
-      case 'dalam_proses': return <Clock size={16} className="text-amber-500" />;
-      case 'deal': return <Clock size={16} className="text-blue-500" />;
-      default: return null;
+  const periods = useMemo(() => {
+    const monthMap = new Map<string, PeriodSummary>();
+    const sorted = state.bukuKas.slice().sort((a, b) => a.tgl.localeCompare(b.tgl) || a.id.localeCompare(b.id));
+    for (const row of sorted) {
+      const month = /^\d{4}-\d{2}/.test(row.tgl) ? row.tgl.slice(0, 7) : 'Tanggal tidak valid';
+      if (!monthMap.has(month)) {
+        monthMap.set(month, { month, records: [], in: 0, out: 0, opening: 0, closing: 0, missingEvidence: 0 });
+      }
+      const group = monthMap.get(month)!;
+      group.records.push(row);
+      group.in += Math.max(0, Number(row.masuk) || 0);
+      group.out += Math.max(0, Number(row.keluar) || 0);
+      if (getBukuKasVerificationStatus(row, state.arsipBukti) !== 'LENGKAP') group.missingEvidence++;
     }
-  };
 
-  const statusColor = (status: string) => {
-    switch (status) {
-      case 'terbayar': return 'bg-emerald-100 text-emerald-800';
-      case 'belum_terbayar': return 'bg-red-100 text-red-800';
-      case 'dalam_proses': return 'bg-amber-100 text-amber-800';
-      case 'deal': return 'bg-blue-100 text-blue-800';
-      default: return 'bg-gray-100 text-gray-800';
+    let running = 0;
+    const result: PeriodSummary[] = [];
+    for (const group of [...monthMap.values()].sort((a, b) => a.month.localeCompare(b.month))) {
+      group.opening = running;
+      running += group.in - group.out;
+      group.closing = running;
+      result.push(group);
     }
-  };
+    return result;
+  }, [state.bukuKas, state.arsipBukti]);
 
-  const severityColor = (severity: string) => {
-    switch (severity) {
-      case 'HIGH': return 'bg-red-100 text-red-800 border-red-300';
-      case 'MEDIUM': return 'bg-amber-100 text-amber-800 border-amber-300';
-      case 'LOW': return 'bg-blue-100 text-blue-800 border-blue-300';
-      default: return 'bg-gray-100 text-gray-800 border-gray-300';
+  const categoryOutflow = useMemo(() => {
+    const values = new Map<string, number>();
+    for (const row of state.bukuKas) {
+      const category = row.kategori.replace(/_/g, ' ');
+      values.set(category, (values.get(category) || 0) + Math.max(0, Number(row.keluar) || 0));
     }
+    return [...values.entries()].sort((a, b) => b[1] - a[1]);
+  }, [state.bukuKas]);
+
+  const exportCsv = () => {
+    const rows: (string | number)[][] = [
+      ['REKAP KAS PER PERIODE', 'Nilai dari buku kas input; bukan budget approval / alokasi rencana'],
+      ['Bulan', 'Saldo awal catatan', 'Kas masuk', 'Kas keluar', 'Saldo akhir catatan', 'Baris tanpa bukti lengkap'],
+      ...periods.map(period => [period.month, period.opening, period.in, period.out, period.closing, period.missingEvidence]),
+      [],
+      ['RINCIAN TRANSAKSI'],
+      ['Tanggal', 'ID', 'Referensi', 'Keterangan', 'Kategori', 'Proyek', 'Masuk', 'Keluar', 'Status bukti'],
+      ...state.bukuKas.slice().sort((a, b) => a.tgl.localeCompare(b.tgl)).map(row => [
+        row.tgl, row.id, row.no_ref, row.keterangan, row.kategori, row.proyek,
+        row.masuk, row.keluar, getBukuKasVerificationStatus(row, state.arsipBukti)
+      ])
+    ];
+    const escape = (value: string | number) => '"' + String(value ?? '').replace(/"/g, '""') + '"';
+    const csv = '\uFEFF' + rows.map(row => row.map(escape).join(';')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'rekap-kas-periode.csv';
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
   };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-          <DollarSign size={24} className="text-emerald-500" />
-          Rincian Alokasi Dana Per Periode
-        </h1>
-        <p className="text-gray-500 mt-1">Perhitungan detail berdasarkan klarifikasi pengguna - semua angka bisa diverifikasi</p>
-      </div>
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div><h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900"><DollarSign size={24} className="text-emerald-600" />Rekap Dana per Periode</h1><p className="mt-1 text-gray-500">Dihitung dari transaksi buku kas aktual yang tersimpan. Anggaran rencana/komitmen belum dianggap sebagai pengeluaran sampai dicatat.</p></div>
+        <button onClick={exportCsv} className="inline-flex items-center justify-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm hover:bg-gray-50"><Download size={16} />Ekspor CSV</button>
+      </header>
 
-      {/* TEMUAN AUDIT */}
-      <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-        <h3 className="font-semibold text-red-800 flex items-center gap-2 mb-3">
-          <AlertTriangle size={18} />
-          Temuan Audit - Perlu Klarifikasi
-        </h3>
-        <div className="space-y-2">
-          {temuanAudit.map(temuan => (
-            <div key={temuan.id} className={`p-3 rounded-lg border ${severityColor(temuan.severity)}`}>
-              <div className="flex items-start gap-2">
-                <span className="text-xs font-bold px-2 py-0.5 rounded bg-white">{temuan.severity}</span>
-                <div className="flex-1">
-                  <p className="font-medium text-sm">{temuan.judul}</p>
-                  <p className="text-xs mt-1">{temuan.deskripsi}</p>
-                  {'selisih' in temuan && temuan.selisih !== undefined && (
-                    <p className="text-xs font-mono mt-1">
-                      Selisih: <span className="font-bold">{formatRupiah(Math.abs(temuan.selisih))}</span>
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <section className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+        <p className="flex items-center gap-2 font-semibold"><AlertTriangle size={17} />Pemisahan data</p>
+        <p className="mt-1">Halaman ini menampilkan penerimaan/pengeluaran dari Buku Kas, bukan alokasi lama yang ditulis tetap di kode. Baris lama masih merupakan rekap input dan tetap perlu dipasangkan dengan bukti asli. Untuk rencana anggaran yang belum dibayar, gunakan modul Anggaran atau catatan kewajiban, bukan mengurangkannya dari kas.</p>
+      </section>
 
-      {/* REKAPITULASI */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <TrendingUp size={18} className="text-emerald-500" />
-          Rekapitulasi Keseluruhan
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
-            <p className="text-xs text-emerald-600">Total Dana Masuk</p>
-            <p className="text-xl font-bold text-emerald-700">{formatRupiah(rekapitulasi.total_dana_masuk)}</p>
-            <p className="text-xs text-emerald-500 mt-1">6 periode (termasuk dana awal 204jt)</p>
-          </div>
-          <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-            <p className="text-xs text-blue-600">Total Alokasi</p>
-            <p className="text-xl font-bold text-blue-700">{formatRupiah(rekapitulasi.total_alokasi)}</p>
-            <p className="text-xs text-blue-500 mt-1">Semua periode digabung</p>
-          </div>
-          <div className={`rounded-lg p-4 border ${rekapitulasi.total_sisa >= 0 ? 'bg-indigo-50 border-indigo-200' : 'bg-red-50 border-red-200'}`}>
-            <p className="text-xs text-gray-600">Total Sisa</p>
-            <p className={`text-xl font-bold ${rekapitulasi.total_sisa >= 0 ? 'text-indigo-700' : 'text-red-700'}`}>
-              {formatRupiah(rekapitulasi.total_sisa)}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {rekapitulasi.total_sisa >= 0 ? 'Masih ada sisa' : 'OVER ALLOCATION!'}
-            </p>
-          </div>
-        </div>
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Kas masuk tercatat</p><p className="mt-2 text-xl font-bold text-emerald-700">{formatRupiah(totalIn)}</p></div>
+        <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Kas keluar tercatat</p><p className="mt-2 text-xl font-bold text-red-700">{formatRupiah(totalOut)}</p></div>
+        <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Saldo catatan kumulatif</p><p className={`mt-2 text-xl font-bold ${totalIn - totalOut < 0 ? 'text-red-700' : 'text-indigo-700'}`}>{formatRupiah(totalIn - totalOut)}</p></div>
+        <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Transaksi tanpa bukti lengkap</p><p className="mt-2 text-xl font-bold text-amber-700">{totalMissingEvidence}</p></div>
+      </section>
 
-        {/* Per Kategori */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <div className="bg-blue-50 rounded-lg p-3">
-            <p className="text-xs text-blue-600">Tanah</p>
-            <p className="font-bold text-blue-700">{formatRupiah(rekapitulasi.total_tanah)}</p>
-          </div>
-          <div className="bg-orange-50 rounded-lg p-3">
-            <p className="text-xs text-orange-600">Beko</p>
-            <p className="font-bold text-orange-700">{formatRupiah(rekapitulasi.total_beko)}</p>
-          </div>
-          <div className="bg-purple-50 rounded-lg p-3">
-            <p className="text-xs text-purple-600">Material</p>
-            <p className="font-bold text-purple-700">{formatRupiah(rekapitulasi.total_material)}</p>
-          </div>
-          <div className="bg-red-50 rounded-lg p-3">
-            <p className="text-xs text-red-600">Pajak</p>
-            <p className="font-bold text-red-700">{formatRupiah(rekapitulasi.total_pajak)}</p>
-          </div>
-          <div className="bg-pink-50 rounded-lg p-3">
-            <p className="text-xs text-pink-600">Biaya PT</p>
-            <p className="font-bold text-pink-700">{formatRupiah(rekapitulasi.total_biaya_pt)}</p>
-          </div>
-          <div className="bg-gray-50 rounded-lg p-3">
-            <p className="text-xs text-gray-600">Lainnya</p>
-            <p className="font-bold text-gray-700">{formatRupiah(rekapitulasi.total_lainnya)}</p>
-          </div>
-        </div>
-      </div>
+      <section className="rounded-xl border bg-white">
+        <div className="border-b p-4"><h2 className="font-semibold">Periode bulanan dari tanggal transaksi</h2><p className="mt-1 text-xs text-gray-500">Saldo awal setiap bulan dibawa dari saldo akhir bulan sebelumnya.</p></div>
+        <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm">
+          <thead className="border-b bg-gray-50"><tr><th className="px-4 py-3 text-left">Bulan</th><th className="px-4 py-3 text-right">Saldo awal</th><th className="px-4 py-3 text-right">Masuk</th><th className="px-4 py-3 text-right">Keluar</th><th className="px-4 py-3 text-right">Saldo akhir</th><th className="px-4 py-3 text-center">Bukti belum lengkap</th><th className="px-4 py-3 text-right">Rincian</th></tr></thead>
+          <tbody className="divide-y">
+            {periods.map(period => <tr key={period.month} className="hover:bg-gray-50">
+              <td className="px-4 py-3 font-semibold">{period.month}</td><td className="px-4 py-3 text-right">{formatRupiah(period.opening)}</td><td className="px-4 py-3 text-right text-emerald-700">{formatRupiah(period.in)}</td><td className="px-4 py-3 text-right text-red-700">{formatRupiah(period.out)}</td><td className={`px-4 py-3 text-right font-semibold ${period.closing < 0 ? 'text-red-700' : ''}`}>{formatRupiah(period.closing)}</td><td className="px-4 py-3 text-center">{period.missingEvidence ? <span className="inline-flex items-center gap-1 text-amber-800"><FileWarning size={14} />{period.missingEvidence}</span> : <span className="inline-flex items-center gap-1 text-emerald-700"><CheckCircle size={14} />0</span>}</td><td className="px-4 py-3 text-right"><button onClick={() => setExpandedMonth(expandedMonth === period.month ? null : period.month)} className="rounded border px-3 py-1 hover:bg-gray-100">{expandedMonth === period.month ? 'Tutup' : 'Lihat'}</button></td>
+            </tr>)}
+            {periods.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-gray-500">Belum ada transaksi buku kas.</td></tr>}
+          </tbody>
+        </table></div>
+      </section>
 
-      {/* DETAIL PER PERIODE */}
-      <div className="space-y-4">
-        <h3 className="font-semibold text-gray-900">Detail Per Periode</h3>
-        
-        {semuaPeriode.map((periode) => {
-          const isOver = periode.sisa < 0;
-          return (
-            <div key={periode.id} className={`bg-white rounded-xl shadow-sm border ${isOver ? 'border-red-300' : 'border-gray-100'}`}>
-              <div 
-                className={`p-4 cursor-pointer hover:bg-gray-50 ${isOver ? 'bg-red-50' : ''}`}
-                onClick={() => {
-                  setSelectedPeriode(periode);
-                  setShowDetail(!showDetail || selectedPeriode?.id !== periode.id);
-                }}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg ${isOver ? 'bg-red-100 text-red-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                      {periode.nomor}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-gray-900">Periode {periode.nomor} - {periode.tanggal}</p>
-                      <p className="text-sm text-gray-500">{periode.alokasi.length} alokasi</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-gray-500">Dana</p>
-                    <p className="font-bold text-gray-900">{formatRupiah(periode.jumlah_dana)}</p>
-                    <p className={`text-sm font-bold ${isOver ? 'text-red-600' : periode.sisa > 0 ? 'text-emerald-600' : 'text-gray-500'}`}>
-                      Sisa: {formatRupiah(periode.sisa)}
-                    </p>
-                  </div>
-                </div>
-                
-                {isOver && (
-                  <div className="mt-2 p-2 bg-red-100 rounded text-xs text-red-700 flex items-center gap-2">
-                    <AlertTriangle size={14} />
-                    <span>OVER ALLOCATION: Alokasi melebihi dana sebesar {formatRupiah(Math.abs(periode.sisa))}</span>
-                  </div>
-                )}
-              </div>
+      {expandedMonth && periods.filter(period => period.month === expandedMonth).map(period => <section key={period.month} className="rounded-xl border bg-white p-4"><h2 className="font-semibold">Transaksi {period.month}</h2><div className="mt-3 overflow-x-auto"><table className="w-full min-w-[850px] text-sm"><thead className="bg-gray-50"><tr><th className="px-3 py-2 text-left">Tanggal</th><th className="px-3 py-2 text-left">Keterangan</th><th className="px-3 py-2 text-left">Kategori</th><th className="px-3 py-2 text-right">Masuk</th><th className="px-3 py-2 text-right">Keluar</th><th className="px-3 py-2 text-left">Status bukti</th></tr></thead><tbody className="divide-y">{period.records.map(row => <tr key={row.id}><td className="px-3 py-2">{row.tgl}</td><td className="px-3 py-2">{row.keterangan}<p className="text-xs text-gray-500">{row.id} · {row.no_ref}</p></td><td className="px-3 py-2">{row.kategori.replace(/_/g, ' ')}</td><td className="px-3 py-2 text-right text-emerald-700">{row.masuk ? formatRupiah(row.masuk) : '—'}</td><td className="px-3 py-2 text-right text-red-700">{row.keluar ? formatRupiah(row.keluar) : '—'}</td><td className="px-3 py-2">{getBukuKasVerificationStatus(row, state.arsipBukti).replace(/_/g, ' ')}</td></tr>)}</tbody></table></div></section>)}
 
-              {showDetail && selectedPeriode?.id === periode.id && (
-                <div className="border-t border-gray-200 p-4">
-                  <div className="space-y-2">
-                    {periode.alokasi.map((alokasi) => (
-                      <div key={alokasi.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                        <div className="flex-shrink-0">{statusIcon(alokasi.status)}</div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`text-xs px-2 py-0.5 rounded ${kategoriColor(alokasi.kategori)}`}>
-                              {alokasi.kategori.replace('_', ' ')}
-                            </span>
-                            <span className={`text-xs px-2 py-0.5 rounded ${statusColor(alokasi.status)}`}>
-                              {alokasi.status.replace('_', ' ')}
-                            </span>
-                          </div>
-                          <p className="font-medium text-gray-900">{alokasi.keterangan}</p>
-                          <p className="text-sm text-gray-600">Penerima: {alokasi.penerima}</p>
-                          <p className="text-xs text-gray-500 mt-1">{alokasi.catatan}</p>
-                          {alokasi.bukti && (
-                            <p className="text-xs text-gray-400 mt-1">Bukti: {alokasi.bukti}</p>
-                          )}
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-gray-900">{formatRupiah(alokasi.nominal)}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  <div className="mt-4 p-3 bg-indigo-50 rounded-lg border border-indigo-200">
-                    <p className="text-sm text-indigo-800">
-                      <strong>Catatan Periode:</strong> {periode.catatan}
-                    </p>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                    <div className="bg-white rounded p-2 border">
-                      <p className="text-xs text-gray-500">Dana</p>
-                      <p className="font-bold text-gray-900">{formatRupiah(periode.jumlah_dana)}</p>
-                    </div>
-                    <div className="bg-white rounded p-2 border">
-                      <p className="text-xs text-gray-500">Terpakai</p>
-                      <p className="font-bold text-blue-600">{formatRupiah(periode.total_terpakai)}</p>
-                    </div>
-                    <div className={`rounded p-2 border ${periode.sisa >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-                      <p className="text-xs text-gray-500">Sisa</p>
-                      <p className={`font-bold ${periode.sisa >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {formatRupiah(periode.sisa)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* VERIFIKASI PERHITUNGAN */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <FileWarning size={18} className="text-amber-500" />
-          Verifikasi Perhitungan
-        </h3>
-        <div className="space-y-3">
-          <div className="p-3 bg-gray-50 rounded-lg">
-            <p className="text-sm font-medium text-gray-700 mb-2">Total Dana Masuk:</p>
-            <div className="text-xs font-mono space-y-1">
-              <p>Periode 0 (sebelum 28 Sep): {formatRupiah(204000000)}</p>
-              <p>Periode 1 (28 Agt): {formatRupiah(32500000)}</p>
-              <p>Periode 2 (30 Sep): {formatRupiah(50000000)}</p>
-              <p>Periode 3 (28 Sep): {formatRupiah(50000000)}</p>
-              <p>Periode 4 (5 Okt): {formatRupiah(60000000)}</p>
-              <p>Periode 5 (13 Okt): {formatRupiah(15000000)}</p>
-              <p className="border-t pt-1 mt-1 font-bold">
-                TOTAL: {formatRupiah(rekapitulasi.total_dana_masuk)}
-              </p>
-            </div>
-          </div>
-
-          <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
-            <p className="text-sm font-medium text-amber-800 mb-2">⚠️ Perbedaan dengan Klaim Pengguna:</p>
-            <div className="text-xs space-y-1">
-              <p>Klaim pengguna: <strong>Rp416.500.000</strong></p>
-              <p>Hasil perhitungan: <strong>{formatRupiah(rekapitulasi.total_dana_masuk)}</strong></p>
-              <p className="font-bold text-red-600">
-                Selisih: {formatRupiah(416500000 - rekapitulasi.total_dana_masuk)}
-              </p>
-              <p className="mt-2 text-amber-700">
-                Perlu klarifikasi: Apakah ada dana lain yang belum tercatat, atau ada kesalahan input?
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+      <section className="rounded-xl border bg-white p-5"><h2 className="font-semibold">Pengeluaran menurut kategori input</h2><p className="mt-1 text-xs text-gray-500">Kategori berasal dari label transaksi kas; bukan pengesahan bahwa dokumen pendukung sudah benar.</p><div className="mt-3 space-y-3">{categoryOutflow.map(([category, amount]) => <div key={category}><div className="mb-1 flex justify-between gap-2 text-sm"><span>{category}</span><strong>{formatRupiah(amount)}</strong></div><div className="h-2 rounded bg-gray-100"><div className="h-2 rounded bg-indigo-500" style={{ width: `${totalOut > 0 ? Math.min(100, amount / totalOut * 100) : 0}%` }} /></div></div>)}{categoryOutflow.length === 0 && <p className="text-sm text-gray-500">Belum ada pengeluaran.</p>}</div></section>
     </div>
   );
 }
