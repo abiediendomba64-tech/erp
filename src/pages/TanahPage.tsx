@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useAppContext } from '../store';
 import { formatRupiah, getLocalDateISO } from '../data';
-import { getTanahNilaiTotal, getTanahSisa, getTanahKelebihanBayar, getRelatedDocuments, hasDocumentEvidence } from '../helpers';
+import { getTanahNilaiTotal, getTanahSisa, getTanahKelebihanBayar, hasKnownLandContractValue, getRelatedDocuments, hasDocumentEvidence } from '../helpers';
 import { AUDIT_CONSTANTS } from '../data';
 import type { Tanah } from '../types';
 import { LandPlot, CheckCircle, AlertTriangle, Plus, Pencil, Save, X, ExternalLink, FileText } from 'lucide-react';
@@ -19,6 +19,7 @@ const emptyForm: Omit<Tanah, 'id'> = {
 };
 
 function paymentStatus(item: Tanah): string {
+  if (!hasKnownLandContractValue(item)) return 'Nilai kontrak belum diketahui';
   const value = getTanahNilaiTotal(item);
   const remaining = getTanahSisa(item);
   const overpaid = getTanahKelebihanBayar(item);
@@ -42,6 +43,7 @@ export default function TanahPage() {
   const totalDibayar = state.tanah.reduce((sum, item) => sum + Math.max(0, item.dp), 0);
   const totalSisa = state.tanah.reduce((sum, item) => sum + getTanahSisa(item), 0);
   const totalKelebihanBayar = state.tanah.reduce((sum, item) => sum + getTanahKelebihanBayar(item), 0);
+  const bidangNilaiBelumDiketahui = state.tanah.filter(item => !hasKnownLandContractValue(item)).length;
 
   const rekapPenjual = useMemo(() => state.tanah.reduce((acc, item) => {
     const nama = item.pemilik.trim() || '(pemilik belum diisi)';
@@ -132,7 +134,7 @@ export default function TanahPage() {
     setEditingId(null);
   };
 
-  const referenceMatches =
+  const referenceMatches = bidangNilaiBelumDiketahui === 0 &&
     totalNilai === AUDIT_CONSTANTS.TOTAL_NILAI_TANAH &&
     totalDibayar === AUDIT_CONSTANTS.TOTAL_DIBAYAR_TANAH &&
     totalSisa === AUDIT_CONSTANTS.TOTAL_UTANG_TANAH;
@@ -159,15 +161,16 @@ export default function TanahPage() {
         <div className="rounded-xl border bg-white p-4"><p className="text-xs text-gray-500">Total luas</p><p className="mt-1 text-xl font-bold">{totalLuas.toLocaleString('id-ID', { maximumFractionDigits: 3 })} BT</p></div>
         <div className="rounded-xl border bg-white p-4"><p className="text-xs text-gray-500">Nilai kesepakatan</p><p className="mt-1 text-xl font-bold text-blue-700">{formatRupiah(totalNilai)}</p></div>
         <div className="rounded-xl border bg-white p-4"><p className="text-xs text-gray-500">Dibayar tercatat</p><p className="mt-1 text-xl font-bold text-emerald-700">{formatRupiah(totalDibayar)}</p></div>
-        <div className="rounded-xl border bg-white p-4"><p className="text-xs text-gray-500">Sisa kewajiban</p><p className="mt-1 text-xl font-bold text-red-700">{formatRupiah(totalSisa)}</p></div>
+        <div className="rounded-xl border bg-white p-4"><p className="text-xs text-gray-500">Sisa dari nilai yang diketahui</p><p className="mt-1 text-xl font-bold text-red-700">{formatRupiah(totalSisa)}</p></div>
       </div>
 
       <div className={`rounded-xl border p-4 ${referenceMatches ? 'border-emerald-200 bg-emerald-50' : 'border-amber-300 bg-amber-50'}`}>
         <div className="flex items-start gap-2">
           {referenceMatches ? <CheckCircle size={18} className="mt-0.5 text-emerald-700" /> : <AlertTriangle size={18} className="mt-0.5 text-amber-700" />}
           <div>
-            <p className="font-semibold">{referenceMatches ? 'Rumus sesuai nilai pembanding laporan lama' : 'Perlu rekonsiliasi terhadap nilai pembanding laporan lama'}</p>
-            <p className="mt-1 text-sm">Nilai terhitung {formatRupiah(totalNilai)} · Dibayar {formatRupiah(totalDibayar)} · Sisa {formatRupiah(totalSisa)}. Selisih pembanding bukan tanda bukti asli telah diverifikasi.</p>
+            <p className="font-semibold">{bidangNilaiBelumDiketahui > 0 ? 'Rekonsiliasi ditunda — nilai kontrak belum diketahui' : referenceMatches ? 'Rumus sesuai nilai pembanding laporan lama' : 'Perlu rekonsiliasi terhadap nilai pembanding laporan lama'}</p>
+            <p className="mt-1 text-sm">Nilai kontrak yang diketahui {formatRupiah(totalNilai)} · Pembayaran tercatat {formatRupiah(totalDibayar)} · Sisa dari nilai diketahui {formatRupiah(totalSisa)}. Selisih pembanding bukan tanda bukti asli telah diverifikasi.</p>
+            {bidangNilaiBelumDiketahui > 0 && <p className="mt-1 text-sm font-medium">Ada {bidangNilaiBelumDiketahui} bidang tanpa luas/harga atau nilai kontrak langsung yang terdokumentasi. Pembayaran pada bidang tersebut tidak dipakai sebagai pengganti nilai kontrak.</p>}
             <p className="mt-1 text-xs text-gray-600">Pembanding manual: nilai {formatRupiah(AUDIT_CONSTANTS.TOTAL_NILAI_TANAH)}, dibayar {formatRupiah(AUDIT_CONSTANTS.TOTAL_DIBAYAR_TANAH)}, sisa {formatRupiah(AUDIT_CONSTANTS.TOTAL_UTANG_TANAH)}.</p>
             {totalKelebihanBayar > 0 && <p className="mt-1 text-sm font-medium text-red-700">Ada potensi kelebihan bayar {formatRupiah(totalKelebihanBayar)}. Periksa bukti dan nilai kontraknya.</p>}
             <p className="mt-1 text-xs text-amber-800">Bidang tanpa dokumen hukum/pembayaran terhubung: {withoutEvidence}. Tambahkan akta/perjanjian/sertifikat/PBB dan bukti pembayaran dari menu Arsip Bukti.</p>
@@ -229,7 +232,7 @@ export default function TanahPage() {
                 const proofCount = docs.filter(doc => hasDocumentEvidence(doc) && doc.terverifikasi === 'Ya').length;
                 const status = paymentStatus(item);
                 return <tr key={item.id} className="hover:bg-gray-50">
-                  <td className="px-3 py-3 font-mono text-xs">{item.id}</td><td className="px-3 py-3 font-medium">{item.pemilik}</td><td className="px-3 py-3 text-right">{item.luas_bt > 0 ? item.luas_bt.toLocaleString('id-ID') + ' BT' : '—'}</td><td className="px-3 py-3 text-right">{item.harga_per_bt > 0 ? formatRupiah(item.harga_per_bt) : '—'}</td><td className="px-3 py-3 text-right font-semibold">{value > 0 ? formatRupiah(value) : 'Belum diketahui'}</td><td className="px-3 py-3 text-right text-emerald-700">{formatRupiah(item.dp)}</td><td className="px-3 py-3 text-right font-bold text-red-700">{formatRupiah(remaining)}</td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs ${overpaid > 0 ? 'bg-red-100 text-red-800' : remaining === 0 ? 'bg-emerald-100 text-emerald-800' : item.dp > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}`}>{status}</span>{overpaid > 0 && <p className="mt-1 text-xs text-red-600">Lebih bayar {formatRupiah(overpaid)}</p>}</td><td className="px-3 py-3 text-center">{proofCount > 0 ? <span className="inline-flex items-center gap-1 text-xs text-emerald-700"><FileText size={14} />{proofCount}</span> : <span className="text-xs text-red-600">Belum terhubung</span>}</td><td className="px-3 py-3 text-right"><button onClick={() => beginEdit(item)} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-gray-100"><Pencil size={13} />Edit</button>{docs.map(doc => doc.link_drive && <a key={doc.id} href={doc.link_drive} target="_blank" rel="noreferrer" className="ml-1 inline-flex rounded border p-1 text-blue-700" title="Buka dokumen"><ExternalLink size={13} /></a>)}</td>
+                  <td className="px-3 py-3 font-mono text-xs">{item.id}</td><td className="px-3 py-3 font-medium">{item.pemilik}</td><td className="px-3 py-3 text-right">{item.luas_bt > 0 ? item.luas_bt.toLocaleString('id-ID') + ' BT' : '—'}</td><td className="px-3 py-3 text-right">{item.harga_per_bt > 0 ? formatRupiah(item.harga_per_bt) : '—'}</td><td className="px-3 py-3 text-right font-semibold">{value > 0 ? formatRupiah(value) : 'Belum diketahui'}</td><td className="px-3 py-3 text-right text-emerald-700">{formatRupiah(item.dp)}</td><td className="px-3 py-3 text-right font-bold text-red-700">{hasKnownLandContractValue(item) ? formatRupiah(remaining) : 'Belum diketahui'}</td><td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs ${overpaid > 0 ? 'bg-red-100 text-red-800' : remaining === 0 ? 'bg-emerald-100 text-emerald-800' : item.dp > 0 ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}`}>{status}</span>{overpaid > 0 && <p className="mt-1 text-xs text-red-600">Lebih bayar {formatRupiah(overpaid)}</p>}</td><td className="px-3 py-3 text-center">{proofCount > 0 ? <span className="inline-flex items-center gap-1 text-xs text-emerald-700"><FileText size={14} />{proofCount}</span> : <span className="text-xs text-red-600">Belum terhubung</span>}</td><td className="px-3 py-3 text-right"><button onClick={() => beginEdit(item)} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-gray-100"><Pencil size={13} />Edit</button>{docs.map(doc => doc.link_drive && <a key={doc.id} href={doc.link_drive} target="_blank" rel="noreferrer" className="ml-1 inline-flex rounded border p-1 text-blue-700" title="Buka dokumen"><ExternalLink size={13} /></a>)}</td>
                 </tr>;
               })}
             </tbody>
