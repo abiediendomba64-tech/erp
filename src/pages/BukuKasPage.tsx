@@ -191,7 +191,7 @@ export default function BukuKasPage() {
             )
             .forEach(document => dispatch({
               type: 'UPDATE_ARSIP_BUKTI',
-              payload: { ...document, terverifikasi: 'Perlu_Konfirmasi', diverifikasi_oleh: '', waktu_verifikasi: '', catatan_audit: (document.catatan_audit ? document.catatan_audit + ' ' : '') + 'Status dikembalikan ke Perlu Konfirmasi karena transaksi Buku Kas dikoreksi.'
+              payload: { ...document, terverifikasi: 'Perlu_Konfirmasi', diverifikasi_oleh: '', waktu_verifikasi: '', catatan_audit: (document.catatan_audit ? document.catatan_audit + ' ' : '') + 'Status dikembalikan ke Perlu Konfirmasi karena transaksi Buku Kas dikoreksi.' }
             }));
           statusPesan = 'Jurnal lama dibalik dan jurnal koreksi menjadi Draft. Bukti terkait dikembalikan ke Perlu Konfirmasi karena nominal/perincian transaksi berubah; periksa ulang sebelum memposting.';
         }
