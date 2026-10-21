@@ -2,26 +2,19 @@ import { useMemo, useState } from 'react';
 import { useAppContext } from '../store';
 import { formatRupiah } from '../data';
 import { getBukuKasVerificationStatus } from '../helpers';
+import type { BukuKas } from '../types';
 import { AlertTriangle, CheckCircle, FileWarning, DollarSign, Download } from 'lucide-react';
 
 type PeriodSummary = {
   month: string;
-  records: typeof initialType[];
+  records: BukuKas[];
   in: number;
   out: number;
   opening: number;
   closing: number;
   missingEvidence: number;
 };
-type initialType = ReturnType<typeof getEmptyRecord>;
 
-function getEmptyRecord() {
-  return {
-    id: '', tgl: '', no_ref: '', kode_bukti: '', keterangan: '',
-    kategori: 'Operasional' as const, proyek: '', masuk: 0, keluar: 0,
-    status_verifikasi: 'PERLU_KONFIRMASI' as const
-  };
-}
 
 export default function AlokasiDanaPage() {
   const { state } = useAppContext();
