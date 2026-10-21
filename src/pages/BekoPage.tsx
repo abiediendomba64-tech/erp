@@ -100,6 +100,10 @@ export default function BekoPage() {
       setError('Panjang, lebar, tinggi, dan tarif harus angka nol atau lebih.');
       return;
     }
+    if (form.satuan_volume === 'unit' && form.panjang <= 0) {
+      setError('Kuantitas unit/rit/hari harus lebih besar dari nol.');
+      return;
+    }
     if (form.satuan_volume === 'm3' && (form.panjang <= 0 || form.lebar <= 0 || form.tinggi <= 0)) {
       setError('Pekerjaan satuan m³ wajib mengisi panjang, lebar, dan tinggi lebih dari nol.');
       return;
@@ -163,13 +167,13 @@ export default function BekoPage() {
             </label>
             <label className="text-sm font-medium text-gray-700">Satuan / metode hitung
               <select value={form.satuan_volume} onChange={e => update('satuan_volume', e.target.value as Beko['satuan_volume'])} className="mt-1 w-full rounded-lg border px-3 py-2">
-                <option value="m3">m³ (P × L × T)</option><option value="unit">Unit</option><option value="ls">Lumpsum (LS)</option>
+                <option value="m3">m³ (P × L × T)</option><option value="unit">Kuantitas × tarif</option><option value="ls">Lumpsum (LS)</option>
               </select>
             </label>
             <label className="text-sm font-medium text-gray-700">Tarif / nominal satuan (Rp) *
               <input type="number" min="0" step="any" value={form.tarif || ''} onChange={e => update('tarif', Number(e.target.value))} className="mt-1 w-full rounded-lg border px-3 py-2" />
             </label>
-            {form.satuan_volume === 'm3' && <><label className="text-sm font-medium text-gray-700">Panjang (m) *<input type="number" min="0" step="any" value={form.panjang || ''} onChange={e => update('panjang', Number(e.target.value))} className="mt-1 w-full rounded-lg border px-3 py-2" /></label><label className="text-sm font-medium text-gray-700">Lebar (m) *<input type="number" min="0" step="any" value={form.lebar || ''} onChange={e => update('lebar', Number(e.target.value))} className="mt-1 w-full rounded-lg border px-3 py-2" /></label><label className="text-sm font-medium text-gray-700">Tinggi (m) *<input type="number" min="0" step="any" value={form.tinggi || ''} onChange={e => update('tinggi', Number(e.target.value))} className="mt-1 w-full rounded-lg border px-3 py-2" /></label></>}
+            {form.satuan_volume === 'unit' && <label className="text-sm font-medium text-gray-700">Kuantitas (unit/rit/hari) *<input type="number" min="0" step="any" value={form.panjang || ''} onChange={e => update('panjang', Number(e.target.value))} className="mt-1 w-full rounded-lg border px-3 py-2" /></label>}{form.satuan_volume === 'm3' && <><label className="text-sm font-medium text-gray-700">Panjang (m) *<input type="number" min="0" step="any" value={form.panjang || ''} onChange={e => update('panjang', Number(e.target.value))} className="mt-1 w-full rounded-lg border px-3 py-2" /></label><label className="text-sm font-medium text-gray-700">Lebar (m) *<input type="number" min="0" step="any" value={form.lebar || ''} onChange={e => update('lebar', Number(e.target.value))} className="mt-1 w-full rounded-lg border px-3 py-2" /></label><label className="text-sm font-medium text-gray-700">Tinggi (m) *<input type="number" min="0" step="any" value={form.tinggi || ''} onChange={e => update('tinggi', Number(e.target.value))} className="mt-1 w-full rounded-lg border px-3 py-2" /></label></>}
             <label className="text-sm font-medium text-gray-700">Status pembayaran
               <select value={form.status_pembayaran || 'Belum_Dikonfirmasi'} onChange={e => update('status_pembayaran', e.target.value as Beko['status_pembayaran'])} className="mt-1 w-full rounded-lg border px-3 py-2">
                 <option value="Belum_Dikonfirmasi">Belum dikonfirmasi</option><option value="Belum_Bayar">Belum bayar</option><option value="DP">DP / sebagian</option><option value="Lunas">Lunas (menurut catatan)</option>
@@ -189,7 +193,7 @@ export default function BekoPage() {
             </label>
           </div>
           <div className="mt-4 rounded-lg bg-orange-50 p-3 text-sm text-orange-900">
-            <p>Volume terhitung: <strong>{form.satuan_volume === 'm3' ? getBekoVolume(form as Beko).toLocaleString('id-ID', { maximumFractionDigits: 3 }) + ' m³' : '1 ' + (form.satuan_volume === 'ls' ? 'LS' : 'unit')}</strong></p>
+            <p>Volume terhitung: <strong>{form.satuan_volume === 'm3' ? getBekoVolume(form as Beko).toLocaleString('id-ID', { maximumFractionDigits: 3 }) + ' m³' : form.satuan_volume === 'ls' ? '1 LS' : getBekoVolume(form as Beko).toLocaleString('id-ID', { maximumFractionDigits: 3 }) + ' unit'}</strong></p>
             <p>Nilai terhitung otomatis: <strong>{formatRupiah(getBekoNilai(form as Beko))}</strong></p>
           </div>
           <div className="mt-4 flex gap-2"><button onClick={saveItem} className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-white hover:bg-orange-700"><Save size={17} />Simpan</button><button onClick={() => setShowForm(false)} className="rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200">Batal</button></div>
@@ -213,7 +217,7 @@ export default function BekoPage() {
                 return <tr key={item.id} className={inside ? 'hover:bg-gray-50' : 'bg-gray-50 text-gray-500'}>
                   <td className="px-3 py-3"><p className="font-medium text-gray-900">{item.item}</p><p className="text-xs text-gray-500">{item.id} {item.catatan && '· ' + item.catatan}</p></td>
                   <td className="px-3 py-3 text-right">{item.satuan_volume === 'm3' ? item.panjang : '—'}</td><td className="px-3 py-3 text-right">{item.satuan_volume === 'm3' ? item.lebar : '—'}</td><td className="px-3 py-3 text-right">{item.satuan_volume === 'm3' ? item.tinggi : '—'}</td>
-                  <td className="px-3 py-3 text-right">{item.satuan_volume === 'm3' ? volume.toLocaleString('id-ID', { maximumFractionDigits: 3 }) + ' m³' : '1 ' + (item.satuan_volume === 'ls' ? 'LS' : 'unit')}</td>
+                  <td className="px-3 py-3 text-right">{item.satuan_volume === 'm3' ? volume.toLocaleString('id-ID', { maximumFractionDigits: 3 }) + ' m³' : item.satuan_volume === 'ls' ? '1 LS' : volume.toLocaleString('id-ID', { maximumFractionDigits: 3 }) + ' unit'}</td>
                   <td className="px-3 py-3 text-right">{formatRupiah(item.tarif)}</td><td className="px-3 py-3 text-right font-bold">{formatRupiah(getBekoNilai(item))}</td>
                   <td className="px-3 py-3 text-center">{inside ? 'Ya' : 'Tidak'}</td>
                   <td className="px-3 py-3 text-center">{item.status_pembayaran || (item.status === 'Lunas' ? 'Lunas (catatan lama)' : 'Belum dikonfirmasi')}</td>
