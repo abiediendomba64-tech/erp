@@ -3,7 +3,7 @@ import { useAppContext } from '../store';
 import { formatRupiah, getLocalDateISO } from '../data';
 import { getBukuKasVerificationStatus, getRelatedDocuments, hasDocumentEvidence } from '../helpers';
 import type { BukuKas } from '../types';
-import { BookOpen, CheckCircle, XCircle, AlertCircle, Plus, Pencil, Save, X, ExternalLink } from 'lucide-react';
+import { BookOpen, CheckCircle, XCircle, AlertCircle, Plus, Pencil, Save, X, ExternalLink, FileText } from 'lucide-react';
 
 type CashDirection = 'Masuk' | 'Keluar';
 const emptyForm = {
