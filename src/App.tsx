@@ -19,8 +19,9 @@ import AnggaranPage from './pages/AnggaranPage';
 import OCRPage from './pages/OCRPage';
 import WhatsAppPage from './pages/WhatsAppPage';
 import MenuConfigPage from './pages/MenuConfigPage';
+import AlokasiDanaPage from './pages/AlokasiDanaPage';
 
-export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'ocr' | 'whatsapp' | 'menuconfig';
+export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig';
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
@@ -44,6 +45,7 @@ function AppContent() {
       case 'pembelian': return <PembelianPage />;
       case 'penggajian': return <PenggajianPage />;
       case 'anggaran': return <AnggaranPage />;
+      case 'alokasi': return <AlokasiDanaPage />;
       case 'ocr': return <OCRPage />;
       case 'whatsapp': return <WhatsAppPage />;
       case 'menuconfig': return <MenuConfigPage />;

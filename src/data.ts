@@ -144,6 +144,7 @@ export const initialMenuConfig: MenuItem[] = [
   { id: 'M-06', label: 'Utang Tanah', icon: 'Scale', page: 'poskewajiban', order: 6, visible: true, role_access: ['ADMIN', 'KEUANGAN'] },
   { id: 'M-07', label: 'Arsip Bukti', icon: 'FolderArchive', page: 'arsipbukti', order: 7, visible: true, role_access: ['ADMIN', 'KEUANGAN'] },
   { id: 'M-08', label: 'Audit Log', icon: 'History', page: 'auditlog', order: 8, visible: true, role_access: ['ADMIN'] },
+  { id: 'M-09', label: 'Alokasi Dana Detail', icon: 'DollarSign', page: 'alokasi', order: 9, visible: true, role_access: ['ADMIN', 'KEUANGAN'] },
 ];
 
 // ============ UTILITY ============
