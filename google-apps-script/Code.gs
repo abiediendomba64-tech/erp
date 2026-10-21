@@ -229,38 +229,39 @@ Jika field tidak ditemukan, isi dengan null. Kembalikan HANYA JSON, tanpa teks l
  */
 function saveToArsipBukti(ocrData, imageUrl, documentType) {
   const ss = getErpSpreadsheet_();
-  let sheet = ss.getSheetByName('ARSIP_BUKTI');
-  
-  if (!sheet) {
-    sheet = ss.insertSheet('ARSIP_BUKTI');
-    sheet.appendRow(['id', 'kode_bukti', 'jenis', 'link_drive', 'tgl_upload', 'terverifikasi', 'catatan_audit', 'penerima', 'nominal', 'keterangan', 'confidence', 'created_at']);
-  }
-  
-  const id = 'BUKTI-' + new Date().getTime();
-  const confidence = Number(ocrData.confidence) || 0;
+  const sheet = ss.getSheetByName('ARSIP_BUKTI') || ss.insertSheet('ARSIP_BUKTI');
+  const headers = ensureSheetHeaders_(sheet, [
+    'id', 'kode_bukti', 'jenis', 'link_drive', 'tgl_upload',
+    'terverifikasi', 'catatan_audit', 'penerima', 'nominal',
+    'keterangan', 'confidence', 'created_at'
+  ]);
+
+  const id = 'BUKTI-' + Utilities.getUuid();
+  const confidence = Math.max(0, Math.min(100, Number(ocrData.confidence) || 0));
   const documentTypes = {
     Kwitansi: 'Kwitansi_Foto',
     Nota: 'Nota_Foto',
     Transfer_Bank: 'Transfer_Bank',
     Lainnya: 'Lainnya'
   };
-  // Confidence is only a model score, not human authorization.
-  const status = 'Perlu_Konfirmasi';
-  
-  sheet.appendRow([
-    id,
-    ocrData.nomor_bukti || '',
-    documentTypes[documentType] || 'Kwitansi_Foto',
-    imageUrl,
-    new Date().toISOString().split('T')[0],
-    status,
-    `OCR confidence: ${confidence}%`,
-    ocrData.vendor || '',
-    ocrData.total || 0,
-    ocrData.keterangan || '',
-    confidence,
-    new Date().toISOString()
-  ]);
+
+  // Confidence is only a model score, never human authorization.
+  const record = {
+    id: id,
+    kode_bukti: String(ocrData.nomor_bukti || ''),
+    jenis: documentTypes[documentType] || 'Kwitansi_Foto',
+    link_drive: imageUrl,
+    tgl_upload: new Date().toISOString().slice(0, 10),
+    terverifikasi: 'Perlu_Konfirmasi',
+    catatan_audit: 'OCR confidence: ' + confidence + '%. Menunggu verifikasi manual.',
+    penerima: String(ocrData.vendor || ''),
+    nominal: Number(ocrData.total) || 0,
+    keterangan: String(ocrData.keterangan || ''),
+    confidence: confidence,
+    created_at: new Date().toISOString()
+  };
+  const row = headers.map(header => record[header] === undefined ? '' : record[header]);
+  sheet.appendRow(row);
 }
 
 // ============ WHATSAPP WEBHOOK ============
