@@ -47,7 +47,7 @@ export const initialBeko: Beko[] = [
   { id: 'BK-08', item: 'Cut Fill #6 (DI LUAR)', panjang: 14, lebar: 39, tinggi: 1.5, tarif: 25000, status: 'Belum_Ada_Kwitansi', kode_bukti: '', url_bukti: '', catatan: '819 m3 × 25.000 - di luar lingkup rekap, menunggu konfirmasi', termasuk_rekap: false, satuan_volume: 'm3' },
 ];
 
-// ============ DANA BEKO PER TAHAP ============
+// ============ REKAP BIAYA BEKO PER TAHAP — BELUM DIDUKUNG FILE ASLI ============
 export const initialArsipBukti: ArsipBukti[] = [
   { id: 'DBK-01', judul_dokumen: 'Rekap biaya beko tahap 01 (bukti asli belum dilampirkan)', modul_terkait: 'Beko', id_terkait: 'BK-01', kode_bukti: 'DBK-01', jenis: 'Tidak_Ada', link_drive: '', tgl_upload: '2026-09-01', terverifikasi: 'Perlu_Konfirmasi', catatan_audit: 'Rekap tahap beko 1 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 4500000, keterangan: 'Tahap 1' },
   { id: 'DBK-02', judul_dokumen: 'Rekap biaya beko tahap 02 (bukti asli belum dilampirkan)', modul_terkait: 'Beko', id_terkait: 'BK-02', kode_bukti: 'DBK-02', jenis: 'Tidak_Ada', link_drive: '', tgl_upload: '2026-09-05', terverifikasi: 'Perlu_Konfirmasi', catatan_audit: 'Rekap tahap beko 2 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 16575000, keterangan: 'Tahap 2' },
@@ -59,9 +59,9 @@ export const initialArsipBukti: ArsipBukti[] = [
 
 // ============ POS KEWAJIBAN (Utang Tanah) ============
 export const initialPosKewajiban: PosKewajiban[] = [
-  { id: 'UT-01', kode_utang: 'UT-01', pihak: 'Sanaris (19 BT)', nilai_menurut_dokumen: 15200000, nilai_menurut_workbook: 15200000, dp_dibayar: 5200000, status: 'Dalam_Penelusuran', keterangan: 'DP 5.2jt, sisa 10jt' },
-  { id: 'UT-02', kode_utang: 'UT-02', pihak: 'DUDI (36.5 BT)', nilai_menurut_dokumen: 29200000, nilai_menurut_workbook: 29200000, dp_dibayar: 15000000, status: 'Dalam_Penelusuran', keterangan: 'DP 15jt, sisa 14.2jt' },
-  { id: 'UT-03', kode_utang: 'UT-03', pihak: 'Balong (30 BT)', nilai_menurut_dokumen: 25500000, nilai_menurut_workbook: 25500000, dp_dibayar: 15000000, status: 'Dalam_Penelusuran', keterangan: 'DP 15jt, sisa 10.5jt' },
+  { id: 'UT-01', kode_utang: 'UT-01', tanah_id: 'T-07', pihak: 'Sanaris (19 BT)', nilai_menurut_dokumen: 15200000, nilai_menurut_workbook: 15200000, dp_dibayar: 5200000, status: 'Dalam_Penelusuran', keterangan: 'DP 5.2jt, sisa 10jt' },
+  { id: 'UT-02', kode_utang: 'UT-02', tanah_id: 'T-11', pihak: 'DUDI (36.5 BT)', nilai_menurut_dokumen: 29200000, nilai_menurut_workbook: 29200000, dp_dibayar: 15000000, status: 'Dalam_Penelusuran', keterangan: 'DP 15jt, sisa 14.2jt' },
+  { id: 'UT-03', kode_utang: 'UT-03', tanah_id: 'T-13', pihak: 'Balong (30 BT)', nilai_menurut_dokumen: 25500000, nilai_menurut_workbook: 25500000, dp_dibayar: 15000000, status: 'Dalam_Penelusuran', keterangan: 'DP 15jt, sisa 10.5jt' },
 ];
 
 // ============ AUDIT LOG ============
