@@ -145,15 +145,15 @@ export function generateJurnalPembelianKredit(
     entries: [
       {
         id: `E-${Date.now()}-1`,
-        akun_kode: '5-1001',
-        akun_nama: 'Harga Pokok Penjualan',
+        akun_kode: '1-1004',
+        akun_nama: 'Persediaan Barang',
         debit: jumlah,
         kredit: 0,
       },
       ...(ppn > 0 ? [{
         id: `E-${Date.now()}-2`,
-        akun_kode: '1-1005',
-        akun_nama: 'Biaya Dibayar Dimuka',
+        akun_kode: '1-1006',
+        akun_nama: 'PPN Masukan',
         debit: ppn,
         kredit: 0,
       }] : []),
