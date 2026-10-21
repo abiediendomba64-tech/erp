@@ -73,7 +73,8 @@ export interface PosKewajiban {
   pihak: string;
   nilai_menurut_dokumen: number; // Nilai total menurut dokumen
   nilai_menurut_workbook: number; // Nilai total menurut workbook
-  dp_dibayar: number; // DP yang sudah dibayar
+  dp_dibayar: number; // DP referensi yang sudah dibayar
+  tanah_id?: string; // jika terhubung, register Tanah menjadi sumber nilai/pembayaran terkini
   status: 'Sepakat' | 'Dalam_Penelusuran' | 'Sengketa';
   keterangan: string;
   // COMPUTED: sisa_utang = nilai_menurut_dokumen - dp_dibayar
