@@ -144,6 +144,48 @@ function loadAppState(): AppState {
     }
 
     // Migrate old localStorage seeds that claimed proof/status without an attached file or URL.
+    // Remove only unchanged demo records from older browser storage. If a user altered a row,
+    // keep it for review rather than deleting their work. Fresh installs no longer seed these records.
+    result.stok = result.stok.filter(item => !(
+      (item.id === 'STK-001' && item.kode === 'BB-001' && item.nama === 'Semen Portland 50kg' && item.stok_awal === 100 && item.masuk === 50 && item.keluar === 80 && item.harga_pokok === 65000) ||
+      (item.id === 'STK-002' && item.kode === 'BB-002' && item.nama === 'Pasir Pasang' && item.stok_awal === 10 && item.masuk === 5 && item.keluar === 8 && item.harga_pokok === 800000) ||
+      (item.id === 'STK-003' && item.kode === 'BB-003' && item.nama === 'Besi Beton 10mm' && item.stok_awal === 200 && item.masuk === 100 && item.keluar === 150 && item.harga_pokok === 85000) ||
+      (item.id === 'STK-004' && item.kode === 'BJ-001' && item.nama === 'Rumah Type 36' && item.stok_awal === 0 && item.masuk === 2 && item.keluar === 1 && item.harga_pokok === 250000000) ||
+      (item.id === 'STK-005' && item.kode === 'BD-001' && item.nama === 'Keramik 40x40' && item.stok_awal === 50 && item.masuk === 30 && item.keluar === 40 && item.harga_pokok === 120000)
+    ));
+    result.produksi = result.produksi.filter(item => !(
+      (item.id === 'PRD-001' && item.no_produksi === 'SPK-2024-001' && item.tanggal === '2024-01-10' && item.produk === 'Rumah Type 36') ||
+      (item.id === 'PRD-002' && item.no_produksi === 'SPK-2024-002' && item.tanggal === '2024-02-01' && item.produk === 'Rumah Type 36')
+    ));
+    result.penjualan = result.penjualan.filter(item => !(
+      (item.id === 'PJ-001' && item.no_invoice === 'INV-2024-001' && item.pelanggan === 'Budi Santoso' && item.tanggal === '2024-02-15') ||
+      (item.id === 'PJ-002' && item.no_invoice === 'INV-2024-002' && item.pelanggan === 'Ahmad Wijaya' && item.tanggal === '2024-03-01')
+    ));
+    result.pembelian = result.pembelian.filter(item => !(
+      (item.id === 'PB-001' && item.no_po === 'PO-2024-001' && item.supplier === 'PT Semen Indonesia' && item.tanggal === '2024-01-05') ||
+      (item.id === 'PB-002' && item.no_po === 'PO-2024-002' && item.supplier === 'Toko Besi Jaya' && item.tanggal === '2024-01-20')
+    ));
+    result.penggajian = result.penggajian.filter(item => !(
+      (item.id === 'GJ-001' && item.nip === 'EMP-001' && item.nama === 'Budi Hermawan' && item.periode === '2024-03') ||
+      (item.id === 'GJ-002' && item.nip === 'EMP-002' && item.nama === 'Sri Wahyuni' && item.periode === '2024-03') ||
+      (item.id === 'GJ-003' && item.nip === 'EMP-003' && item.nama === 'Agus Prasetyo' && item.periode === '2024-03')
+    ));
+    result.anggaran = result.anggaran.filter(item => !(
+      (item.id === 'AG-001' && item.periode === '2024' && item.kategori === 'Pembebasan Tanah' && item.anggaran === 500000000 && item.realisasi === 309400000) ||
+      (item.id === 'AG-002' && item.periode === '2024' && item.kategori === 'Cut & Fill (Beko)' && item.anggaran === 200000000 && item.realisasi === 71350000) ||
+      (item.id === 'AG-003' && item.periode === '2024' && item.kategori === 'Material & Perlengkapan' && item.anggaran === 150000000 && item.realisasi === 13596000) ||
+      (item.id === 'AG-004' && item.periode === '2024' && item.kategori === 'Tenaga Kerja' && item.anggaran === 120000000 && item.realisasi === 22820000)
+    ));
+    result.ocr = result.ocr.filter(item => !(
+      (item.id === 'OCR-001' && /drive\.google\.com\/file\/d\/xxx1/.test(item.image_url)) ||
+      (item.id === 'OCR-002' && /drive\.google\.com\/file\/d\/xxx2/.test(item.image_url)) ||
+      (item.id === 'OCR-003' && item.confidence === 45 && item.status === 'Pending')
+    ));
+    result.whatsapp = result.whatsapp.filter(item => !(
+      item.id === 'WA-001' || item.id === 'WA-002' || item.id === 'WA-003'
+    ));
+    result.auditLog = result.auditLog.filter(item => !(item.id === 'LOG-001' && item.record_id === 'AR-001' && item.aksi === 'CREATE'));
+
     result.arsipBukti = result.arsipBukti.map(document => {
       const hasExternalEvidence = Boolean(document.link_drive && /^https?:\/\//i.test(document.link_drive));
       const hasRealLocalEvidence = Boolean(
