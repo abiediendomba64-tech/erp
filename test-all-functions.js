@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
+import { runInNewContext } from 'node:vm';
 
 async function loadActualTypeScript(relativePath) {
   let source = await readFile(new URL(relativePath, import.meta.url), 'utf8');
@@ -133,5 +134,48 @@ assert.equal(cashFlow.total_arus_kas_pendanaan, 1000000, 'Setoran modal masuk ar
 assert.equal(cashFlow.kenaikan_penurunan_kas, 1800000, 'Perubahan kas harus cocok dengan kas transaksi');
 assert.equal(cashFlow.kas_akhir_periode, 1800000, 'Kas akhir periode harus berdasarkan jurnal yang posted');
 console.log('PASS: laporan periode, neraca kumulatif, dan arus kas dihitung dari jurnal Posted sebenarnya');
+
+
+const gasSource = await readFile(new URL('./google-apps-script/Code.gs', import.meta.url), 'utf8');
+const gasContext = {
+  PropertiesService: {
+    getScriptProperties: () => ({
+      getProperty: key => key === 'SPREADSHEET_ID' ? 'test-spreadsheet-id' : null
+    })
+  },
+  SpreadsheetApp: {
+    getActiveSpreadsheet: () => ({ getId: () => 'test-spreadsheet-id' }),
+    openById: id => ({ getId: () => id })
+  }
+};
+runInNewContext(gasSource, gasContext, { filename: 'Code.gs' });
+
+const backendCases = [
+  ['backend penjualan tunai', { jenis: 'penjualan_tunai', keterangan: 'Penjualan', jumlah: 1000000, ppn: 110000 }],
+  ['backend penjualan kredit', { jenis: 'penjualan_kredit', pihak: 'Pelanggan A', keterangan: 'Penjualan kredit', jumlah: 1000000, ppn: 110000 }],
+  ['backend pembelian tunai', { jenis: 'pembelian_tunai', keterangan: 'Pembelian stok', jumlah: 1000000, ppn: 110000 }],
+  ['backend pembelian kredit', { jenis: 'pembelian_kredit', pihak: 'Supplier A', keterangan: 'Pembelian kredit', jumlah: 1000000, ppn: 110000 }],
+  ['backend pembayaran piutang', { jenis: 'pembayaran_piutang', pihak: 'Pelanggan A', keterangan: 'Pelunasan piutang', jumlah: 500000 }],
+  ['backend pembayaran utang', { jenis: 'pembayaran_utang', pihak: 'Supplier A', keterangan: 'Pelunasan utang', jumlah: 300000 }],
+  ['backend beban operasional', { jenis: 'beban_operasional', akun_beban: '5-2003', keterangan: 'Listrik', jumlah: 200000 }]
+];
+for (const [label, transaction] of backendCases) {
+  const entries = runInNewContext(
+    'generateJurnalDoubleEntry(' + JSON.stringify(transaction) + ')',
+    gasContext
+  );
+  assertBalanced(label, { entries });
+}
+let invalidBackendMessage = '';
+try {
+  runInNewContext(
+    'generateJurnalDoubleEntry(' + JSON.stringify({ jenis: 'penjualan_tunai', keterangan: 'Invalid', jumlah: 0, ppn: 0 }) + ')',
+    gasContext
+  );
+} catch (error) {
+  invalidBackendMessage = String(error && error.message ? error.message : error);
+}
+assert.ok(invalidBackendMessage.includes('Jumlah transaksi'), 'Apps Script harus menolak nominal nol');
+console.log('PASS: Apps Script backend aktual menghasilkan jurnal seimbang untuk 7 tipe transaksi dan menolak nominal tidak valid');
 
 console.log('\nALL PRODUCTION ACCOUNTING REGRESSION TESTS PASSED');
