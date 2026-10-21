@@ -118,6 +118,13 @@ const seedState: AppState = {
 
 const APP_STORAGE_KEY = 'abiedien.erp.app.v1';
 
+function hasEvidenceDocument(document: ArsipBukti): boolean {
+  return Boolean(
+    document.local_file_key ||
+    (document.link_drive && /^https?:\/\//i.test(document.link_drive))
+  );
+}
+
 function loadAppState(): AppState {
   if (typeof window === 'undefined') return seedState;
   try {
@@ -135,6 +142,33 @@ function loadAppState(): AppState {
       const value = saved[key];
       if (Array.isArray(value)) (result as any)[key] = value;
     }
+
+    // Migrate old localStorage seeds that claimed proof/status without an attached file or URL.
+    result.arsipBukti = result.arsipBukti.map(document => {
+      const hasEvidence = Boolean(
+        document.local_file_key ||
+        (document.link_drive && /^https?:\/\//i.test(document.link_drive))
+      );
+      return document.terverifikasi === 'Ya' && !hasEvidence
+        ? { ...document, terverifikasi: 'Perlu_Konfirmasi' }
+        : document;
+    });
+    result.notaMaterial = result.notaMaterial.map(note =>
+      note.status === 'Terverifikasi' && !note.url_bukti
+        ? { ...note, status: 'Belum_Verifikasi' }
+        : note
+    );
+    result.bukuKas = result.bukuKas.map(transaction => {
+      const matchingDocument = result.arsipBukti.some(document =>
+        hasEvidenceDocument(document) &&
+        document.terverifikasi === 'Ya' &&
+        (document.id_terkait === transaction.id ||
+          (Boolean(transaction.kode_bukti) && document.kode_bukti === transaction.kode_bukti))
+      );
+      return transaction.status_verifikasi === 'LENGKAP' && !matchingDocument
+        ? { ...transaction, status_verifikasi: 'PERLU_KONFIRMASI' }
+        : transaction;
+    });
     return result;
   } catch (error) {
     console.error('Data ERP lokal tidak dapat dibaca; menggunakan data awal yang tersedia.', error);
