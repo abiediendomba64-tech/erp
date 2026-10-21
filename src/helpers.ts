@@ -91,12 +91,22 @@ export const hasVerifiedRelatedDocument = <T extends { terverifikasi?: string; l
   document.terverifikasi === 'Ya' && hasDocumentEvidence(document)
 );
 
-export const getBukuKasVerificationStatus = <T extends { terverifikasi?: string; link_drive?: string; local_file_key?: string; modul_terkait?: string; id_terkait?: string; kode_bukti?: string }>(
-  record: { id: string; kode_bukti: string },
+export const getBukuKasVerificationStatus = <T extends { terverifikasi?: string; link_drive?: string; local_file_key?: string; modul_terkait?: string; id_terkait?: string; kode_bukti?: string; jenis?: string; nominal?: number }>(
+  record: { id: string; kode_bukti: string; masuk?: number; keluar?: number },
   documents: T[]
 ): 'LENGKAP' | 'TANPA_BUKTI' | 'PERLU_KONFIRMASI' => {
   const linked = getRelatedDocuments(documents, 'Buku Kas', record.id, record.kode_bukti);
-  if (linked.some(document => document.terverifikasi === 'Ya' && hasDocumentEvidence(document))) return 'LENGKAP';
+  const transactionAmount = Math.max(0, Number(record.masuk) || 0) + Math.max(0, Number(record.keluar) || 0);
+  const approvedPaymentKinds = new Set(['Kwitansi_Foto', 'Transfer_Bank', 'Nota_Foto']);
+  const matchingVerifiedEvidence = linked.some(document =>
+    document.terverifikasi === 'Ya' &&
+    hasDocumentEvidence(document) &&
+    approvedPaymentKinds.has(String(document.jenis || '')) &&
+    Number.isFinite(Number(document.nominal)) &&
+    transactionAmount > 0 &&
+    Math.abs(Number(document.nominal) - transactionAmount) <= 0.005
+  );
+  if (matchingVerifiedEvidence) return 'LENGKAP';
   if (linked.length > 0 || record.kode_bukti.trim()) return 'PERLU_KONFIRMASI';
   return 'TANPA_BUKTI';
 };
