@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useAppContext } from '../store';
 import { AUDIT_CONSTANTS, formatRupiah } from '../data';
 import {
-  getTanahNilaiTotal, getTanahSisa, getTanahKelebihanBayar,
+  getTanahNilaiTotal, getTanahSisa, getTanahKelebihanBayar, hasKnownLandContractValue,
   getBekoNilai, getBukuKasVerificationStatus,
   getRelatedDocuments, hasDocumentEvidence
 } from '../helpers';
@@ -20,6 +20,7 @@ export default function Dashboard() {
   const totalSisaUtangTanah = state.tanah.reduce((sum, item) => sum + getTanahSisa(item), 0);
   const potensiKelebihanBayar = state.tanah.reduce((sum, item) => sum + getTanahKelebihanBayar(item), 0);
   const totalLuas = state.tanah.reduce((sum, item) => sum + Math.max(0, Number(item.luas_bt) || 0), 0);
+  const bidangNilaiBelumDiketahui = state.tanah.filter(item => !hasKnownLandContractValue(item)).length;
 
   const includedBeko = state.beko.filter(item => item.termasuk_rekap !== false);
   const excludedBeko = state.beko.filter(item => item.termasuk_rekap === false);
