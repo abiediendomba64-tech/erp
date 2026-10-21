@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAppContext } from '../store';
 import { formatRupiah } from '../data';
-import { getPosKewajibanSisaUtang, getTanahNilaiTotal, getTanahSisa, getRelatedDocuments, hasDocumentEvidence } from '../helpers';
+import { getPosKewajibanSisaUtang, getTanahNilaiTotal, getTanahSisa, hasKnownLandContractValue, getRelatedDocuments, hasDocumentEvidence } from '../helpers';
 import type { PosKewajiban } from '../types';
 import { Scale, AlertTriangle, Plus, Pencil, Save, X, FileText, ExternalLink } from 'lucide-react';
 
@@ -74,15 +74,16 @@ export default function PosKewajibanPage() {
 
   const rows = state.posKewajiban.map(item => {
     const land = item.tanah_id ? state.tanah.find(record => record.id === item.tanah_id) : undefined;
+    const knownValue = land ? hasKnownLandContractValue(land) : item.nilai_menurut_dokumen > 0;
     const nilaiAktif = land ? getTanahNilaiTotal(land) : item.nilai_menurut_dokumen;
     const paidAktif = land ? Math.max(0, land.dp) : item.dp_dibayar;
     const balance = land ? getTanahSisa(land) : getPosKewajibanSisaUtang(item);
-    const difference = item.nilai_menurut_workbook - nilaiAktif;
+    const difference = knownValue ? item.nilai_menurut_workbook - nilaiAktif : 0;
     const docs = land
       ? getRelatedDocuments(state.arsipBukti, 'Tanah', land.id, land.kode_bukti)
       : getRelatedDocuments(state.arsipBukti, 'Utang Tanah', item.id, item.kode_utang);
     const usableDocs = docs.filter(doc => hasDocumentEvidence(doc));
-    return { item, land, nilaiAktif, paidAktif, balance, difference, docs: usableDocs };
+    return { item, land, knownValue, nilaiAktif, paidAktif, balance, difference, docs: usableDocs };
   });
   const totalNilai = rows.reduce((sum, row) => sum + row.nilaiAktif, 0);
   const totalPaid = rows.reduce((sum, row) => sum + row.paidAktif, 0);
@@ -154,10 +155,10 @@ export default function PosKewajibanPage() {
         <div className="overflow-x-auto"><table className="w-full min-w-[1150px] text-sm">
           <thead className="border-b bg-gray-50"><tr><th className="px-3 py-3 text-left">Pihak / ID</th><th className="px-3 py-3 text-left">Sumber nilai</th><th className="px-3 py-3 text-right">Nilai aktif</th><th className="px-3 py-3 text-right">Dibayar aktif</th><th className="px-3 py-3 text-right">Sisa formula</th><th className="px-3 py-3 text-right">Selisih workbook</th><th className="px-3 py-3 text-center">Dokumen</th><th className="px-3 py-3 text-left">Status</th><th className="px-3 py-3 text-right">Aksi</th></tr></thead>
           <tbody className="divide-y">
-            {rows.map(({ item, land, nilaiAktif, paidAktif, balance, difference, docs }) => <tr key={item.id} className="align-top hover:bg-gray-50">
+            {rows.map(({ item, land, knownValue, nilaiAktif, paidAktif, balance, difference, docs }) => <tr key={item.id} className="align-top hover:bg-gray-50">
               <td className="px-3 py-3"><p className="font-medium">{item.pihak}</p><p className="text-xs text-gray-500">{item.kode_utang} · {land ? land.id : 'Tidak terhubung'}</p></td>
               <td className="px-3 py-3 text-xs text-gray-600">{land ? 'Register Tanah (sumber aktif)' : 'Nilai manual kewajiban'}<p className="mt-1">Dokumen referensi: {formatRupiah(item.nilai_menurut_dokumen)}</p></td>
-              <td className="px-3 py-3 text-right">{formatRupiah(nilaiAktif)}</td><td className="px-3 py-3 text-right text-emerald-700">{formatRupiah(paidAktif)}</td><td className="px-3 py-3 text-right font-bold text-red-700">{formatRupiah(balance)}</td><td className={`px-3 py-3 text-right ${difference !== 0 ? 'font-semibold text-amber-800' : 'text-emerald-700'}`}>{formatRupiah(difference)}</td>
+              <td className="px-3 py-3 text-right">{knownValue ? formatRupiah(nilaiAktif) : 'Belum diketahui'}</td><td className="px-3 py-3 text-right text-emerald-700">{formatRupiah(paidAktif)}</td><td className="px-3 py-3 text-right font-bold text-red-700">{knownValue ? formatRupiah(balance) : 'Belum diketahui'}</td><td className={`px-3 py-3 text-right ${!knownValue ? 'text-amber-800' : difference !== 0 ? 'font-semibold text-amber-800' : 'text-emerald-700'}`}>{knownValue ? formatRupiah(difference) : 'Belum dapat dibandingkan'}</td>
               <td className="px-3 py-3">{docs.length ? <div className="space-y-1">{docs.map(doc => <div key={doc.id}><p className="text-xs">{doc.judul_dokumen || doc.catatan_audit || doc.kode_bukti}</p>{doc.link_drive && <a href={doc.link_drive} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-700 underline"><FileText size={12} />Buka</a>}</div>)}</div> : <span className="text-xs text-red-700">Belum ada file/URL</span>}</td>
               <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs ${item.status === 'Sengketa' ? 'bg-red-100 text-red-800' : item.status === 'Sepakat' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{item.status.replace(/_/g, ' ')}</span><p className="mt-1 max-w-[220px] text-xs text-gray-500">{item.keterangan || 'Belum ada catatan'}</p></td>
               <td className="px-3 py-3 text-right"><button onClick={() => beginEdit(item)} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-gray-100"><Pencil size={13} />Edit</button></td>
