@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useAppContext } from '../store';
 import { formatRupiah, generateId, getLocalDateISO } from '../data';
 import type { Produksi, StokBarang } from '../types';
+import { calculateLineTotal, calculateProductionCosts } from '../utils/operationalFormulas';
 import { Factory, Plus, Pencil, Save, X, AlertTriangle, Download, Trash2 } from 'lucide-react';
 
 type ProductionForm = Omit<Produksi, 'id'>;
@@ -14,12 +15,12 @@ const stockBalance = (stock: StokBarang) => stock.stok_awal + stock.masuk - stoc
 function materialTotal(record: Pick<Produksi, 'bahan_baku'>, stocks: StokBarang[]): number {
   return record.bahan_baku.reduce((sum, material) => {
     const stock = stocks.find(item => item.id === material.barang_id);
-    return sum + (stock ? Math.max(0, material.jumlah) * Math.max(0, stock.harga_pokok) : 0);
+    return sum + (stock ? calculateLineTotal(material.jumlah, stock.harga_pokok) : 0);
   }, 0);
 }
 
 function totalCost(record: Produksi, stocks: StokBarang[]): number {
-  return materialTotal(record, stocks) + Math.max(0, record.biaya_tenaga_kerja) + Math.max(0, record.biaya_overhead);
+  return calculateProductionCosts(record.bahan_baku.map(material => ({jumlah: material.jumlah, harga_pokok: stocks.find(stock => stock.id === material.barang_id)?.harga_pokok || 0})), record.biaya_tenaga_kerja, record.biaya_overhead, record.jumlah).total;
 }
 
 export default function ProduksiPage() {
@@ -35,7 +36,7 @@ export default function ProduksiPage() {
     record,
     material: materialTotal(record, state.stok),
     total: totalCost(record, state.stok),
-    unitCost: record.jumlah > 0 ? totalCost(record, state.stok) / record.jumlah : 0,
+    unitCost: calculateProductionCosts(record.bahan_baku.map(material => ({jumlah: material.jumlah, harga_pokok: state.stok.find(stock => stock.id === material.barang_id)?.harga_pokok || 0})), record.biaya_tenaga_kerja, record.biaya_overhead, record.jumlah).unitCost,
   })).filter(row => (row.record.no_produksi+' '+row.record.produk+' '+row.record.catatan).toLowerCase().includes(search.trim().toLowerCase()))
     .sort((a,b)=>b.record.tanggal.localeCompare(a.record.tanggal)),[state.produksi,state.stok,search]);
 
@@ -86,8 +87,9 @@ export default function ProduksiPage() {
     const link=document.createElement('a');link.href=url;link.download='register-produksi.csv';link.click();window.setTimeout(()=>URL.revokeObjectURL(url),1500);
   };
 
-  const liveMaterial=materialTotal(form,state.stok);
-  const liveTotal=liveMaterial+form.biaya_tenaga_kerja+form.biaya_overhead;
+  const liveCalculation=calculateProductionCosts(form.bahan_baku.map(material => ({jumlah: material.jumlah, harga_pokok: state.stok.find(stock => stock.id === material.barang_id)?.harga_pokok || 0})), form.biaya_tenaga_kerja, form.biaya_overhead, form.jumlah);
+  const liveMaterial=liveCalculation.material;
+  const liveTotal=liveCalculation.total;
   return <div className="space-y-6">
     <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900"><Factory size={24} className="text-orange-600"/>Produksi / Pekerjaan</h1><p className="mt-1 text-gray-500">Input dan edit SPK/hasil kerja; biaya dihitung dari komponen aktual yang dimasukkan.</p></div><div className="flex gap-2"><button onClick={exportCsv} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"><Download size={16}/>CSV</button><button onClick={startNew} className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-white"><Plus size={17}/>Tambah Produksi</button></div></header>
     <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-semibold">Status produksi bukan otomatis mutasi inventori</p><p className="mt-1">Halaman ini menghitung estimasi biaya produksi dari bahan terpilih, tenaga kerja, dan overhead. Stok tidak dikurangi otomatis agar tidak ada double count; ledger mutasi bahan, pembebanan WIP, dan jurnal akuntansi masih perlu transaksi resmi yang terhubung.</p></div>
@@ -106,7 +108,7 @@ export default function ProduksiPage() {
       </div>
       <div className="mt-5 flex items-center justify-between gap-2"><h3 className="font-semibold">Bahan baku</h3><button onClick={addMaterial} disabled={state.stok.length===0} className="inline-flex items-center gap-1 rounded border px-3 py-2 text-sm disabled:opacity-40"><Plus size={14}/>Tambah bahan</button></div>
       <div className="mt-2 space-y-2">{form.bahan_baku.map((material,index)=>{const stock=state.stok.find(item=>item.id===material.barang_id);return <div key={index} className="grid grid-cols-1 gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_150px_150px_auto]"><label className="text-xs">Barang<select value={material.barang_id} onChange={e=>setMaterial(index,'barang_id',e.target.value)} className="mt-1 w-full rounded border px-2 py-2 text-sm">{state.stok.map(item=><option key={item.id} value={item.id}>{item.nama} ({item.satuan})</option>)}</select><span className="text-gray-500">Stok tercatat: {stock?stockBalance(stock):0}</span></label><label className="text-xs">Jumlah digunakan<input type="number" min="0" step="any" value={material.jumlah} onChange={e=>setMaterial(index,'jumlah',Number(e.target.value))} className="mt-1 w-full rounded border px-2 py-2 text-sm"/></label><label className="text-xs">Biaya formula<input readOnly value={formatRupiah((stock?.harga_pokok||0)*material.jumlah)} className="mt-1 w-full rounded border bg-gray-50 px-2 py-2 text-sm"/></label><button onClick={()=>setField('bahan_baku',form.bahan_baku.filter((_,i)=>i!==index))} aria-label="Hapus bahan" className="self-center rounded border p-2 text-red-700"><Trash2 size={15}/></button></div>})}{form.bahan_baku.length===0&&<p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-500">Belum ada bahan baku dipilih. Anda boleh menambahkan bahan dari register stok.</p>}</div>
-      <div className="mt-4 rounded-lg bg-orange-50 p-4 text-sm"><p>Biaya bahan formula: <strong>{formatRupiah(liveMaterial)}</strong></p><p>Tenaga kerja: <strong>{formatRupiah(form.biaya_tenaga_kerja)}</strong> · Overhead: <strong>{formatRupiah(form.biaya_overhead)}</strong></p><p className="mt-1 text-lg">Total biaya: <strong>{formatRupiah(liveTotal)}</strong> · Biaya per unit: <strong>{formatRupiah(form.jumlah>0?liveTotal/form.jumlah:0)}</strong></p></div>
+      <div className="mt-4 rounded-lg bg-orange-50 p-4 text-sm"><p>Biaya bahan formula: <strong>{formatRupiah(liveMaterial)}</strong></p><p>Tenaga kerja: <strong>{formatRupiah(form.biaya_tenaga_kerja)}</strong> · Overhead: <strong>{formatRupiah(form.biaya_overhead)}</strong></p><p className="mt-1 text-lg">Total biaya: <strong>{formatRupiah(liveTotal)}</strong> · Biaya per unit: <strong>{formatRupiah(liveCalculation.unitCost)}</strong></p></div>
       <div className="mt-4 flex gap-2"><button onClick={save} className="inline-flex items-center gap-2 rounded-lg bg-orange-600 px-4 py-2 text-white"><Save size={16}/>Simpan</button><button onClick={()=>setShowForm(false)} className="rounded-lg bg-gray-100 px-4 py-2">Batal</button></div>
     </section>}
     <div className="flex gap-2"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari SPK, produk atau catatan…" className="w-full rounded border bg-white px-3 py-2"/></div>
