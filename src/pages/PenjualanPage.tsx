@@ -3,6 +3,7 @@ import { useAppContext } from '../store';
 import { formatRupiah, generateId, getLocalDateISO } from '../data';
 import { getBukuKasVerificationStatus } from '../helpers';
 import type { Penjualan, StokBarang } from '../types';
+import { calculateLineTotal, calculateSalesSubtotal, calculateSalesTotal } from '../utils/operationalFormulas';
 import { ShoppingCart, Plus, Pencil, Save, X, Download, AlertTriangle, Trash2 } from 'lucide-react';
 
 type SalesItem = Penjualan['items'][number];
@@ -25,10 +26,10 @@ const calcItem = (item: SalesItem): SalesItem => ({
   ...item,
   jumlah: Math.max(0, Number(item.jumlah)||0),
   harga: Math.max(0, Number(item.harga)||0),
-  subtotal: Math.max(0, Number(item.jumlah)||0) * Math.max(0, Number(item.harga)||0)
+  subtotal: calculateLineTotal(Math.max(0, Number(item.jumlah)||0), Math.max(0, Number(item.harga)||0))
 });
 const grandTotal = (sale: Pick<Penjualan,'items'|'diskon'|'ppn'>) =>
-  sale.items.reduce((sum,item)=>sum+calcItem(item).subtotal,0)-sale.diskon+sale.ppn;
+  calculateSalesTotal(sale.items, sale.diskon, sale.ppn);
 
 export default function PenjualanPage() {
   const { state, dispatch } = useAppContext();
@@ -50,8 +51,8 @@ export default function PenjualanPage() {
   };
   const rows=useMemo(()=>state.penjualan.map(sale=>{
     const items=sale.items.map(calcItem);
-    const subtotal=items.reduce((sum,item)=>sum+item.subtotal,0);
-    const total=Math.max(0,subtotal-sale.diskon+sale.ppn);
+    const subtotal=calculateSalesSubtotal(items);
+    const total=grandTotal({...sale,items,diskon:sale.diskon,ppn:sale.ppn});
     const paid=derivePaid(sale);
     const remaining=Math.max(0,total-paid);
     const status=paid>=total&&total>0?'Lunas':paid>0?'DP':sale.jatuh_tempo&&sale.jatuh_tempo<today?'Jatuh_Tempo':'Belum_Bayar';
@@ -92,7 +93,7 @@ export default function PenjualanPage() {
       if(!Number.isFinite(item.jumlah)||item.jumlah<=0||!Number.isFinite(item.harga)||item.harga<0){setError('Kuantitas harus positif dan harga tidak boleh negatif pada item '+(index+1)+'.');return;}
     }
     const items=form.items.map(calcItem);
-    const subtotal=items.reduce((sum,item)=>sum+item.subtotal,0);
+    const subtotal=calculateSalesSubtotal(items);
     const diskon=Number(form.diskon),ppn=Number(form.ppn);
     if(!Number.isFinite(diskon)||diskon<0||diskon>subtotal||!Number.isFinite(ppn)||ppn<0){setError('Diskon/PPN tidak valid; diskon tidak boleh melebihi subtotal.');return;}
     if(subtotal-diskon+ppn<=0){setError('Total invoice harus lebih besar dari nol.');return;}
