@@ -9,6 +9,8 @@ export const initialAkun: Akun[] = [
   { kode: '1-1004', nama: 'Persediaan Barang', tipe: 'Aset', kategori: 'Aset Lancar', saldo_normal: 'Debit', saldo: 0 },
   { kode: '1-1005', nama: 'Biaya Dibayar Dimuka', tipe: 'Aset', kategori: 'Aset Lancar', saldo_normal: 'Debit', saldo: 0 },
   { kode: '1-1006', nama: 'PPN Masukan', tipe: 'Aset', kategori: 'Aset Lancar', saldo_normal: 'Debit', saldo: 0 },
+  { kode: '1-1007', nama: 'Persediaan Tanah & Properti untuk Dijual', tipe: 'Aset', kategori: 'Aset Lancar', saldo_normal: 'Debit', saldo: 0 },
+  { kode: '1-1008', nama: 'Proyek dalam Pengerjaan (WIP)', tipe: 'Aset', kategori: 'Aset Lancar', saldo_normal: 'Debit', saldo: 0 },
   { kode: '1-2001', nama: 'Peralatan', tipe: 'Aset', kategori: 'Aset Tetap', saldo_normal: 'Debit', saldo: 0 },
   { kode: '1-2002', nama: 'Kendaraan', tipe: 'Aset', kategori: 'Aset Tetap', saldo_normal: 'Debit', saldo: 0 },
   { kode: '1-2003', nama: 'Bangunan', tipe: 'Aset', kategori: 'Aset Tetap', saldo_normal: 'Debit', saldo: 0 },
