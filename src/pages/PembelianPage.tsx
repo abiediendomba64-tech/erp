@@ -3,6 +3,7 @@ import { useAppContext } from '../store';
 import { formatRupiah, generateId, getLocalDateISO } from '../data';
 import { getBukuKasVerificationStatus } from '../helpers';
 import type { Pembelian, StokBarang } from '../types';
+import { calculateLineTotal, calculateSalesSubtotal, calculatePurchaseTotal } from '../utils/operationalFormulas';
 import { ShoppingBag, Plus, Pencil, Save, X, Download, AlertTriangle, Trash2 } from 'lucide-react';
 
 type PurchaseItem = Pembelian['items'][number];
@@ -14,7 +15,7 @@ const calcItem = (item: PurchaseItem): PurchaseItem => ({
   ...item,
   jumlah: Math.max(0, Number(item.jumlah)||0),
   harga: Math.max(0, Number(item.harga)||0),
-  subtotal: Math.max(0, Number(item.jumlah)||0)*Math.max(0,Number(item.harga)||0)
+  subtotal: calculateLineTotal(Math.max(0, Number(item.jumlah)||0), Math.max(0,Number(item.harga)||0))
 });
 const emptyItem=(stock?:StokBarang):PurchaseItem=>({barang_id:stock?.id||'',jumlah:1,harga:stock?.harga_pokok||0,subtotal:stock?.harga_pokok||0});
 const emptyForm=(stocks:StokBarang[]):PurchaseForm=>({no_po:'PO-'+getLocalDateISO().replace(/-/g,'')+'-001',tanggal:getLocalDateISO(),supplier:'',items:[emptyItem(stocks[0])],ppn:'0',status_terima:'Belum',jatuh_tempo:''});
@@ -34,8 +35,8 @@ export default function PembelianPage(){
   ).reduce((sum,row)=>sum+Math.max(0,Number(row.keluar)||0),0);
   const rows=useMemo(()=>state.pembelian.map(purchase=>{
     const items=purchase.items.map(calcItem);
-    const subtotal=items.reduce((sum,item)=>sum+item.subtotal,0);
-    const total=subtotal+Math.max(0,purchase.ppn);
+    const subtotal=calculateSalesSubtotal(items);
+    const total=calculatePurchaseTotal(items,purchase.ppn);
     const paid=paidFromVerifiedCash(purchase);
     const remaining=Math.max(0,total-paid);
     const status=paid>=total&&total>0?'Lunas':paid>0?'DP':purchase.jatuh_tempo&&purchase.jatuh_tempo<today?'Jatuh_Tempo':'Belum_Bayar';
@@ -83,7 +84,7 @@ export default function PembelianPage(){
   };
 
   const draftSubtotal=form.items.reduce((sum,item)=>sum+calcItem(item).subtotal,0);
-  const draftTotal=draftSubtotal+(Number(form.ppn)||0);
+  const draftTotal=calculatePurchaseTotal(form.items,Number(form.ppn)||0);
   return <div className="space-y-6">
     <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900"><ShoppingBag size={24} className="text-blue-600"/>Pembelian / Purchase Order</h1><p className="mt-1 text-gray-500">Form PO yang bisa diedit, formula item otomatis, dan status pembayaran dari Buku Kas berbukti.</p></div><div className="flex gap-2"><button onClick={exportCsv} className="inline-flex items-center gap-2 rounded border px-3 py-2 text-sm"><Download size={16}/>CSV</button><button onClick={startNew} disabled={state.stok.length===0} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white disabled:opacity-50"><Plus size={17}/>Buat PO</button></div></header>
     <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><p className="font-semibold">PO bukan otomatis utang/kas keluar</p><p className="mt-1">PO hanya komitmen. Barang diterima, faktur supplier, utang, stok, pembayaran, dan jurnal perlu dicatat pada langkah/transaksi masing-masing. Status pembayaran pada daftar dihitung dari pengeluaran Buku Kas yang direferensikan ke nomor PO dan memiliki bukti terverifikasi.</p></div>
