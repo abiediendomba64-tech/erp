@@ -26,9 +26,10 @@ import AccountingDashboard from './pages/AccountingDashboard';
 import InputTransaksiPage from './pages/InputTransaksiPage';
 import LaporanKeuanganPage from './pages/LaporanKeuanganPage';
 import InvoicePOPage from './pages/InvoicePOPage';
+import RABPage from './pages/RABPage';
 import { AccountingProvider } from './store/accounting';
 
-export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo';
+export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab';
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
@@ -62,6 +63,7 @@ function AppContent() {
       case 'inputtransaksi': return <InputTransaksiPage />;
       case 'laporankeuangan': return <LaporanKeuanganPage />;
       case 'invoicepo': return <InvoicePOPage />;
+      case 'rab': return <RABPage />;
       default: return <Dashboard />;
     }
   };
