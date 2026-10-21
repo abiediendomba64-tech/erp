@@ -313,4 +313,29 @@ assert.throws(() => cashbookJournal.createCashbookJournal({
 }, accounts, 'Draft'), /akun lawan/);
 console.log('PASS: jurnal Buku Kas Draft, akun kas/lawan, nilai seimbang, dan reversal aktual');
 
+
+const operational = await loadActualTypeScript('./src/utils/operationalFormulas.ts');
+assert.equal(operational.calculateLineTotal(12, 65000), 780000);
+assert.equal(operational.calculateRABItem({ volume: 21, harga_satuan: 25000 }), 525000);
+assert.equal(operational.calculateRABTotal([{ volume: 2, harga_satuan: 150000 }, { volume: 3, harga_satuan: 200000 }]), 900000);
+assert.equal(operational.calculateStockBalance(100, 25, 40), 85);
+assert.equal(operational.calculateInventoryValue(85, 65000), 5525000);
+assert.equal(operational.calculateSalesSubtotal([{ jumlah: 2, harga: 150000 }, { jumlah: 1, harga: 250000 }]), 550000);
+assert.equal(operational.calculateSalesTotal([{ jumlah: 2, harga: 150000 }, { jumlah: 1, harga: 250000 }], 50000, 55000), 555000);
+assert.equal(operational.calculatePurchaseTotal([{ jumlah: 2, harga: 65000 }, { jumlah: 10, harga: 8500 }], 22000), 237000);
+const productionCost = operational.calculateProductionCosts([
+  { jumlah: 40, harga_pokok: 65000 },
+  { jumlah: 100, harga_pokok: 85000 }
+], 15000000, 3000000, 2);
+assert.equal(productionCost.material, 11100000);
+assert.equal(productionCost.total, 29100000);
+assert.equal(productionCost.unitCost, 14550000);
+assert.equal(operational.calculatePayrollNet({
+  gaji_pokok: 5000000, tunjangan: 1000000, lembur: 500000, potongan: 100000, pph21: 100000
+}), 6300000);
+assert.deepEqual(operational.calculateBudgetVariance(10000000, 12500000), {
+  balance: -2500000, percent: 125, overBudget: true
+});
+console.log('PASS: rumus RAB, stok, penjualan, pembelian, produksi, payroll, dan realisasi anggaran dari fungsi aktual');
+
 console.log('\nALL PRODUCTION ACCOUNTING REGRESSION TESTS PASSED');
