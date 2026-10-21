@@ -6,7 +6,7 @@ import {
   getTanahKelebihanBayar, hasKnownLandContractValue, getBekoNilai,
   getRelatedDocuments, hasDocumentEvidence
 } from '../helpers';
-import { FileBarChart, AlertTriangle, Download, ShieldAlert, LandPlot, Truck, Wallet } from 'lucide-react';
+import { FileBarChart, AlertTriangle, Download, ShieldAlert, LandPlot, Truck, Wallet, FileWarning } from 'lucide-react';
 
 export default function AuditRekapPage() {
   const { state } = useAppContext();
