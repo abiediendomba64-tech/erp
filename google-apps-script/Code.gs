@@ -29,7 +29,7 @@ function getErpSpreadsheet_() {
   if (!SPREADSHEET_ID) {
     throw new Error('Spreadsheet belum dikonfigurasi. Set Script Property SPREADSHEET_ID atau pasang Apps Script pada Google Sheet.');
   }
-  return getErpSpreadsheet_();
+  return SpreadsheetApp.openById(SPREADSHEET_ID);
 }
 
 function getGeminiApiKey_() {
@@ -221,7 +221,7 @@ Jika field tidak ditemukan, isi dengan null. Kembalikan HANYA JSON, tanpa teks l
  * Simpan hasil OCR ke sheet ARSIP_BUKTI
  */
 function saveToArsipBukti(ocrData, imageUrl) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getErpSpreadsheet_();
   let sheet = ss.getSheetByName('ARSIP_BUKTI');
   
   if (!sheet) {
@@ -698,7 +698,7 @@ function handleReversal(data) {
   const transaksiId = data.transaksi_id;
   const alasan = data.alasan || 'Reversal';
   
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getErpSpreadsheet_();
   const jurnalSheet = ss.getSheetByName('JURNAL');
   
   if (!jurnalSheet) {
@@ -763,7 +763,7 @@ function handleReversal(data) {
  * Generate laporan Laba Rugi
  */
 function generateLabaRugi() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getErpSpreadsheet_();
   const jurnalSheet = ss.getSheetByName('JURNAL');
   
   if (!jurnalSheet || jurnalSheet.getLastRow() === 0) {
@@ -801,7 +801,7 @@ function generateLabaRugi() {
  * Generate laporan Neraca
  */
 function generateNeraca() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getErpSpreadsheet_();
   const jurnalSheet = ss.getSheetByName('JURNAL');
   
   if (!jurnalSheet || jurnalSheet.getLastRow() === 0) {
@@ -847,7 +847,7 @@ function generateNeraca() {
  * Get saldo kas
  */
 function getSaldoKas() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getErpSpreadsheet_();
   const jurnalSheet = ss.getSheetByName('JURNAL');
   
   if (!jurnalSheet || jurnalSheet.getLastRow() === 0) {
@@ -876,7 +876,7 @@ function getSaldoKas() {
  * Log aktivitas ke audit trail
  */
 function logAudit(aksi, tabel, recordId, nilaiLama, nilaiBaru) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getErpSpreadsheet_();
   let sheet = ss.getSheetByName('AUDIT_LOG');
   
   if (!sheet) {
@@ -905,7 +905,7 @@ function logAudit(aksi, tabel, recordId, nilaiLama, nilaiBaru) {
  * Setup database sheets (jalankan sekali)
  */
 function setupDatabase() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getErpSpreadsheet_();
   
   // Sheet BUKU_KAS
   let sheet = ss.getSheetByName('BUKU_KAS');
