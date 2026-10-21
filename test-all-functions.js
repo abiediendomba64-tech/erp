@@ -11,7 +11,7 @@ async function loadActualTypeScript(relativePath) {
   let source = await readFile(new URL(relativePath, import.meta.url), 'utf8');
   // Accounting domain interfaces are compile-time only and this test deliberately
   // executes the production helpers without requiring a browser bundler.
-  source = source.replace(/^import\s+\{[^}]+\}\s+from\s+['"]\.\.\/types\/accounting['"];?\s*\r?\n/gm, '');
+  source = source.replace(/^import\s+\{[^}]+\}\s+from\s+['"](?:\.\.\/types\/accounting|\.\/types)['"];?\s*\r?\n/gm, '');
   const javascript = ts.transpileModule(source, {
     compilerOptions: {
       target: ts.ScriptTarget.ES2020,
@@ -177,5 +177,51 @@ try {
 }
 assert.ok(invalidBackendMessage.includes('Jumlah transaksi'), 'Apps Script harus menolak nominal nol');
 console.log('PASS: Apps Script backend aktual menghasilkan jurnal seimbang untuk 7 tipe transaksi dan menolak nominal tidak valid');
+
+
+const helpers = await loadActualTypeScript('./src/helpers.ts');
+const landKnown = { id: 'T-TEST-1', pemilik: 'Uji', luas_bt: 19, harga_per_bt: 800000, dp: 5200000, status: 'DP', kode_bukti: '', url_bukti: '', catatan: '' };
+assert.equal(helpers.hasKnownLandContractValue(landKnown), true);
+assert.equal(helpers.getTanahNilaiTotal(landKnown), 15200000);
+assert.equal(helpers.getTanahSisa(landKnown), 10000000);
+assert.equal(helpers.getTanahKelebihanBayar(landKnown), 0);
+
+const landUnknown = { id: 'T-TEST-2', pemilik: 'Uji', luas_bt: 0, harga_per_bt: 0, dp: 70000000, status: 'DP', kode_bukti: '', url_bukti: '', catatan: '' };
+assert.equal(helpers.hasKnownLandContractValue(landUnknown), false, 'pembayaran bukan nilai kontrak');
+assert.equal(helpers.getTanahNilaiTotal(landUnknown), 0, 'nilai kontrak tak diketahui tidak boleh ditebak dari DP');
+assert.equal(helpers.getTanahSisa(landUnknown), 0, 'sisa untuk nilai belum diketahui harus dilabeli unknown di UI');
+assert.equal(helpers.getTanahKelebihanBayar(landUnknown), 0, 'tanpa nilai kontrak jangan menuduh kelebihan bayar');
+
+const landManual = { ...landUnknown, nilai_total_manual: 70000000 };
+assert.equal(helpers.hasKnownLandContractValue(landManual), true);
+assert.equal(helpers.getTanahNilaiTotal(landManual), 70000000);
+assert.equal(helpers.getTanahSisa(landManual), 0);
+
+const bekoLumpsum = { id: 'BK-01', item: 'Mobilisasi', panjang: 0, lebar: 0, tinggi: 0, tarif: 4500000, status: 'Lunas', kode_bukti: '', url_bukti: '', catatan: '', satuan_volume: 'ls' };
+assert.equal(helpers.getBekoVolume(bekoLumpsum), 1);
+assert.equal(helpers.getBekoNilai(bekoLumpsum), 4500000);
+
+const bekoQuantity = { id: 'BK-02', item: 'Mobilisasi Beko', panjang: 25.5, lebar: 1, tinggi: 1, tarif: 650000, status: 'Lunas', kode_bukti: '', url_bukti: '', catatan: '', satuan_volume: 'unit' };
+assert.equal(helpers.getBekoVolume(bekoQuantity), 25.5);
+assert.equal(helpers.getBekoNilai(bekoQuantity), 16575000, 'kuantitas 25.5 x tarif 650.000');
+
+const bekoVolume = { id: 'BK-03', item: 'Cut Fill', panjang: 21, lebar: 15, tinggi: 2, tarif: 25000, status: 'Lunas', kode_bukti: '', url_bukti: '', catatan: '', satuan_volume: 'm3' };
+assert.equal(helpers.getBekoVolume(bekoVolume), 630);
+assert.equal(helpers.getBekoNilai(bekoVolume), 15750000, 'volume 21 x 15 x 2 x 25.000');
+console.log('PASS: rumus tanah dan beko aktual, termasuk nilai kontrak unknown dan kuantitas unit');
+
+const noProof = { id: 'KAS-TEST-1', kode_bukti: '' };
+assert.equal(helpers.getBukuKasVerificationStatus(noProof, []), 'TANPA_BUKTI');
+assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-2', kode_bukti: 'KW-02' }, []), 'PERLU_KONFIRMASI');
+assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-3', kode_bukti: 'KW-03' }, [{
+  id: 'DOC-PENDING', kode_bukti: 'KW-03', terverifikasi: 'Perlu_Konfirmasi', link_drive: 'https://example.test/bukti.pdf'
+}]), 'PERLU_KONFIRMASI');
+assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-4', kode_bukti: 'KW-04' }, [{
+  id: 'DOC-VERIFIED', kode_bukti: 'KW-04', terverifikasi: 'Ya', link_drive: 'https://example.test/bukti.pdf'
+}]), 'LENGKAP');
+assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-5', kode_bukti: 'KW-05' }, [{
+  id: 'DOC-EMPTY', kode_bukti: 'KW-05', terverifikasi: 'Ya', link_drive: ''
+}]), 'PERLU_KONFIRMASI');
+console.log('PASS: status bukti diturunkan dari keberadaan file/URL dan verifikasi, bukan hanya kode bukti');
 
 console.log('\nALL PRODUCTION ACCOUNTING REGRESSION TESTS PASSED');
