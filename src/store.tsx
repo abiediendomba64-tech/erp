@@ -176,9 +176,12 @@ function loadAppState(): AppState {
           land.harga_per_bt === 750000 && land.dp === 11500000 && land.catatan === 'Bidang 3') {
         return { ...land, harga_per_bt: 500000 };
       }
-      if (land.luas_bt === 0 && land.harga_per_bt === 0 && !land.nilai_total_manual &&
-          /nominal langsung/i.test(land.catatan || '') && land.dp > 0) {
-        return { ...land, nilai_total_manual: land.dp };
+      if (land.luas_bt === 0 && land.harga_per_bt === 0 && !land.nilai_total_manual) {
+        return {
+          ...land,
+          status: 'Dalam_Penelusuran',
+          catatan: (land.catatan || '') + (land.catatan?.includes('nilai kesepakatan harus dicek') ? '' : ' — nilai kontrak belum diketahui; cek perjanjian asli')
+        };
       }
       return land;
     });
