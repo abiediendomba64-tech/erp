@@ -9,7 +9,7 @@
  */
 
 // Set VITE_ERP_API_URL ke URL deployment Google Apps Script pada environment build.
-const API_BASE_URL = String((import.meta as any).env?.VITE_ERP_API_URL || '').trim().replace(/\\/$/, '');
+const API_BASE_URL = String((import.meta as any).env?.VITE_ERP_API_URL || '').trim().replace(/\/$/, '');
 
 function getApiUrl(path: string): string {
   if (!API_BASE_URL || API_BASE_URL.includes('YOUR_DEPLOYMENT_ID')) {
@@ -116,7 +116,7 @@ export async function scanKwitansi(imageUrl: string): Promise<{
     if (!imageUrl.trim()) throw new Error('URL foto kwitansi wajib diisi.');
     const response = await fetch(getApiUrl('/ocr'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: jsonRequestHeaders,
       body: JSON.stringify({ imageUrl })
     });
     
