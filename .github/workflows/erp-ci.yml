@@ -29,6 +29,8 @@ jobs:
         run: npm ci
       - name: TypeScript typecheck
         run: npm run typecheck
+      - name: Apps Script syntax check
+        run: node --check < google-apps-script/Code.gs
       - name: Accounting regression tests
         run: npm test
       - name: Production build
