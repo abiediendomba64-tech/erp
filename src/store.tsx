@@ -179,7 +179,7 @@ function loadAppState(): AppState {
       if (land.luas_bt === 0 && land.harga_per_bt === 0 && !land.nilai_total_manual) {
         return {
           ...land,
-          status: 'Dalam_Penelusuran',
+          status: land.dp > 0 ? 'DP' : 'Belum_Bayar',
           catatan: (land.catatan || '') + (land.catatan?.includes('nilai kesepakatan harus dicek') ? '' : ' — nilai kontrak belum diketahui; cek perjanjian asli')
         };
       }
