@@ -3,12 +3,12 @@ import { useAppContext } from '../store';
 import { formatRupiah, generateId, getLocalDateISO } from '../data';
 import { getBukuKasVerificationStatus } from '../helpers';
 import type { Penggajian } from '../types';
+import { calculatePayrollNet } from '../utils/operationalFormulas';
 import { Users, Plus, Pencil, Save, X, Download, AlertTriangle } from 'lucide-react';
 
 type PayrollForm=Omit<Penggajian,'id'>;
 const emptyForm=():PayrollForm=>({nip:'',nama:'',jabatan:'',departemen:'',gaji_pokok:0,tunjangan:0,lembur:0,potongan:0,pph21:0,periode:getLocalDateISO().slice(0,7),status:'Disetujui'});
-const payrollNet=(record:Pick<Penggajian,'gaji_pokok'|'tunjangan'|'lembur'|'potongan'|'pph21'>)=>
-  Math.max(0,Number(record.gaji_pokok)||0)+Math.max(0,Number(record.tunjangan)||0)+Math.max(0,Number(record.lembur)||0)-Math.max(0,Number(record.potongan)||0)-Math.max(0,Number(record.pph21)||0);
+const payrollNet=(record:Pick<Penggajian,'gaji_pokok'|'tunjangan'|'lembur'|'potongan'|'pph21'>)=>calculatePayrollNet(record);
 
 export default function PenggajianPage(){
   const {state,dispatch}=useAppContext();
