@@ -145,10 +145,13 @@ function loadAppState(): AppState {
 
     // Migrate old localStorage seeds that claimed proof/status without an attached file or URL.
     result.arsipBukti = result.arsipBukti.map(document => {
-      const hasEvidence = Boolean(
-        document.local_file_key ||
-        (document.link_drive && /^https?:\/\//i.test(document.link_drive))
+      const hasExternalEvidence = Boolean(document.link_drive && /^https?:\/\//i.test(document.link_drive));
+      const hasRealLocalEvidence = Boolean(
+        document.local_file_key &&
+        !String(document.mime_type || '').toLowerCase().startsWith('text/html') &&
+        !String(document.nama_file || '').toLowerCase().endsWith('.html')
       );
+      const hasEvidence = hasExternalEvidence || hasRealLocalEvidence;
       const oldBekoStage = /^DBK-0[1-6]$/.test(document.id) && !hasEvidence;
       const stageNumber = oldBekoStage ? document.id.slice(-2) : '';
       return {
