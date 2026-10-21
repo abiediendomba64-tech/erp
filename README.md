@@ -380,37 +380,16 @@ Repository memiliki perbaikan inti akuntansi dan build gate pada branch perbaika
 - Saldo awal, pajak, persediaan/HPP, aset tetap, dan periode akuntansi perlu rekonsiliasi serta pemeriksaan akuntan.
 - Seed data pada modul operasional harus diverifikasi sebelum dipakai sebagai data transaksi asli.
 
-## 📞 FINAL ANSWER TO YOUR QUESTIONS
+## Pertanyaan umum
 
-### ❓ **Bagaimana ini berfungsi untuk data input?**
-✅ **Input manual melalui form** (sudah berfungsi)  
-✅ **OCR otomatis** (setelah setup Gemini API - 30 menit)  
-✅ **WhatsApp/Telegram auto-input** (setelah setup webhook - 1-2 jam)
+**Apakah transaksi bertahan setelah reload?**  
+State modul akuntansi disimpan ke localStorage pada browser yang sama. Ini bukan cloud sync dan tidak membuat data tersedia pada perangkat lain.
 
-### ❓ **Bagaimana untuk data update?**
-✅ **Edit manual untuk data master** (sudah berfungsi)  
-✅ **Reversal journal untuk transaksi posted** (sudah berfungsi)  
-✅ **Audit trail tercatat** (sudah berfungsi)
+**Apakah laporan otomatis dibuat?**  
+Laporan dihitung dari jurnal Posted yang tersimpan pada modul akuntansi. Ketepatan hasil tetap bergantung pada ketepatan dan kelengkapan jurnal.
 
-### ❓ **Apakah saya perlu input manual?**
-✅ **YA, untuk saat ini** (localStorage)  
-⏳ **TIDAK, setelah setup Full Google Stack** (OCR/WhatsApp aktif)
+**Apakah OCR, Google Drive, WhatsApp, dan Telegram otomatis aktif?**  
+Belum. Komponen, helper dan backend masih memerlukan konfigurasi, wiring UI, credentials, kontrol akses, serta uji end-to-end.
 
-### ❓ **Apakah saya perlu edit manual?**
-✅ **YA, untuk data master** (sudah berfungsi)  
-✅ **TIDAK, untuk transaksi posted** (gunakan reversal journal)
-
-### ❓ **Bagaimana hirarki data?**
-✅ **5 Level:** Master → Transaksi → Jurnal → Buku Besar → Laporan  
-✅ **Auto-generate:** Jurnal, Buku Besar, Laporan dari transaksi
-
-### ❓ **Bagaimana kelengkapan data di lapangan?**
-⚠️ **Data dasar sudah ada** (13 tanah, 8 beko, 6 periode)  
-⚠️ **Perlu tambah data lapangan** (kwitansi, nota, bukti transfer)  
-✅ **OCR bisa bantu** (setelah setup Gemini API)
-
----
-
-**Status Final:** ✅ **SISTEM SIAP DIGUNAKAN**  
-**Production Ready:** ⏳ **PERLU SETUP 2 JAM**  
-**Cost:** 💰 **RP0 (GRATIS)**
+**Apakah sistem sudah PSAK/siap audit?**  
+Belum diverifikasi secara independen. Gunakan bukti asli, rekonsiliasi saldo, dan pemeriksaan profesional sebelum menerbitkan laporan resmi.
