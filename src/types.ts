@@ -16,7 +16,32 @@ export interface BukuKas {
 export interface ArsipBukti {
   id: string;
   kode_bukti: string;
-  jenis: 'Kwitansi_Foto' | 'Transfer_Bank' | 'BAST' | 'Tidak_Ada';
+  jenis:
+    | 'Kwitansi_Foto'
+    | 'Transfer_Bank'
+    | 'BAST'
+    | 'Tidak_Ada'
+    | 'Nota_Foto'
+    | 'Invoice_Faktur'
+    | 'Perjanjian_Jual_Beli'
+    | 'PPJB'
+    | 'AJB'
+    | 'Akta_Notaris'
+    | 'Sertifikat_SHM'
+    | 'Sertifikat_SHGB'
+    | 'PBB'
+    | 'Surat_Kuasa'
+    | 'KTP_NPWP'
+    | 'Surat_Pernyataan'
+    | 'Kontrak_Kerja'
+    | 'SPK'
+    | 'Addendum_Kontrak'
+    | 'RAB'
+    | 'Progress_Pekerjaan'
+    | 'Dokumen_PBG_IMB'
+    | 'SLF'
+    | 'NIB'
+    | 'Lainnya';
   link_drive: string;
   tgl_upload: string;
   terverifikasi: 'Ya' | 'Tidak' | 'Perlu_Konfirmasi';
@@ -24,6 +49,21 @@ export interface ArsipBukti {
   penerima: string;
   nominal: number;
   keterangan: string;
+  // Metadata dokumen pendukung. File lokal disimpan pada IndexedDB perangkat/browser ini.
+  judul_dokumen?: string;
+  nomor_dokumen?: string;
+  tanggal_dokumen?: string;
+  proyek?: string;
+  modul_terkait?: 'Buku Kas' | 'Tanah' | 'Beko' | 'Utang Tanah' | 'Nota Material' | 'Kontrak' | 'Proyek' | 'Lainnya';
+  id_terkait?: string;
+  nama_file?: string;
+  mime_type?: string;
+  ukuran_bytes?: number;
+  local_file_key?: string;
+  nama_pengunggah?: string;
+  waktu_dibuat?: string;
+  diverifikasi_oleh?: string;
+  waktu_verifikasi?: string;
 }
 
 // ============ LAYER 3: POS KEWAJIBAN ============
@@ -81,7 +121,9 @@ export interface Beko {
   kode_bukti: string;
   url_bukti: string;
   catatan: string;
-  // COMPUTED: nilai = panjang × lebar × tinggi × tarif
+  termasuk_rekap?: boolean;
+  satuan_volume?: 'm3' | 'unit' | 'ls';
+  // COMPUTED: volume × tarif; item LS menggunakan tarif sebagai nilai lumpsum.
 }
 
 // ============ NOTA MATERIAL ============
