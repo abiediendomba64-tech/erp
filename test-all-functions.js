@@ -211,16 +211,22 @@ assert.equal(helpers.getBekoNilai(bekoVolume), 15750000, 'volume 21 x 15 x 2 x 2
 console.log('PASS: rumus tanah dan beko aktual, termasuk nilai kontrak unknown dan kuantitas unit');
 
 const noProof = { id: 'KAS-TEST-1', kode_bukti: '' };
-assert.equal(helpers.getBukuKasVerificationStatus(noProof, []), 'TANPA_BUKTI');
-assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-2', kode_bukti: 'KW-02' }, []), 'PERLU_KONFIRMASI');
-assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-3', kode_bukti: 'KW-03' }, [{
-  id: 'DOC-PENDING', kode_bukti: 'KW-03', terverifikasi: 'Perlu_Konfirmasi', link_drive: 'https://example.test/bukti.pdf'
+assert.equal(helpers.getBukuKasVerificationStatus({ ...noProof, masuk: 1000, keluar: 0 }, []), 'TANPA_BUKTI');
+assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-2', kode_bukti: 'KW-02', masuk: 1000, keluar: 0 }, []), 'PERLU_KONFIRMASI');
+assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-3', kode_bukti: 'KW-03', masuk: 1000, keluar: 0 }, [{
+  id: 'DOC-PENDING', kode_bukti: 'KW-03', jenis: 'Kwitansi_Foto', nominal: 1000, terverifikasi: 'Perlu_Konfirmasi', link_drive: 'https://example.test/bukti.pdf'
 }]), 'PERLU_KONFIRMASI');
-assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-4', kode_bukti: 'KW-04' }, [{
-  id: 'DOC-VERIFIED', kode_bukti: 'KW-04', terverifikasi: 'Ya', link_drive: 'https://example.test/bukti.pdf'
+assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-4', kode_bukti: 'KW-04', masuk: 1000, keluar: 0 }, [{
+  id: 'DOC-VERIFIED', kode_bukti: 'KW-04', jenis: 'Kwitansi_Foto', nominal: 1000, terverifikasi: 'Ya', link_drive: 'https://example.test/bukti.pdf'
 }]), 'LENGKAP');
-assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-5', kode_bukti: 'KW-05' }, [{
-  id: 'DOC-EMPTY', kode_bukti: 'KW-05', terverifikasi: 'Ya', link_drive: ''
+assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-5', kode_bukti: 'KW-05', masuk: 1000, keluar: 0 }, [{
+  id: 'DOC-EMPTY', kode_bukti: 'KW-05', jenis: 'Kwitansi_Foto', nominal: 1000, terverifikasi: 'Ya', link_drive: ''
+}]), 'PERLU_KONFIRMASI');
+assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-6', kode_bukti: 'KW-06', keluar: 1000, masuk: 0 }, [{
+  id: 'DOC-WRONG-AMOUNT', kode_bukti: 'KW-06', jenis: 'Kwitansi_Foto', nominal: 900, terverifikasi: 'Ya', link_drive: 'https://example.test/bukti.pdf'
+}]), 'PERLU_KONFIRMASI');
+assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-7', kode_bukti: 'KW-07', keluar: 1000, masuk: 0 }, [{
+  id: 'DOC-LEGAL-DEED', kode_bukti: 'KW-07', jenis: 'AJB', nominal: 1000, terverifikasi: 'Ya', link_drive: 'https://example.test/akta.pdf'
 }]), 'PERLU_KONFIRMASI');
 console.log('PASS: status bukti diturunkan dari keberadaan file/URL dan verifikasi, bukan hanya kode bukti');
 
