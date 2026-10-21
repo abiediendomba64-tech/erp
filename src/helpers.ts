@@ -3,16 +3,17 @@ import { Tanah, Beko, PosKewajiban, StokBarang, Produksi, Penjualan, Pembelian, 
 // ============ COMPUTED VALUES ============
 // Semua perhitungan dilakukan di sini — TIDAK disimpan di database — ANTI DRIFT
 
-// Handle edge case: tanah tanpa luas tapi ada nominal langsung (T-10, T-12)
+// Nilai kontrak tidak boleh disimpulkan otomatis dari jumlah yang sudah dibayar.
+// Untuk bidang tanpa luas/harga, simpan nilai kesepakatan pada nilai_total_manual.
 export const getTanahNilaiTotal = (t: Tanah): number => {
-  // Jika luas_bt = 0 tapi dp > 0, gunakan dp sebagai nilai total (kasus nominal langsung)
-  if (t.luas_bt === 0 && t.dp > 0) {
-    return t.dp;
+  if (Number.isFinite(t.nilai_total_manual) && Number(t.nilai_total_manual) > 0) {
+    return Number(t.nilai_total_manual);
   }
-  return t.luas_bt * t.harga_per_bt;
+  return Math.max(0, Number(t.luas_bt) || 0) * Math.max(0, Number(t.harga_per_bt) || 0);
 };
 
 export const getTanahSisa = (t: Tanah): number => Math.max(0, getTanahNilaiTotal(t) - Math.max(0, t.dp));
+export const getTanahKelebihanBayar = (t: Tanah): number => Math.max(0, Math.max(0, t.dp) - getTanahNilaiTotal(t));
 export const getTanahKelebihanBayar = (t: Tanah): number => Math.max(0, Math.max(0, t.dp) - getTanahNilaiTotal(t));
 
 // Handle edge case: BK-01 mobilisasi tanpa dimensi tapi ada nilai tetap
@@ -62,6 +63,38 @@ export const getPenggajianGajiBersih = (g: Penggajian): number => g.gaji_pokok +
 
 export const getAnggaranSisa = (a: Anggaran): number => a.anggaran - a.realisasi;
 export const getAnggaranPersentase = (a: Anggaran): number => a.anggaran > 0 ? (a.realisasi / a.anggaran) * 100 : 0;
+
+export const hasDocumentEvidence = (document: { link_drive?: string; local_file_key?: string }): boolean =>
+  Boolean(document.local_file_key || (document.link_drive && /^https?:\/\//i.test(document.link_drive)));
+
+export const getRelatedDocuments = <T extends { modul_terkait?: string; id_terkait?: string; kode_bukti?: string }>(
+  documents: T[],
+  module: string,
+  recordId: string,
+  proofCode?: string
+): T[] => documents.filter(document =>
+  (document.modul_terkait === module && document.id_terkait === recordId) ||
+  (Boolean(proofCode) && document.kode_bukti === proofCode)
+);
+
+export const hasVerifiedRelatedDocument = <T extends { terverifikasi?: string; link_drive?: string; local_file_key?: string; modul_terkait?: string; id_terkait?: string; kode_bukti?: string }>(
+  documents: T[],
+  module: string,
+  recordId: string,
+  proofCode?: string
+): boolean => getRelatedDocuments(documents, module, recordId, proofCode).some(document =>
+  document.terverifikasi === 'Ya' && hasDocumentEvidence(document)
+);
+
+export const getBukuKasVerificationStatus = <T extends { terverifikasi?: string; link_drive?: string; local_file_key?: string; modul_terkait?: string; id_terkait?: string; kode_bukti?: string }>(
+  record: { id: string; kode_bukti: string },
+  documents: T[]
+): 'LENGKAP' | 'TANPA_BUKTI' | 'PERLU_KONFIRMASI' => {
+  const linked = getRelatedDocuments(documents, 'Buku Kas', record.id, record.kode_bukti);
+  if (linked.some(document => document.terverifikasi === 'Ya' && hasDocumentEvidence(document))) return 'LENGKAP';
+  if (linked.length > 0 || record.kode_bukti.trim()) return 'PERLU_KONFIRMASI';
+  return 'TANPA_BUKTI';
+};
 
 export const getArusKasSaldo = (allKas: ArusKas[], upToIndex: number): number => {
   let saldo = 0;
