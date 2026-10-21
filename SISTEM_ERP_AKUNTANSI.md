@@ -3,21 +3,21 @@
 
 **Versi:** 1.0  
 **Tanggal:** 21 Oktober 2026  
-**Status:** ✅ READY TO USE
+**Status:** IMPLEMENTASI PARSIAL — BELUM SIAP PRODUKSI
 
 ---
 
 ## 🎯 OVERVIEW
 
-Sistem ERP akuntansi lengkap yang **user-friendly** untuk pemilik usaha yang awam akuntansi. Cukup input transaksi di form khusus, sistem akan **auto-generate**:
+Modul akuntansi dirancang agar input transaksi lebih mudah. Fungsi yang sudah ada menghitung jurnal dan laporan dari state lokal; validitas laporan resmi belum terverifikasi dan sinkronisasi cloud belum menyeluruh.
 - ✅ Jurnal Umum (Double-Entry)
 - ✅ Buku Besar
 - ✅ Laporan Keuangan Lengkap
 - ✅ Hutang & Piutang
 - ✅ Invoice & Purchase Order
-- ✅ RAB (Rencana Anggaran Biaya)
+- ⏳ RAB (Rencana Anggaran Biaya) — belum menjadi modul yang dapat diandalkan
 
-**Compatible:** Web, Tablet, HP (Semua OS & Device)
+**Tampilan:** Web responsif. Data localStorage tetap terpisah per browser/perangkat dan tidak otomatis tersinkron.
 
 ---
 
