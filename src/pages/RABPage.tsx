@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useAccounting } from '../store/accounting';
 import { formatRupiah, getLocalDateISO, generateId } from '../data/accounting';
 import type { RAB, RABItem } from '../types/accounting';
+import { calculateRABItem, calculateRABTotal } from '../utils/operationalFormulas';
 import { ClipboardList, Plus, Trash2, Save, Pencil, Download, AlertTriangle, X } from 'lucide-react';
 
 type RABDraft = {
@@ -30,11 +31,11 @@ const emptyDraft = (): RABDraft => ({
 function calculateItem(item: RABItem): RABItem {
   const volume = Number.isFinite(Number(item.volume)) ? Math.max(0, Number(item.volume)) : 0;
   const rate = Number.isFinite(Number(item.harga_satuan)) ? Math.max(0, Number(item.harga_satuan)) : 0;
-  return { ...item, volume, harga_satuan: rate, jumlah: volume * rate };
+  return { ...item, volume, harga_satuan: rate, jumlah: calculateRABItem({ volume, harga_satuan: rate }) };
 }
 
 function calculateTotal(items: RABItem[]): number {
-  return items.reduce((sum, item) => sum + calculateItem(item).jumlah, 0);
+  return calculateRABTotal(items.map(item => ({ volume: item.volume, harga_satuan: item.harga_satuan })));
 }
 
 export default function RABPage() {
