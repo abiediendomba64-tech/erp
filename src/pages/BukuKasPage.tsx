@@ -153,15 +153,48 @@ export default function BukuKasPage() {
         record.jurnal_id = undefined;
         statusPesan = 'Riwayat diperbarui tanpa membuat jurnal baru. Hubungkan transaksi pembukuan resmi secara manual setelah rekonsiliasi agar tidak dihitung dua kali.';
       } else if (existingRecord?.posting_status === 'POSTED' && existingJournal?.status === 'Posted') {
+        const linkedVerifiedReceipt = state.arsipBukti.find(document =>
+          document.modul_terkait === 'Buku Kas' &&
+          document.terverifikasi === 'Ya' &&
+          hasDocumentEvidence(document) &&
+          ['Kwitansi_Foto', 'Transfer_Bank', 'Nota_Foto'].includes(document.jenis) &&
+          ((document.id_terkait && document.id_terkait === existingRecord.id) ||
+            (document.kode_bukti && existingRecord.kode_bukti && document.kode_bukti === existingRecord.kode_bukti)) &&
+          Number.isFinite(Number(document.nominal)) &&
+          Math.abs(Number(document.nominal) - nominal) <= 0.005
+        );
         const reversal = createReversalJournal(existingJournal, 'Koreksi transaksi buku kas ' + record.id + ': ' + record.keterangan);
         if (!journalTotalsAreBalanced(reversal)) throw new Error('Jurnal reversal tidak seimbang.');
         dispatchAccounting({ type: 'ADD_JURNAL', payload: reversal });
-        const draft = createCashbookJournal(record, accountingState.akun, 'Draft');
-        if (!journalTotalsAreBalanced(draft)) throw new Error('Jurnal koreksi tidak seimbang.');
-        record.jurnal_id = draft.id;
-        record.posting_status = 'DRAFT';
-        dispatchAccounting({ type: 'ADD_JURNAL', payload: draft });
-        statusPesan = 'Jurnal lama dibalik untuk menjaga audit trail. Jurnal koreksi dibuat Draft dan menunggu bukti diverifikasi.';
+
+        if (linkedVerifiedReceipt) {
+          const correctedPosted = createCashbookJournal(record, accountingState.akun, 'Posted');
+          if (!journalTotalsAreBalanced(correctedPosted)) throw new Error('Jurnal koreksi tidak seimbang.');
+          record.jurnal_id = correctedPosted.id;
+          record.posting_status = 'POSTED';
+          record.status_verifikasi = 'LENGKAP';
+          dispatchAccounting({ type: 'ADD_JURNAL', payload: correctedPosted });
+          statusPesan = 'Jurnal lama dibalik dan jurnal koreksi diposting karena kuitansi/transfer terverifikasi tetap cocok dengan nominal terbaru.';
+        } else {
+          const draft = createCashbookJournal(record, accountingState.akun, 'Draft');
+          if (!journalTotalsAreBalanced(draft)) throw new Error('Jurnal koreksi tidak seimbang.');
+          record.jurnal_id = draft.id;
+          record.posting_status = 'DRAFT';
+          record.status_verifikasi = 'PERLU_KONFIRMASI';
+          dispatchAccounting({ type: 'ADD_JURNAL', payload: draft });
+          state.arsipBukti
+            .filter(document =>
+              document.modul_terkait === 'Buku Kas' &&
+              document.terverifikasi === 'Ya' &&
+              ((document.id_terkait && document.id_terkait === existingRecord.id) ||
+                (document.kode_bukti && existingRecord.kode_bukti && document.kode_bukti === existingRecord.kode_bukti))
+            )
+            .forEach(document => dispatch({
+              type: 'UPDATE_ARSIP_BUKTI',
+              payload: { ...document, terverifikasi: 'Perlu_Konfirmasi', diverifikasi_oleh: '', waktu_verifikasi: '', catatan_audit: (document.catatan_audit ? document.catatan_audit + ' ' : '') + 'Status dikembalikan ke Perlu Konfirmasi karena transaksi Buku Kas dikoreksi.'
+            }));
+          statusPesan = 'Jurnal lama dibalik dan jurnal koreksi menjadi Draft. Bukti terkait dikembalikan ke Perlu Konfirmasi karena nominal/perincian transaksi berubah; periksa ulang sebelum memposting.';
+        }
       } else if (existingRecord?.posting_status === 'DRAFT' && existingJournal?.status === 'Draft') {
         const draft = createCashbookJournal(record, accountingState.akun, 'Draft');
         if (!journalTotalsAreBalanced(draft)) throw new Error('Jurnal koreksi tidak seimbang.');
