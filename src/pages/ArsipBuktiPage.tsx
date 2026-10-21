@@ -169,9 +169,18 @@ export default function ArsipBuktiPage() {
     const existing = editingId ? state.arsipBukti.find(item => item.id === editingId) : undefined;
     const localFileAlreadyExists = Boolean(existing?.local_file_key);
     const hasEvidence = Boolean(selectedFile || localFileAlreadyExists || form.link_drive.trim());
+    const localFileIsDraftHtml = !form.link_drive.trim() &&
+      !selectedFile &&
+      Boolean(existing?.local_file_key) &&
+      (String(existing?.mime_type || '').toLowerCase().startsWith('text/html') ||
+        String(existing?.nama_file || '').toLowerCase().endsWith('.html'));
+    const selectedFileIsDraftHtml = !form.link_drive.trim() &&
+      Boolean(selectedFile) &&
+      (String(selectedFile?.type || '').toLowerCase().startsWith('text/html') ||
+        String(selectedFile?.name || '').toLowerCase().endsWith('.html'));
     if (form.terverifikasi === 'Ya') {
-      if (!hasEvidence) {
-        setError('Dokumen tidak dapat diverifikasi tanpa lampiran file atau tautan bukti.');
+      if (!hasEvidence || localFileIsDraftHtml || selectedFileIsDraftHtml) {
+        setError('Draft HTML yang dihasilkan aplikasi bukan bukti pembayaran/hukum. Lampirkan berkas asli yang telah ditandatangani atau tautan ke salinan asli yang benar-benar diperiksa.');
         return;
       }
       if (!form.diverifikasi_oleh.trim()) {
