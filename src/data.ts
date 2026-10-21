@@ -7,15 +7,15 @@ import { BukuKas, ArsipBukti, PosKewajiban, AuditLog, Tanah, Beko, NotaMaterial,
 // ============ A. PENERIMAAN DANA (Buku Kas Masuk) ============
 export const initialBukuKas: BukuKas[] = [
   { id: 'KAS-M00', tgl: '2026-08-01', no_ref: 'KAS-M00', kode_bukti: '', keterangan: 'Penerimaan dana sebelum 28 Sep 2026', kategori: 'Operasional', proyek: 'Site A', masuk: 204000000, keluar: 0, status_verifikasi: 'PERLU_KONFIRMASI' },
-  { id: 'KAS-M01', tgl: '2026-08-28', no_ref: 'KAS-M01', kode_bukti: '', keterangan: 'Penerimaan dana', kategori: 'Operasional', proyek: 'Site A', masuk: 32500000, keluar: 0, status_verifikasi: 'LENGKAP' },
-  { id: 'KAS-M02', tgl: '2026-09-28', no_ref: 'KAS-M02', kode_bukti: '', keterangan: 'Penerimaan dana', kategori: 'Operasional', proyek: 'Site A', masuk: 50000000, keluar: 0, status_verifikasi: 'LENGKAP' },
-  { id: 'KAS-M03', tgl: '2026-09-30', no_ref: 'KAS-M03', kode_bukti: '', keterangan: 'Penerimaan dana', kategori: 'Operasional', proyek: 'Site A', masuk: 50000000, keluar: 0, status_verifikasi: 'LENGKAP' },
-  { id: 'KAS-M04', tgl: '2026-10-05', no_ref: 'KAS-M04', kode_bukti: '', keterangan: 'Penerimaan dana', kategori: 'Operasional', proyek: 'Site A', masuk: 60000000, keluar: 0, status_verifikasi: 'LENGKAP' },
-  { id: 'KAS-M05', tgl: '2026-10-13', no_ref: 'KAS-M05', kode_bukti: '', keterangan: 'Menerima dana', kategori: 'Operasional', proyek: 'Site A', masuk: 15000000, keluar: 0, status_verifikasi: 'LENGKAP' },
+  { id: 'KAS-M01', tgl: '2026-08-28', no_ref: 'KAS-M01', kode_bukti: '', keterangan: 'Penerimaan dana', kategori: 'Operasional', proyek: 'Site A', masuk: 32500000, keluar: 0, status_verifikasi: 'PERLU_KONFIRMASI' },
+  { id: 'KAS-M02', tgl: '2026-09-28', no_ref: 'KAS-M02', kode_bukti: '', keterangan: 'Penerimaan dana', kategori: 'Operasional', proyek: 'Site A', masuk: 50000000, keluar: 0, status_verifikasi: 'PERLU_KONFIRMASI' },
+  { id: 'KAS-M03', tgl: '2026-09-30', no_ref: 'KAS-M03', kode_bukti: '', keterangan: 'Penerimaan dana', kategori: 'Operasional', proyek: 'Site A', masuk: 50000000, keluar: 0, status_verifikasi: 'PERLU_KONFIRMASI' },
+  { id: 'KAS-M04', tgl: '2026-10-05', no_ref: 'KAS-M04', kode_bukti: '', keterangan: 'Penerimaan dana', kategori: 'Operasional', proyek: 'Site A', masuk: 60000000, keluar: 0, status_verifikasi: 'PERLU_KONFIRMASI' },
+  { id: 'KAS-M05', tgl: '2026-10-13', no_ref: 'KAS-M05', kode_bukti: '', keterangan: 'Menerima dana', kategori: 'Operasional', proyek: 'Site A', masuk: 15000000, keluar: 0, status_verifikasi: 'PERLU_KONFIRMASI' },
   // PENGELUARAN
-  { id: 'KAS-K01', tgl: '2026-10-13', no_ref: 'KAS-K01', kode_bukti: '', keterangan: 'Pembebasan tanah (teralokasi)', kategori: 'Pembebasan_Tanah', proyek: 'Site A', masuk: 0, keluar: 309400000, status_verifikasi: 'LENGKAP' },
-  { id: 'KAS-K02', tgl: '2026-10-13', no_ref: 'KAS-K02', kode_bukti: '', keterangan: 'Cut fill & beko', kategori: 'Cut_Fill', proyek: 'Site A', masuk: 0, keluar: 71350000, status_verifikasi: 'LENGKAP' },
-  { id: 'KAS-K03', tgl: '2026-10-13', no_ref: 'KAS-K03', kode_bukti: '', keterangan: 'Biaya lain-lain (ATK PT)', kategori: 'Operasional', proyek: 'Site A', masuk: 0, keluar: 13596000, status_verifikasi: 'LENGKAP' },
+  { id: 'KAS-K01', tgl: '2026-10-13', no_ref: 'KAS-K01', kode_bukti: '', keterangan: 'Pembebasan tanah (teralokasi)', kategori: 'Pembebasan_Tanah', proyek: 'Site A', masuk: 0, keluar: 309400000, status_verifikasi: 'PERLU_KONFIRMASI' },
+  { id: 'KAS-K02', tgl: '2026-10-13', no_ref: 'KAS-K02', kode_bukti: '', keterangan: 'Cut fill & beko', kategori: 'Cut_Fill', proyek: 'Site A', masuk: 0, keluar: 71350000, status_verifikasi: 'PERLU_KONFIRMASI' },
+  { id: 'KAS-K03', tgl: '2026-10-13', no_ref: 'KAS-K03', kode_bukti: '', keterangan: 'Biaya lain-lain (ATK PT)', kategori: 'Operasional', proyek: 'Site A', masuk: 0, keluar: 13596000, status_verifikasi: 'PERLU_KONFIRMASI' },
 ];
 
 // ============ REGISTER TANAH (13 Bidang) ============
@@ -49,12 +49,12 @@ export const initialBeko: Beko[] = [
 
 // ============ DANA BEKO PER TAHAP ============
 export const initialArsipBukti: ArsipBukti[] = [
-  { id: 'DBK-01', kode_bukti: 'DBK-01', jenis: 'Kwitansi_Foto', link_drive: '', tgl_upload: '2026-09-01', terverifikasi: 'Perlu_Konfirmasi', catatan_audit: 'Rekap tahap beko 1 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 4500000, keterangan: 'Tahap 1' },
-  { id: 'DBK-02', kode_bukti: 'DBK-02', jenis: 'Kwitansi_Foto', link_drive: '', tgl_upload: '2026-09-05', terverifikasi: 'Ya', catatan_audit: 'Rekap tahap beko 2 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 16575000, keterangan: 'Tahap 2' },
-  { id: 'DBK-03', kode_bukti: 'DBK-03', jenis: 'Kwitansi_Foto', link_drive: '', tgl_upload: '2026-09-10', terverifikasi: 'Ya', catatan_audit: 'Rekap tahap beko 3 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 15750000, keterangan: 'Tahap 3' },
-  { id: 'DBK-04', kode_bukti: 'DBK-04', jenis: 'Kwitansi_Foto', link_drive: '', tgl_upload: '2026-09-20', terverifikasi: 'Ya', catatan_audit: 'Rekap tahap beko 4 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 16900000, keterangan: 'Tahap 4' },
-  { id: 'DBK-05', kode_bukti: 'DBK-05', jenis: 'Kwitansi_Foto', link_drive: '', tgl_upload: '2026-09-28', terverifikasi: 'Ya', catatan_audit: 'Rekap tahap beko 5 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 4500000, keterangan: 'Tahap 5' },
-  { id: 'DBK-06', kode_bukti: 'DBK-06', jenis: 'Kwitansi_Foto', link_drive: '', tgl_upload: '2026-10-05', terverifikasi: 'Ya', catatan_audit: 'Rekap tahap beko 6 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 3125000, keterangan: 'Tahap 6' },
+  { id: 'DBK-01', kode_bukti: 'DBK-01', jenis: 'Tidak_Ada', link_drive: '', tgl_upload: '2026-09-01', terverifikasi: 'Perlu_Konfirmasi', catatan_audit: 'Rekap tahap beko 1 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 4500000, keterangan: 'Tahap 1' },
+  { id: 'DBK-02', kode_bukti: 'DBK-02', jenis: 'Tidak_Ada', link_drive: '', tgl_upload: '2026-09-05', terverifikasi: 'Perlu_Konfirmasi', catatan_audit: 'Rekap tahap beko 2 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 16575000, keterangan: 'Tahap 2' },
+  { id: 'DBK-03', kode_bukti: 'DBK-03', jenis: 'Tidak_Ada', link_drive: '', tgl_upload: '2026-09-10', terverifikasi: 'Perlu_Konfirmasi', catatan_audit: 'Rekap tahap beko 3 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 15750000, keterangan: 'Tahap 3' },
+  { id: 'DBK-04', kode_bukti: 'DBK-04', jenis: 'Tidak_Ada', link_drive: '', tgl_upload: '2026-09-20', terverifikasi: 'Perlu_Konfirmasi', catatan_audit: 'Rekap tahap beko 4 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 16900000, keterangan: 'Tahap 4' },
+  { id: 'DBK-05', kode_bukti: 'DBK-05', jenis: 'Tidak_Ada', link_drive: '', tgl_upload: '2026-09-28', terverifikasi: 'Perlu_Konfirmasi', catatan_audit: 'Rekap tahap beko 5 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 4500000, keterangan: 'Tahap 5' },
+  { id: 'DBK-06', kode_bukti: 'DBK-06', jenis: 'Tidak_Ada', link_drive: '', tgl_upload: '2026-10-05', terverifikasi: 'Perlu_Konfirmasi', catatan_audit: 'Rekap tahap beko 6 - bukti file belum dilampirkan', penerima: 'Operator', nominal: 3125000, keterangan: 'Tahap 6' },
 ];
 
 // ============ POS KEWAJIBAN (Utang Tanah) ============
@@ -72,17 +72,8 @@ export const initialNotaMaterial: NotaMaterial[] = [
 ];
 
 // ============ ARUS KAS (Running Balance) ============
-export const initialArusKas: ArusKas[] = [
-  { id: 'AK-01', tanggal: '2026-08-01', keterangan: 'Penerimaan dana awal', kategori: 'Operasional', masuk: 204000000, keluar: 0, referensi: 'Sebelum 28 Sep' },
-  { id: 'AK-02', tanggal: '2026-08-28', keterangan: 'Penerimaan dana', kategori: 'Operasional', masuk: 32500000, keluar: 0, referensi: 'KAS-M01' },
-  { id: 'AK-03', tanggal: '2026-09-28', keterangan: 'Penerimaan dana', kategori: 'Operasional', masuk: 50000000, keluar: 0, referensi: 'KAS-M02' },
-  { id: 'AK-04', tanggal: '2026-09-30', keterangan: 'Penerimaan dana', kategori: 'Operasional', masuk: 50000000, keluar: 0, referensi: 'KAS-M03' },
-  { id: 'AK-05', tanggal: '2026-10-05', keterangan: 'Penerimaan dana (Pak Didi)', kategori: 'Operasional', masuk: 60000000, keluar: 0, referensi: 'KAS-M04' },
-  { id: 'AK-06', tanggal: '2026-10-13', keterangan: 'Menerima dana', kategori: 'Operasional', masuk: 15000000, keluar: 0, referensi: 'KAS-M05' },
-  { id: 'AK-07', tanggal: '2026-10-13', keterangan: 'Pembebasan tanah', kategori: 'Investasi', masuk: 0, keluar: 309400000, referensi: 'KAS-K01' },
-  { id: 'AK-08', tanggal: '2026-10-13', keterangan: 'Cut fill & beko', kategori: 'Investasi', masuk: 0, keluar: 71350000, referensi: 'KAS-K02' },
-  { id: 'AK-09', tanggal: '2026-10-13', keterangan: 'Biaya ATK PT', kategori: 'Operasional', masuk: 0, keluar: 13596000, referensi: 'KAS-K03' },
-];
+// Running cash flow is derived from initialBukuKas; keep this legacy collection empty to prevent double entry.
+export const initialArusKas: ArusKas[] = [];
 
 // ============ ERP DATA - CONTOH REALISTIS ============
 export const initialStok: StokBarang[] = [];
