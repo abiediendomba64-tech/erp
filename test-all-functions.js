@@ -235,6 +235,23 @@ assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-7', kode_bukti
   id: 'DOC-LEGAL-DEED', kode_bukti: 'KW-07', jenis: 'AJB', nominal: 1000, terverifikasi: 'Ya', link_drive: 'https://example.test/akta.pdf'
 }]), 'PERLU_KONFIRMASI');
 console.log('PASS: status bukti diturunkan dari keberadaan file/URL dan verifikasi, bukan hanya kode bukti');
+assert.equal(helpers.hasDocumentEvidence({
+  local_file_key: 'DRAFT-HTML-KEY',
+  mime_type: 'text/html;charset=utf-8',
+  nama_file: 'DRAFT-KWITANSI.html'
+}), false, 'draft HTML tidak boleh dianggap sebagai bukti asli');
+assert.equal(helpers.hasDocumentEvidence({
+  local_file_key: 'REAL-PDF-KEY',
+  mime_type: 'application/pdf',
+  nama_file: 'kwitansi-asli.pdf'
+}), true, 'file PDF asli yang tersimpan lokal tersedia sebagai bukti untuk pemeriksaan manusia');
+assert.equal(helpers.hasDocumentEvidence({
+  local_file_key: 'DRAFT-HTML-KEY',
+  mime_type: 'text/html;charset=utf-8',
+  nama_file: 'DRAFT-KWITANSI.html',
+  link_drive: 'https://drive.google.com/file/d/real-signed-copy'
+}), true, 'tautan ke salinan eksternal tetap dapat diverifikasi secara manual');
+
 
 
 const cashbookJournal = await loadActualTypeScript('./src/utils/cashbookJournal.ts');
