@@ -82,10 +82,15 @@ export const getRelatedDocuments = <T extends { modul_terkait?: string; id_terka
   module: string,
   recordId: string,
   proofCode?: string
-): T[] => documents.filter(document =>
-  (document.modul_terkait === module && document.id_terkait === recordId) ||
-  (Boolean(proofCode) && document.kode_bukti === proofCode)
-);
+): T[] => documents.filter(document => {
+  const sameModule = document.modul_terkait === module;
+  const legacyModuleMissing = !document.modul_terkait;
+  const matchesRelatedId = sameModule && Boolean(recordId) && document.id_terkait === recordId;
+  const matchesProofCode = Boolean(proofCode) &&
+    document.kode_bukti === proofCode &&
+    (sameModule || legacyModuleMissing);
+  return matchesRelatedId || matchesProofCode;
+});
 
 export const hasVerifiedRelatedDocument = <T extends { terverifikasi?: string; link_drive?: string; local_file_key?: string; modul_terkait?: string; id_terkait?: string; kode_bukti?: string }>(
   documents: T[],
