@@ -7,19 +7,16 @@
 
 ---
 
-## 🎯 OVERVIEW
+## Gambaran Sistem
 
-Modul akuntansi dirancang agar input transaksi lebih mudah. Fungsi yang sudah ada menghitung jurnal dan laporan dari state lokal; validitas laporan resmi belum terverifikasi dan sinkronisasi cloud belum menyeluruh.
-- ✅ Jurnal Umum (Double-Entry)
-- ✅ Buku Besar
-- ✅ Laporan Keuangan Lengkap
-- ✅ Hutang & Piutang
-- ✅ Invoice & Purchase Order
-- ⏳ RAB (Rencana Anggaran Biaya) — belum menjadi modul yang dapat diandalkan
+Repository ini memuat modul akuntansi dan operasional proyek. Fokus perbaikan saat ini adalah mencegah data contoh dianggap sebagai transaksi aktual, mempertahankan state ketika berpindah menu, memvalidasi jurnal sebelum diposting, dan menghitung laporan sesuai periode.
 
-**Tampilan:** Web responsif. Data localStorage tetap terpisah per browser/perangkat dan tidak otomatis tersinkron.
+- Transaksi akuntansi dicatat pada state yang disimpan ke localStorage browser.
+- Jurnal, laba rugi, neraca, dan arus kas dihitung dari data modul akuntansi.
+- Invoice dapat membentuk piutang/pendapatan; Purchase Order saja tidak dianggap bukti bahwa barang telah diterima atau utang telah timbul.
+- RAB, schedule, sinkronisasi Sheets, dan integrasi messaging belum dapat dianggap lengkap.
 
----
+Penyimpanan lokal bukan database multi-user. Untuk memakai data lintas perangkat diperlukan backend cloud dengan autentikasi, otorisasi, backup, dan rekonsiliasi yang benar.
 
 ## 📊 FITUR UTAMA
 
