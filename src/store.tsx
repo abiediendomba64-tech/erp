@@ -149,15 +149,60 @@ function loadAppState(): AppState {
         document.local_file_key ||
         (document.link_drive && /^https?:\/\//i.test(document.link_drive))
       );
-      return document.terverifikasi === 'Ya' && !hasEvidence
-        ? { ...document, terverifikasi: 'Perlu_Konfirmasi' }
-        : document;
+      const oldBekoStage = /^DBK-0[1-6]$/.test(document.id) && !hasEvidence;
+      const stageNumber = oldBekoStage ? document.id.slice(-2) : '';
+      return {
+        ...document,
+        ...(oldBekoStage ? {
+          jenis: 'Tidak_Ada' as const,
+          judul_dokumen: 'Rekap biaya beko tahap ' + Number(stageNumber) + ' (bukti asli belum dilampirkan)',
+          modul_terkait: 'Beko' as const,
+          id_terkait: 'BK-' + stageNumber,
+          catatan_audit: 'Metadata rekap lama; bukan kuitansi asli. Bukti belum dilampirkan.'
+        } : {}),
+        ...(document.terverifikasi === 'Ya' && !hasEvidence ? { terverifikasi: 'Perlu_Konfirmasi' as const } : {})
+      };
     });
     result.notaMaterial = result.notaMaterial.map(note =>
       note.status === 'Terverifikasi' && !note.url_bukti
         ? { ...note, status: 'Belum_Verifikasi' }
         : note
     );
+    result.tanah = result.tanah.map(land => {
+      // Seed v1 stored the 23-BT Pak Dede lot at 750,000/BT but the recorded paid
+      // amount and old audited contract total point to 500,000/BT. Migrate only
+      // this unchanged legacy row; never overwrite a later user edit.
+      if (land.id === 'T-03' && land.pemilik === 'Pak Dede' && land.luas_bt === 23 &&
+          land.harga_per_bt === 750000 && land.dp === 11500000 && land.catatan === 'Bidang 3') {
+        return { ...land, harga_per_bt: 500000 };
+      }
+      if (land.luas_bt === 0 && land.harga_per_bt === 0 && !land.nilai_total_manual &&
+          /nominal langsung/i.test(land.catatan || '') && land.dp > 0) {
+        return { ...land, nilai_total_manual: land.dp };
+      }
+      return land;
+    });
+    result.beko = result.beko.map(item => {
+      const legacyScope = /^BK-0[1-8]$/.test(item.id) && item.termasuk_rekap === undefined;
+      const legacyUnit = item.id === 'BK-01' ? 'ls'
+        : item.id === 'BK-02' ? 'unit'
+          : /^BK-0[3-8]$/.test(item.id) ? 'm3'
+            : undefined;
+      return {
+        ...item,
+        ...(item.id === 'BK-01' && item.item === 'Mobilisasi' && item.panjang === 0 &&
+          item.lebar === 0 && item.tinggi === 0 && item.tarif === 0
+          ? { tarif: 4500000 }
+          : {}),
+        ...(legacyScope ? { termasuk_rekap: !['BK-07', 'BK-08'].includes(item.id) } : {}),
+        ...(item.satuan_volume === undefined && legacyUnit ? { satuan_volume: legacyUnit as 'm3' | 'unit' | 'ls' } : {}),
+        ...(item.status_pembayaran === undefined
+          ? { status_pembayaran: item.status === 'Lunas' ? 'Lunas' as const : 'Belum_Dikonfirmasi' as const }
+          : {})
+      };
+    });
+    // The former arusKas array duplicated bukuKas; the cashbook is now the only source.
+    if (result.arusKas.every((item, index) => item.id === 'AK-0' + (index + 1))) result.arusKas = [];
     result.bukuKas = result.bukuKas.map(transaction => {
       const matchingDocument = result.arsipBukti.some(document =>
         hasEvidenceDocument(document) &&
