@@ -191,6 +191,7 @@ export default function ArsipBuktiPage() {
         id_terkait: form.id_terkait.trim(),
         penerima: form.penerima.trim(),
         nominal,
+        keterangan: form.catatan_audit.trim() || form.judul_dokumen.trim(),
         link_drive: form.link_drive.trim(),
         tgl_upload: getLocalDateISO(),
         nama_file: selectedFile?.name || existing?.nama_file || '',
