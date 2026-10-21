@@ -22,8 +22,13 @@ import MenuConfigPage from './pages/MenuConfigPage';
 import AlokasiDanaPage from './pages/AlokasiDanaPage';
 import UserManagementPage from './pages/UserManagementPage';
 import SettingsPage from './pages/SettingsPage';
+import AccountingDashboard from './pages/AccountingDashboard';
+import InputTransaksiPage from './pages/InputTransaksiPage';
+import LaporanKeuanganPage from './pages/LaporanKeuanganPage';
+import InvoicePOPage from './pages/InvoicePOPage';
+import { AccountingProvider } from './store/accounting';
 
-export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings';
+export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo';
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
@@ -53,6 +58,10 @@ function AppContent() {
       case 'menuconfig': return <MenuConfigPage />;
       case 'users': return <UserManagementPage />;
       case 'settings': return <SettingsPage />;
+      case 'accounting': return <AccountingProvider><AccountingDashboard /></AccountingProvider>;
+      case 'inputtransaksi': return <AccountingProvider><InputTransaksiPage /></AccountingProvider>;
+      case 'laporankeuangan': return <AccountingProvider><LaporanKeuanganPage /></AccountingProvider>;
+      case 'invoicepo': return <AccountingProvider><InvoicePOPage /></AccountingProvider>;
       default: return <Dashboard />;
     }
   };
