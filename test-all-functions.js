@@ -235,6 +235,12 @@ assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-7', kode_bukti
   id: 'DOC-LEGAL-DEED', kode_bukti: 'KW-07', jenis: 'AJB', nominal: 1000, terverifikasi: 'Ya', link_drive: 'https://example.test/akta.pdf'
 }]), 'PERLU_KONFIRMASI');
 console.log('PASS: status bukti diturunkan dari keberadaan file/URL dan verifikasi, bukan hanya kode bukti');
+assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-8', kode_bukti: 'SHARED-CODE', keluar: 500, masuk: 0 }, [{
+  id: 'DOC-WRONG-MODULE', modul_terkait: 'Tanah', id_terkait: 'T-01',
+  kode_bukti: 'SHARED-CODE', jenis: 'Kwitansi_Foto', nominal: 500,
+  terverifikasi: 'Ya', link_drive: 'https://example.test/receipt.pdf'
+}]), 'PERLU_KONFIRMASI', 'dokumen modul tanah tidak boleh memverifikasi transaksi buku kas hanya karena kode yang sama');
+
 assert.equal(helpers.hasDocumentEvidence({
   local_file_key: 'DRAFT-HTML-KEY',
   mime_type: 'text/html;charset=utf-8',
