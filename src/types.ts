@@ -105,8 +105,9 @@ export interface Tanah {
   kode_bukti: string;
   url_bukti: string;
   catatan: string;
-  // COMPUTED: nilai_total = luas_bt × harga_per_bt
-  // COMPUTED: sisa = nilai_total - dp
+  nilai_total_manual?: number; // wajib isi jika luas/harga tidak tersedia dan nilai berasal dari nominal kesepakatan langsung
+  // COMPUTED: nilai_total = nilai_total_manual jika ada; selain itu luas_bt × harga_per_bt
+  // COMPUTED: sisa = max(0, nilai_total - dp)
 }
 
 // ============ BEKO (Excavator Records) ============
