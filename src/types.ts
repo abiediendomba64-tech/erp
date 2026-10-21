@@ -10,6 +10,11 @@ export interface BukuKas {
   masuk: number;
   keluar: number;
   status_verifikasi: 'LENGKAP' | 'TANPA_BUKTI' | 'PERLU_KONFIRMASI';
+  // Journal created from new cashbook inputs is Draft until a real supporting receipt/transfer is verified.
+  akun_kas_kode?: string;
+  akun_lawan_kode?: string;
+  jurnal_id?: string;
+  posting_status?: 'HISTORICAL' | 'DRAFT' | 'POSTED' | 'REVERSED';
 }
 
 // ============ LAYER 2: ARSIP BUKTI ============
