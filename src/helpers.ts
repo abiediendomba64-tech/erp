@@ -69,8 +69,13 @@ export const getPenggajianGajiBersih = (g: Penggajian): number => g.gaji_pokok +
 export const getAnggaranSisa = (a: Anggaran): number => a.anggaran - a.realisasi;
 export const getAnggaranPersentase = (a: Anggaran): number => a.anggaran > 0 ? (a.realisasi / a.anggaran) * 100 : 0;
 
-export const hasDocumentEvidence = (document: { link_drive?: string; local_file_key?: string }): boolean =>
-  Boolean(document.local_file_key || (document.link_drive && /^https?:\/\//i.test(document.link_drive)));
+export const hasDocumentEvidence = (document: { link_drive?: string; local_file_key?: string; mime_type?: string; nama_file?: string }): boolean => {
+  const externalLink = Boolean(document.link_drive && /^https?:\/\//i.test(document.link_drive));
+  if (externalLink) return true;
+  const draftHtml = String(document.mime_type || '').toLowerCase().startsWith('text/html') ||
+    String(document.nama_file || '').toLowerCase().endsWith('.html');
+  return Boolean(document.local_file_key && !draftHtml);
+};
 
 export const getRelatedDocuments = <T extends { modul_terkait?: string; id_terkait?: string; kode_bukti?: string }>(
   documents: T[],
@@ -91,7 +96,7 @@ export const hasVerifiedRelatedDocument = <T extends { terverifikasi?: string; l
   document.terverifikasi === 'Ya' && hasDocumentEvidence(document)
 );
 
-export const getBukuKasVerificationStatus = <T extends { terverifikasi?: string; link_drive?: string; local_file_key?: string; modul_terkait?: string; id_terkait?: string; kode_bukti?: string; jenis?: string; nominal?: number }>(
+export const getBukuKasVerificationStatus = <T extends { terverifikasi?: string; link_drive?: string; local_file_key?: string; mime_type?: string; nama_file?: string; modul_terkait?: string; id_terkait?: string; kode_bukti?: string; jenis?: string; nominal?: number }>(
   record: { id: string; kode_bukti: string; masuk?: number; keluar?: number },
   documents: T[]
 ): 'LENGKAP' | 'TANPA_BUKTI' | 'PERLU_KONFIRMASI' => {
