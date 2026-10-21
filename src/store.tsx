@@ -168,6 +168,16 @@ function loadAppState(): AppState {
         ? { ...note, status: 'Belum_Verifikasi' }
         : note
     );
+    result.posKewajiban = result.posKewajiban.map(item => {
+      const linkedId = item.tanah_id || (
+        item.id === 'UT-01' ? 'T-07' :
+        item.id === 'UT-02' ? 'T-11' :
+        item.id === 'UT-03' ? 'T-13' : ''
+      );
+      return linkedId && result.tanah.some(land => land.id === linkedId)
+        ? { ...item, tanah_id: linkedId }
+        : item;
+    });
     result.tanah = result.tanah.map(land => {
       // Seed v1 stored the 23-BT Pak Dede lot at 750,000/BT but the recorded paid
       // amount and old audited contract total point to 500,000/BT. Migrate only
