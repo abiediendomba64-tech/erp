@@ -11,7 +11,13 @@ async function loadActualTypeScript(relativePath) {
   let source = await readFile(new URL(relativePath, import.meta.url), 'utf8');
   // Accounting domain interfaces are compile-time only and this test deliberately
   // executes the production helpers without requiring a browser bundler.
-  source = source.replace(/^import\s+\{[^}]+\}\s+from\s+['"](?:\.\.\/types\/accounting|\.\/types)['"];?\s*\r?\n/gm, '');
+  source = source.replace(/^import\s+(?:type\s+)?\{[^}]+\}\s+from\s+['"](?:\.\.\/types(?:\/accounting)?|\.\/types)['"];?\s*\r?\n/gm, '');
+  source = source.replace(/^import\s+\{\s*getLocalDateISO\s*\}\s+from\s+['"]\.\.\/data['"];?\s*\r?\n/gm, `const getLocalDateISO = (date = new Date()) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return year + '-' + month + '-' + day;
+  };\n`);
   const javascript = ts.transpileModule(source, {
     compilerOptions: {
       target: ts.ScriptTarget.ES2020,
@@ -229,5 +235,59 @@ assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-7', kode_bukti
   id: 'DOC-LEGAL-DEED', kode_bukti: 'KW-07', jenis: 'AJB', nominal: 1000, terverifikasi: 'Ya', link_drive: 'https://example.test/akta.pdf'
 }]), 'PERLU_KONFIRMASI');
 console.log('PASS: status bukti diturunkan dari keberadaan file/URL dan verifikasi, bukan hanya kode bukti');
+
+
+const cashbookJournal = await loadActualTypeScript('./src/utils/cashbookJournal.ts');
+const receiptCashbookRow = {
+  id: 'KAS-NEW-1',
+  tgl: '2026-10-20',
+  no_ref: 'KAS-20261020-001',
+  kode_bukti: 'KW-TEST-001',
+  keterangan: 'Penerimaan modal proyek',
+  kategori: 'Operasional',
+  proyek: 'Site Test',
+  masuk: 5000000,
+  keluar: 0,
+  status_verifikasi: 'PERLU_KONFIRMASI',
+  akun_kas_kode: '1-1001',
+  akun_lawan_kode: '3-1001'
+};
+const cashDraft = cashbookJournal.createCashbookJournal(receiptCashbookRow, accounts, 'Draft');
+assert.equal(cashDraft.status, 'Draft');
+assert.equal(cashDraft.entries[0].akun_kode, '1-1001');
+assert.equal(cashDraft.entries[0].debit, 5000000);
+assert.equal(cashDraft.entries[1].akun_kode, '3-1001');
+assert.equal(cashDraft.total_debit, 5000000);
+assert.equal(cashDraft.total_kredit, 5000000);
+assert.equal(cashbookJournal.journalTotalsAreBalanced(cashDraft), true);
+
+const constructionCashbookRow = {
+  ...receiptCashbookRow,
+  id: 'KAS-NEW-2',
+  no_ref: 'KAS-20261020-002',
+  keterangan: 'Pengeluaran biaya pekerjaan konstruksi',
+  masuk: 0,
+  keluar: 1250000,
+  akun_lawan_kode: '1-1008'
+};
+const constructionDraft = cashbookJournal.createCashbookJournal(constructionCashbookRow, accounts, 'Draft');
+assert.equal(constructionDraft.entries[0].akun_kode, '1-1008');
+assert.equal(constructionDraft.entries[0].debit, 1250000);
+assert.equal(constructionDraft.entries[1].akun_kode, '1-1001');
+assert.equal(constructionDraft.entries[1].kredit, 1250000);
+assert.equal(cashbookJournal.journalTotalsAreBalanced(constructionDraft), true);
+
+const reversal = cashbookJournal.createReversalJournal({ ...cashDraft, status: 'Posted' }, 'Koreksi uji');
+assert.equal(reversal.status, 'Posted');
+assert.equal(cashbookJournal.journalTotalsAreBalanced(reversal), true);
+assert.equal(reversal.entries[0].debit, cashDraft.entries[0].kredit);
+assert.equal(reversal.entries[0].kredit, cashDraft.entries[0].debit);
+assert.throws(() => cashbookJournal.createCashbookJournal({
+  ...receiptCashbookRow, masuk: 100, keluar: 50
+}, accounts, 'Draft'), /tepat satu nilai positif/);
+assert.throws(() => cashbookJournal.createCashbookJournal({
+  ...receiptCashbookRow, akun_lawan_kode: ''
+}, accounts, 'Draft'), /akun lawan/);
+console.log('PASS: jurnal Buku Kas Draft, akun kas/lawan, nilai seimbang, dan reversal aktual');
 
 console.log('\nALL PRODUCTION ACCOUNTING REGRESSION TESTS PASSED');
