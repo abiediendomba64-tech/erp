@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useAppContext } from '../store';
+import { useAccounting } from '../store/accounting';
 import { formatRupiah, getLocalDateISO } from '../data';
 import { getBukuKasVerificationStatus, getRelatedDocuments, hasDocumentEvidence } from '../helpers';
 import type { BukuKas } from '../types';
+import { createCashbookJournal, createReversalJournal, journalTotalsAreBalanced } from '../utils/cashbookJournal';
 import { BookOpen, CheckCircle, XCircle, AlertCircle, Plus, Pencil, Save, X, ExternalLink, FileText } from 'lucide-react';
 
 type CashDirection = 'Masuk' | 'Keluar';
@@ -15,12 +17,15 @@ const emptyForm = {
   proyek: 'Site A',
   arah: 'Keluar' as CashDirection,
   nominal: '',
+  akun_kas_kode: '1-1001',
+  akun_lawan_kode: '',
 };
 
 const categories: BukuKas['kategori'][] = ['Pembebasan_Tanah', 'Cut_Fill', 'Operasional', 'Marketing', 'Lainnya'];
 
 export default function BukuKasPage() {
   const { state, dispatch } = useAppContext();
+  const { state: accountingState, dispatch: dispatchAccounting } = useAccounting();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -72,6 +77,8 @@ export default function BukuKasPage() {
       proyek: item.proyek || '',
       arah: item.masuk > 0 ? 'Masuk' : 'Keluar',
       nominal: String(item.masuk > 0 ? item.masuk : item.keluar),
+      akun_kas_kode: item.akun_kas_kode || '1-1001',
+      akun_lawan_kode: item.akun_lawan_kode || '',
     });
     setError('');
     setMessage('');
@@ -98,6 +105,28 @@ export default function BukuKasPage() {
       setError('Nominal harus angka lebih besar dari nol.');
       return;
     }
+    const existingRecord = editingId ? state.bukuKas.find(item => item.id === editingId) : undefined;
+    const existingJournal = existingRecord?.jurnal_id
+      ? accountingState.jurnal.find(journal => journal.id === existingRecord.jurnal_id)
+      : undefined;
+    const isHistoricalWithoutJournal = Boolean(editingId && !existingRecord?.jurnal_id &&
+      (!existingRecord?.posting_status || existingRecord.posting_status === 'HISTORICAL'));
+
+    if (!isHistoricalWithoutJournal) {
+      if (!form.akun_kas_kode || !accountingState.akun.some(account => account.kode === form.akun_kas_kode)) {
+        setError('Pilih akun kas/bank yang valid.');
+        return;
+      }
+      if (!form.akun_lawan_kode || !accountingState.akun.some(account => account.kode === form.akun_lawan_kode)) {
+        setError('Pilih akun lawan transaksi. Tanpa akun lawan, jurnal tidak boleh dibuat.');
+        return;
+      }
+      if (form.akun_lawan_kode === form.akun_kas_kode) {
+        setError('Akun kas/bank tidak boleh sama dengan akun lawan.');
+        return;
+      }
+    }
+
     const record: BukuKas = {
       id: editingId || 'KAS-' + Date.now().toString(36).toUpperCase(),
       tgl: form.tgl,
@@ -109,14 +138,59 @@ export default function BukuKasPage() {
       masuk: form.arah === 'Masuk' ? nominal : 0,
       keluar: form.arah === 'Keluar' ? nominal : 0,
       status_verifikasi: 'PERLU_KONFIRMASI',
+      akun_kas_kode: isHistoricalWithoutJournal ? existingRecord?.akun_kas_kode : form.akun_kas_kode,
+      akun_lawan_kode: isHistoricalWithoutJournal ? existingRecord?.akun_lawan_kode : form.akun_lawan_kode,
+      jurnal_id: existingRecord?.jurnal_id,
+      posting_status: existingRecord?.posting_status || (editingId ? 'HISTORICAL' : 'DRAFT'),
     };
+
+    let statusPesan = '';
+    try {
+      if (isHistoricalWithoutJournal) {
+        // Existing historical cash-book items are never auto-posted: that would double-count
+        // transactions which may already exist in another ledger.
+        record.posting_status = 'HISTORICAL';
+        record.jurnal_id = undefined;
+        statusPesan = 'Riwayat diperbarui tanpa membuat jurnal baru. Hubungkan transaksi pembukuan resmi secara manual setelah rekonsiliasi agar tidak dihitung dua kali.';
+      } else if (existingRecord?.posting_status === 'POSTED' && existingJournal?.status === 'Posted') {
+        const reversal = createReversalJournal(existingJournal, 'Koreksi transaksi buku kas ' + record.id + ': ' + record.keterangan);
+        if (!journalTotalsAreBalanced(reversal)) throw new Error('Jurnal reversal tidak seimbang.');
+        dispatchAccounting({ type: 'ADD_JURNAL', payload: reversal });
+        const draft = createCashbookJournal(record, accountingState.akun, 'Draft');
+        if (!journalTotalsAreBalanced(draft)) throw new Error('Jurnal koreksi tidak seimbang.');
+        record.jurnal_id = draft.id;
+        record.posting_status = 'DRAFT';
+        dispatchAccounting({ type: 'ADD_JURNAL', payload: draft });
+        statusPesan = 'Jurnal lama dibalik untuk menjaga audit trail. Jurnal koreksi dibuat Draft dan menunggu bukti diverifikasi.';
+      } else if (existingRecord?.posting_status === 'DRAFT' && existingJournal?.status === 'Draft') {
+        const draft = createCashbookJournal(record, accountingState.akun, 'Draft');
+        if (!journalTotalsAreBalanced(draft)) throw new Error('Jurnal koreksi tidak seimbang.');
+        draft.id = existingJournal.id;
+        draft.no_jurnal = existingJournal.no_jurnal;
+        draft.createdAt = existingJournal.createdAt;
+        draft.createdBy = existingJournal.createdBy;
+        record.jurnal_id = existingJournal.id;
+        record.posting_status = 'DRAFT';
+        dispatchAccounting({ type: 'UPDATE_JURNAL', payload: draft });
+        statusPesan = 'Jurnal Draft diperbarui mengikuti input kas. Jurnal belum masuk laporan final.';
+      } else {
+        const draft = createCashbookJournal(record, accountingState.akun, 'Draft');
+        if (!journalTotalsAreBalanced(draft)) throw new Error('Jurnal transaksi tidak seimbang.');
+        record.jurnal_id = draft.id;
+        record.posting_status = 'DRAFT';
+        dispatchAccounting({ type: 'ADD_JURNAL', payload: draft });
+        statusPesan = 'Jurnal Draft dibuat. Setelah bukti transaksi dilampirkan dan diverifikasi pada Arsip Bukti, jurnal akan diposting ke laporan Akuntansi.';
+      }
+    } catch (journalError) {
+      setError(journalError instanceof Error ? journalError.message : String(journalError));
+      return;
+    }
+
     if (editingId) dispatch({ type: 'UPDATE_BUKU_KAS', payload: record });
     else dispatch({ type: 'ADD_BUKU_KAS', payload: record });
     setShowForm(false);
     setEditingId(null);
-    setMessage(editingId
-      ? 'Transaksi diperbarui. Status bukti ditentukan dari dokumen yang terhubung.'
-      : 'Transaksi dicatat. Transaksi baru tidak dianggap memiliki bukti sampai file/tautan diperiksa pada Arsip Bukti.');
+    setMessage(statusPesan);
   };
 
   const statusIcon = (status: string) => {
@@ -152,7 +226,7 @@ export default function BukuKasPage() {
 
       <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
         <p className="font-semibold">Saldo catatan, bukan verifikasi saldo bank/kas fisik</p>
-        <p className="mt-1">Transaksi lama dipertahankan sebagai rekap input. Baris yang tidak memiliki dokumen asli tertaut akan terlihat belum memiliki bukti. Perubahan kas tidak otomatis membuat jurnal akuntansi pada modul Akuntansi—kedua modul belum memakai satu database cloud bersama.</p>
+        <p className="mt-1">Transaksi baru membentuk jurnal Draft setelah akun lawan dipilih. Jurnal baru masuk laporan final hanya setelah bukti kuitansi/transfer diarsipkan, diperiksa, dan diverifikasi manual. Baris historis yang belum terhubung ke jurnal tidak otomatis diposting agar tidak terjadi hitung ganda. Data tetap lokal di browser ini.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -190,11 +264,23 @@ export default function BukuKasPage() {
             <label className="text-sm font-medium text-gray-700">Nominal (Rp) *
               <input type="number" min="1" step="1" value={form.nominal} onChange={e => updateForm('nominal', e.target.value)} placeholder="0" className="mt-1 w-full rounded-lg border px-3 py-2" />
             </label>
+            <label className="text-sm font-medium text-gray-700">Akun kas/bank *
+              <select value={form.akun_kas_kode} onChange={e => updateForm('akun_kas_kode', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2">
+                {accountingState.akun.filter(account => ['1-1001', '1-1002'].includes(account.kode)).map(account => <option key={account.kode} value={account.kode}>{account.kode} — {account.nama}</option>)}
+              </select>
+            </label>
+            <label className="text-sm font-medium text-gray-700 md:col-span-2">Akun lawan transaksi *
+              <select value={form.akun_lawan_kode} onChange={e => updateForm('akun_lawan_kode', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2">
+                <option value="">Pilih akun sesuai bukti / tujuan pembayaran</option>
+                {accountingState.akun.filter(account => account.kode !== form.akun_kas_kode).map(account => <option key={account.kode} value={account.kode}>{account.kode} — {account.nama} ({account.tipe})</option>)}
+              </select>
+              <span className="mt-1 block text-xs font-normal text-gray-500">Untuk pembebasan lahan pilih Persediaan Tanah & Properti atau akun yang sesuai kebijakan pembukuan; untuk cut & fill proyek konstruksi pilih WIP; pengeluaran usaha pilih akun beban. Pastikan sesuai kontrak/bukti dan kebijakan akuntansi.</span>
+            </label>
           </div>
           <div className="mt-4 rounded-lg bg-indigo-50 p-3 text-sm text-indigo-900">
             <p>Nominal masuk: <strong>{formatRupiah(form.arah === 'Masuk' ? Number(form.nominal || 0) : 0)}</strong></p>
             <p>Nominal keluar: <strong>{formatRupiah(form.arah === 'Keluar' ? Number(form.nominal || 0) : 0)}</strong></p>
-            <p className="mt-1 text-xs">Setelah menyimpan, buka Arsip Bukti untuk melampirkan kuitansi, transfer, nota atau dokumen pendukung dan hubungkan ke ID transaksi ini.</p>
+            <p className="mt-1 text-xs">Jurnal Draft akan dibuat dengan akun di atas. Buka Arsip Bukti, tautkan ke ID transaksi atau kode bukti yang sama, lampirkan file/URL dan tandai diperiksa oleh pengguna yang benar-benar memeriksa dokumen. Hanya jurnal Draft yang ditautkan ke bukti terverifikasi yang akan diposting.</p>
           </div>
           <div className="mt-4 flex gap-2"><button onClick={saveTransaction} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700"><Save size={17} />Simpan</button><button onClick={() => setShowForm(false)} className="rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200">Batal</button></div>
         </section>
@@ -203,8 +289,8 @@ export default function BukuKasPage() {
       <section className="overflow-hidden rounded-xl border bg-white">
         <div className="border-b p-4"><h2 className="font-semibold">Daftar transaksi kas ({orderedRecords.length})</h2></div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1250px] text-sm">
-            <thead className="border-b bg-gray-50"><tr><th className="px-3 py-3 text-left">Tanggal</th><th className="px-3 py-3 text-left">Referensi / keterangan</th><th className="px-3 py-3 text-left">Kategori / proyek</th><th className="px-3 py-3 text-right">Masuk</th><th className="px-3 py-3 text-right">Keluar</th><th className="px-3 py-3 text-right">Saldo berjalan</th><th className="px-3 py-3 text-center">Bukti</th><th className="px-3 py-3 text-right">Aksi</th></tr></thead>
+          <table className="w-full min-w-[1400px] text-sm">
+            <thead className="border-b bg-gray-50"><tr><th className="px-3 py-3 text-left">Tanggal</th><th className="px-3 py-3 text-left">Referensi / keterangan</th><th className="px-3 py-3 text-left">Kategori / proyek</th><th className="px-3 py-3 text-right">Masuk</th><th className="px-3 py-3 text-right">Keluar</th><th className="px-3 py-3 text-right">Saldo berjalan</th><th className="px-3 py-3 text-center">Bukti</th><th className="px-3 py-3 text-center">Status jurnal</th><th className="px-3 py-3 text-right">Aksi</th></tr></thead>
             <tbody className="divide-y">
               {orderedRecords.map(item => {
                 const verification = getBukuKasVerificationStatus(item, state.arsipBukti);
@@ -216,12 +302,13 @@ export default function BukuKasPage() {
                   <td className="px-3 py-3"><p>{item.kategori.replace(/_/g, ' ')}</p><p className="mt-1 text-xs text-gray-500">{item.proyek || 'Proyek belum diisi'}</p></td>
                   <td className="px-3 py-3 text-right font-medium text-emerald-700">{item.masuk > 0 ? formatRupiah(item.masuk) : '—'}</td><td className="px-3 py-3 text-right font-medium text-red-700">{item.keluar > 0 ? formatRupiah(item.keluar) : '—'}</td><td className="px-3 py-3 text-right font-semibold">{formatRupiah(runningBalances[item.id] || 0)}</td>
                   <td className="px-3 py-3 text-center"><span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${statusClass(verification)}`}>{statusIcon(verification)}{statusText(verification)}</span>{backingFiles.map(doc => <p key={doc.id} className="mt-1">{doc.link_drive ? <a href={doc.link_drive} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-700 underline"><FileText size={12} />Buka bukti</a> : <span className="text-xs text-gray-500">File lokal: {doc.nama_file || doc.kode_bukti}</span>}</p>)}</td>
+                  <td className="px-3 py-3 text-center"><span className={`rounded-full px-2 py-1 text-xs ${item.posting_status === 'POSTED' ? 'bg-emerald-100 text-emerald-800' : item.posting_status === 'DRAFT' ? 'bg-amber-100 text-amber-800' : item.posting_status === 'REVERSED' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'}`}>{item.posting_status === 'POSTED' ? 'Posted' : item.posting_status === 'DRAFT' ? 'Draft · belum final' : item.posting_status === 'REVERSED' ? 'Dibalik' : 'Legacy · belum dijurnal'}</span>{item.jurnal_id && <p className="mt-1 text-xs text-gray-500">{accountingState.jurnal.find(journal => journal.id === item.jurnal_id)?.no_jurnal || item.jurnal_id}</p>}</td>
                   <td className="px-3 py-3 text-right"><button onClick={() => beginEdit(item)} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-gray-100"><Pencil size={13} />Edit</button>{linked.map(doc => doc.link_drive && <a key={doc.id} href={doc.link_drive} target="_blank" rel="noreferrer" className="ml-1 inline-flex rounded border p-1 text-blue-700"><ExternalLink size={13} /></a>)}</td>
                 </tr>;
               })}
-              {orderedRecords.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-500">Belum ada transaksi. Tambahkan transaksi pertama di atas.</td></tr>}
+              {orderedRecords.length === 0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-gray-500">Belum ada transaksi. Tambahkan transaksi pertama di atas.</td></tr>}
             </tbody>
-            <tfoot className="border-t-2 bg-gray-50"><tr><td colSpan={3} className="px-3 py-3 font-bold">TOTAL</td><td className="px-3 py-3 text-right font-bold text-emerald-700">{formatRupiah(totalMasuk)}</td><td className="px-3 py-3 text-right font-bold text-red-700">{formatRupiah(totalKeluar)}</td><td className="px-3 py-3 text-right font-bold">{formatRupiah(saldoCatatan)}</td><td colSpan={2}></td></tr></tfoot>
+            <tfoot className="border-t-2 bg-gray-50"><tr><td colSpan={3} className="px-3 py-3 font-bold">TOTAL</td><td className="px-3 py-3 text-right font-bold text-emerald-700">{formatRupiah(totalMasuk)}</td><td className="px-3 py-3 text-right font-bold text-red-700">{formatRupiah(totalKeluar)}</td><td className="px-3 py-3 text-right font-bold">{formatRupiah(saldoCatatan)}</td><td colSpan={3}></td></tr></tfoot>
           </table>
         </div>
       </section>
