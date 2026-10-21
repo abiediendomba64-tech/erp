@@ -12,22 +12,24 @@ export const getTanahNilaiTotal = (t: Tanah): number => {
   return t.luas_bt * t.harga_per_bt;
 };
 
-export const getTanahSisa = (t: Tanah): number => {
-  const nilaiTotal = getTanahNilaiTotal(t);
-  return nilaiTotal - t.dp;
-};
+export const getTanahSisa = (t: Tanah): number => Math.max(0, getTanahNilaiTotal(t) - Math.max(0, t.dp));
+export const getTanahKelebihanBayar = (t: Tanah): number => Math.max(0, Math.max(0, t.dp) - getTanahNilaiTotal(t));
 
 // Handle edge case: BK-01 mobilisasi tanpa dimensi tapi ada nilai tetap
+export const getBekoVolume = (b: Beko): number => {
+  if (b.satuan_volume === 'ls' || b.satuan_volume === 'unit') return 1;
+  if (b.panjang === 0 && b.lebar === 0 && b.tinggi === 0) return 1;
+  return Math.max(0, b.panjang) * Math.max(0, b.lebar) * Math.max(0, b.tinggi);
+};
+
+// Tidak ada nilai rupiah yang disisipkan berdasarkan ID/catatan.
+// Untuk pekerjaan volume: P × L × T × tarif. Untuk LS/unit: 1 × tarif.
 export const getBekoNilai = (b: Beko): number => {
-  // Jika semua dimensi 0 tapi ada catatan "mobilisasi", gunakan nilai tetap
-  if (b.panjang === 0 && b.lebar === 0 && b.tinggi === 0 && b.tarif === 0) {
-    // Cek berdasarkan ID atau catatan untuk mobilisasi
-    if (b.id === 'BK-01' || b.catatan.toLowerCase().includes('mobilisasi')) {
-      return 4500000; // Nilai tetap mobilisasi
-    }
-    return 0;
+  const dimensionsAreEmpty = b.panjang === 0 && b.lebar === 0 && b.tinggi === 0;
+  if (b.satuan_volume === 'ls' || b.satuan_volume === 'unit' || dimensionsAreEmpty) {
+    return Math.max(0, Number(b.tarif) || 0);
   }
-  return b.panjang * b.lebar * b.tinggi * b.tarif;
+  return getBekoVolume(b) * Math.max(0, Number(b.tarif) || 0);
 };
 
 // Hitung sisa utang yang belum dibayar
