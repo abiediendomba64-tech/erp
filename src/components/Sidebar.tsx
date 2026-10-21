@@ -3,7 +3,7 @@ import {
   LandPlot, Truck, History, FileBarChart, Menu, X,
   Package, Factory, ShoppingCart, Users, PieChart,
   Scan, MessageCircle, Settings, DollarSign, Shield,
-  UserCog, Plus
+  UserCog, Plus, ClipboardList
 } from 'lucide-react';
 import { Page } from '../App';
 
@@ -43,6 +43,7 @@ const adminMenu: { id: Page; label: string; icon: React.ReactNode; section: stri
   { id: 'inputtransaksi', label: 'Input Transaksi', icon: <Plus size={20} />, section: 'Akuntansi' },
   { id: 'laporankeuangan', label: 'Laporan Keuangan', icon: <FileBarChart size={20} />, section: 'Akuntansi' },
   { id: 'invoicepo', label: 'Invoice & PO', icon: <FileBarChart size={20} />, section: 'Akuntansi' },
+  { id: 'rab', label: 'RAB / BOQ Proyek', icon: <ClipboardList size={20} />, section: 'Akuntansi' },
 ];
 
 // Menu untuk CLIENT/VIEWER (read-only, tidak ada data sensitif)
