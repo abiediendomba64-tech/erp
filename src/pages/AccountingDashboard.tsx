@@ -1,14 +1,18 @@
 import { useAccounting } from '../store/accounting';
-import { formatRupiah } from '../data/accounting';
+import { formatRupiah, getLocalDateISO } from '../data/accounting';
 import { generateLabaRugi, generateNeraca } from '../utils/accounting';
 import { TrendingUp, TrendingDown, DollarSign, FileText, Calendar, AlertCircle } from 'lucide-react';
 
 export default function AccountingDashboard() {
   const { state } = useAccounting();
 
-  // Generate laporan keuangan
-  const labaRugi = generateLabaRugi(state.akun, state.jurnal, 'Januari 2026');
-  const neraca = generateNeraca(state.akun, state.jurnal, '2026-01-31');
+  // Dashboard selalu mengikuti periode dan posisi saldo saat ini.
+  const hariIni = getLocalDateISO();
+  const periodeSaatIni = hariIni.slice(0, 7);
+  const [tahun, bulan] = periodeSaatIni.split('-').map(Number);
+  const tanggalAkhirBulan = getLocalDateISO(new Date(tahun, bulan, 0));
+  const labaRugi = generateLabaRugi(state.akun, state.jurnal, periodeSaatIni);
+  const neraca = generateNeraca(state.akun, state.jurnal, hariIni);
 
   // Hitung ringkasan
   const totalAset = neraca.aset.total_aset;
@@ -16,16 +20,23 @@ export default function AccountingDashboard() {
   const totalEkuitas = neraca.total_ekuitas;
   const labaBersih = labaRugi.laba_bersih;
 
-  // Hitung kas dari neraca
-  const kas = state.akun.find(a => a.kode === '1-1001')?.saldo || 0;
-  const piutang = state.akun.find(a => a.kode === '1-1003')?.saldo || 0;
-  const utang = state.akun.find(a => a.kode === '2-1001')?.saldo || 0;
+  // Ambil saldo dari neraca hasil jurnal, bukan hanya saldo awal Chart of Accounts.
+  const kas = neraca.aset.aset_lancar
+    .filter(item => item.akun === 'Kas' || item.akun === 'Bank')
+    .reduce((sum, item) => sum + item.jumlah, 0);
+  const piutang = neraca.aset.aset_lancar.find(item => item.akun === 'Piutang Usaha')?.jumlah || 0;
+  const utang = neraca.kewajiban.kewajiban_jangka_pendek.find(item => item.akun === 'Utang Usaha')?.jumlah || 0;
 
-  // Statistik
-  const totalJurnal = state.jurnal.length;
+  // Statistik transaksi hanya menghitung jurnal Posted sebagai pembukuan final.
+  const totalJurnal = state.jurnal.filter(jurnal => jurnal.status === 'Posted').length;
   const totalInvoice = state.invoice.length;
-  const invoiceBelumLunas = state.invoice.filter(i => i.status !== 'Paid').length;
-  const scheduleMendatang = state.schedule.filter(s => new Date(s.tanggal) > new Date()).length;
+  const invoiceBelumLunas = state.invoice.filter(invoice =>
+    invoice.status !== 'Paid' && invoice.status !== 'Cancelled'
+  ).length;
+  const scheduleMendatang = state.schedule.filter(schedule => schedule.tanggal > hariIni).length;
+  const invoiceJatuhTempo = state.invoice.filter(invoice =>
+    invoice.status !== 'Paid' && invoice.status !== 'Cancelled' && invoice.jatuh_tempo && invoice.jatuh_tempo < hariIni
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -134,7 +145,7 @@ export default function AccountingDashboard() {
             </div>
             <div className="flex justify-between">
               <span className="text-sm text-gray-600">Invoice Jatuh Tempo</span>
-              <span className="font-bold text-amber-600">{state.invoice.filter(i => i.status === 'Overdue').length}</span>
+              <span className="font-bold text-amber-600">{invoiceJatuhTempo}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-sm text-gray-600">PO Pending</span>
@@ -171,7 +182,7 @@ export default function AccountingDashboard() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
         <h3 className="font-semibold text-gray-900 mb-4">Jurnal Terbaru</h3>
         <div className="space-y-2">
-          {state.jurnal.slice(-5).reverse().map(jurnal => (
+          {state.jurnal.filter(jurnal => jurnal.status === 'Posted').slice(-5).reverse().map(jurnal => (
             <div key={jurnal.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <div>
                 <p className="text-sm font-medium text-gray-900">{jurnal.keterangan}</p>
