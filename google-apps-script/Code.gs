@@ -957,6 +957,8 @@ function setupDatabase() {
     ['1-1004', 'Persediaan Barang', 'Aset', 'Aset Lancar', 'Debit'],
     ['1-1005', 'Biaya Dibayar Dimuka', 'Aset', 'Aset Lancar', 'Debit'],
     ['1-1006', 'PPN Masukan', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1007', 'Persediaan Tanah & Properti untuk Dijual', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1008', 'Proyek dalam Pengerjaan (WIP)', 'Aset', 'Aset Lancar', 'Debit'],
     ['1-2001', 'Peralatan', 'Aset', 'Aset Tetap', 'Debit'],
     ['1-2002', 'Kendaraan', 'Aset', 'Aset Tetap', 'Debit'],
     ['1-2003', 'Bangunan', 'Aset', 'Aset Tetap', 'Debit'],
