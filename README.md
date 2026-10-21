@@ -19,27 +19,25 @@
 
 ---
 
-## 🎯 OVERVIEW SISTEM
+## 🎯 Gambaran Sistem
 
-Sistem ERP akuntansi lengkap untuk UMKM/PT/CV dengan **double-entry bookkeeping**, **auto-generate laporan keuangan**, dan **integrasi OCR/WhatsApp/Google Sheets**.
+Repository berisi aplikasi React untuk akuntansi dan operasional proyek, serta integrasi Google Apps Script yang masih memerlukan konfigurasi.
 
-### **Fitur Utama:**
-- ✅ Parser angka Indonesia (750.000 → 750000)
-- ✅ Double-entry bookkeeping (Debit = Kredit selalu)
-- ✅ Anti-duplikasi transaksi (idempotency key)
-- ✅ Auto-generate jurnal dari transaksi
-- ✅ Laporan keuangan otomatis (Laba Rugi, Neraca, Arus Kas)
-- ✅ Invoice & Purchase Order
-- ✅ OCR kwitansi dengan Gemini Vision
-- ✅ Auto-input dari WhatsApp/Telegram
-- ✅ Database cloud (Google Sheets)
-- ✅ Multi-user access
-- ✅ Reversal journal (koreksi tanpa edit)
-- ✅ Audit trail lengkap
-- ✅ Export CSV/Excel/JSON
-- ✅ **100% GRATIS** dengan Google Stack
+### Fungsi yang tersedia pada aplikasi
+- Input transaksi akuntansi dengan preview jurnal dan validasi debit/kredit.
+- Dashboard dan laporan laba rugi, neraca, serta arus kas yang dihitung dari jurnal modul akuntansi.
+- Form invoice dan purchase order; PO tidak otomatis membukukan utang sebelum penerimaan/tagihan benar-benar diakui.
+- Chart of Accounts standar.
+- Penyimpanan browser untuk state modul akuntansi dan sebagian data operasional.
 
----
+### Batasan penting
+- localStorage hanya ada pada browser/perangkat yang sama; bukan cloud sync atau database multi-user.
+- Sebagian modul operasional masih memuat seed data awal. Verifikasi setiap record sebelum dipakai sebagai angka aktual.
+- Koneksi frontend ke Google Apps Script belum menyeluruh. URL backend harus dikonfigurasi; URL kosong sengaja menghasilkan error.
+- OCR, upload Google Drive, WhatsApp/Telegram, serta login/otorisasi multi-user belum siap produksi.
+- Export laporan yang tersedia di halaman akuntansi adalah CSV; jangan menganggap PDF/XLSX tersedia hanya dari dokumentasi.
+
+> Laporan harus direkonsiliasi dengan bukti transaksi, saldo awal, persediaan/HPP, pajak, dan aset tetap sebelum dipakai untuk keputusan resmi.
 
 ## 📊 STATUS IMPLEMENTASI
 
