@@ -505,7 +505,20 @@ Sistem auto-generate:
 
 ---
 
-## 🎉 KESIMPULAN
+## Kesimpulan dan batasan
+
+Modul ini adalah fondasi implementasi, bukan paket akuntansi yang telah disertifikasi atau siap produksi.
+
+- State akuntansi saat ini disimpan pada browser/perangkat yang sama; belum menjadi cloud source of truth multi-user.
+- Google Apps Script dan API helper memerlukan deployment, konfigurasi URL/Script Properties, kontrol akses, serta pengujian end-to-end. Jangan membuka endpoint tulis keuangan untuk publik tanpa autentikasi yang aman.
+- Export yang terbukti di halaman laporan akuntansi adalah CSV; upload Drive/OCR/WhatsApp/Telegram belum dinyatakan aktif sebelum masing-masing diuji.
+- Hasil neraca/laba rugi/arus kas bergantung pada saldo awal, klasifikasi akun, stok/HPP, pajak, aset tetap, dan periode yang benar.
+- Data seed pada modul operasional harus dibandingkan dengan bukti asli sebelum dipakai sebagai catatan resmi.
+- CI typecheck/build/test yang lolos adalah prasyarat teknis, bukan pengganti audit akuntansi atau review PSAK oleh profesional.
+
+Gunakan data uji sampai akses, backup, integrasi, dan rekonsiliasi keuangan telah diverifikasi.
+
+
 
 Sistem ERP akuntansi ini adalah solusi **lengkap** untuk UMKM/PT/CV yang membutuhkan:
 - ✅ Sistem akuntansi profesional
