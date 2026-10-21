@@ -9,8 +9,6 @@ export default function AccountingDashboard() {
   // Dashboard selalu mengikuti periode dan posisi saldo saat ini.
   const hariIni = getLocalDateISO();
   const periodeSaatIni = hariIni.slice(0, 7);
-  const [tahun, bulan] = periodeSaatIni.split('-').map(Number);
-  const tanggalAkhirBulan = getLocalDateISO(new Date(tahun, bulan, 0));
   const labaRugi = generateLabaRugi(state.akun, state.jurnal, periodeSaatIni);
   const neraca = generateNeraca(state.akun, state.jurnal, hariIni);
 
