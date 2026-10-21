@@ -17,7 +17,8 @@ export const getTanahKelebihanBayar = (t: Tanah): number => Math.max(0, Math.max
 
 // Handle edge case: BK-01 mobilisasi tanpa dimensi tapi ada nilai tetap
 export const getBekoVolume = (b: Beko): number => {
-  if (b.satuan_volume === 'ls' || b.satuan_volume === 'unit') return 1;
+  if (b.satuan_volume === 'ls') return 1;
+  if (b.satuan_volume === 'unit') return Math.max(0, Number(b.panjang) || 0);
   if (b.panjang === 0 && b.lebar === 0 && b.tinggi === 0) return 1;
   return Math.max(0, b.panjang) * Math.max(0, b.lebar) * Math.max(0, b.tinggi);
 };
@@ -25,11 +26,12 @@ export const getBekoVolume = (b: Beko): number => {
 // Tidak ada nilai rupiah yang disisipkan berdasarkan ID/catatan.
 // Untuk pekerjaan volume: P × L × T × tarif. Untuk LS/unit: 1 × tarif.
 export const getBekoNilai = (b: Beko): number => {
+  const tariff = Math.max(0, Number(b.tarif) || 0);
   const dimensionsAreEmpty = b.panjang === 0 && b.lebar === 0 && b.tinggi === 0;
-  if (b.satuan_volume === 'ls' || b.satuan_volume === 'unit' || dimensionsAreEmpty) {
-    return Math.max(0, Number(b.tarif) || 0);
-  }
-  return getBekoVolume(b) * Math.max(0, Number(b.tarif) || 0);
+  if (b.satuan_volume === 'ls') return tariff;
+  if (b.satuan_volume === 'unit') return Math.max(0, Number(b.panjang) || 0) * tariff;
+  if (dimensionsAreEmpty) return tariff;
+  return getBekoVolume(b) * tariff;
 };
 
 // Hitung sisa utang yang belum dibayar
