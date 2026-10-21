@@ -1,9 +1,9 @@
 # 🏢 SISTEM ERP AKUNTANSI - DOKUMENTASI UTAMA
 
-**Status:** ✅ CORE SYSTEM READY + FULL GOOGLE STACK AVAILABLE  
-**Versi:** 1.0  
+**Status:** PARTIAL IMPLEMENTATION — NOT PRODUCTION-READY  
+**Versi:** 1.1 (perbaikan bertahap)  
 **Tanggal:** 21 Oktober 2026  
-**Biaya:** Rp0 (100% Gratis dengan Google Stack)
+**Catatan:** biaya, kuota, dan batas layanan tergantung konfigurasi provider
 
 ---
 
