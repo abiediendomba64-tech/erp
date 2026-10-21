@@ -214,8 +214,12 @@ export async function uploadToDrive(file: File): Promise<string> {
  */
 export async function testConnection(): Promise<boolean> {
   try {
+    if (!API_BASE_URL || API_BASE_URL.includes('YOUR_DEPLOYMENT_ID')) return false;
     const response = await fetch(getApiUrl('/akun'));
-    return response.ok;
+    if (!response.ok) return false;
+    const payload = await response.json().catch(() => null);
+    if (payload && typeof payload === 'object' && payload.success === false) return false;
+    return Array.isArray(payload);
   } catch (error) {
     console.error('Connection test failed:', error);
     return false;
