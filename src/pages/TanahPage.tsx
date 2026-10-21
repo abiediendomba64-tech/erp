@@ -136,6 +136,10 @@ export default function TanahPage() {
     totalNilai === AUDIT_CONSTANTS.TOTAL_NILAI_TANAH &&
     totalDibayar === AUDIT_CONSTANTS.TOTAL_DIBAYAR_TANAH &&
     totalSisa === AUDIT_CONSTANTS.TOTAL_UTANG_TANAH;
+  const previewLandValue = manualTotalInput.trim() && Number(manualTotalInput) > 0 &&
+    form.luas_bt === 0 && form.harga_per_bt === 0
+    ? Number(manualTotalInput)
+    : Math.max(0, form.luas_bt) * Math.max(0, form.harga_per_bt);
 
   return (
     <div className="space-y-6">
@@ -202,8 +206,8 @@ export default function TanahPage() {
             </label>
           </div>
           <div className="mt-4 rounded-lg bg-blue-50 p-3 text-sm text-blue-900">
-            <p>Nilai kesepakatan terhitung: <strong>{formatRupiah((manualTotalInput.trim() && Number(manualTotalInput) > 0 && form.luas_bt === 0 && form.harga_per_bt === 0) ? Number(manualTotalInput) : Math.max(0, form.luas_bt) * Math.max(0, form.harga_per_bt))}</strong></p>
-            <p>Sisa sesudah pembayaran: <strong>{formatRupiah(Math.max(0, ((manualTotalInput.trim() && Number(manualTotalInput) > 0 && form.luas_bt === 0 && form.harga_per_bt === 0) ? Number(manualTotalInput) : Math.max(0, form.luas_bt) * Math.max(0, form.harga_per_bt)) - Math.max(0, form.dp))}</strong></p>
+            <p>Nilai kesepakatan terhitung: <strong>{formatRupiah(previewLandValue)}</strong></p>
+            <p>Sisa sesudah pembayaran: <strong>{formatRupiah(Math.max(0, previewLandValue - Math.max(0, form.dp)))}</strong></p>
           </div>
           <div className="mt-4 flex gap-2"><button onClick={saveLand} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"><Save size={17} />Simpan</button><button onClick={() => setShowForm(false)} className="rounded-lg bg-gray-100 px-4 py-2 text-gray-700 hover:bg-gray-200">Batal</button></div>
         </section>
