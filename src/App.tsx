@@ -58,16 +58,17 @@ function AppContent() {
       case 'menuconfig': return <MenuConfigPage />;
       case 'users': return <UserManagementPage />;
       case 'settings': return <SettingsPage />;
-      case 'accounting': return <AccountingProvider><AccountingDashboard /></AccountingProvider>;
-      case 'inputtransaksi': return <AccountingProvider><InputTransaksiPage /></AccountingProvider>;
-      case 'laporankeuangan': return <AccountingProvider><LaporanKeuanganPage /></AccountingProvider>;
-      case 'invoicepo': return <AccountingProvider><InvoicePOPage /></AccountingProvider>;
+      case 'accounting': return <AccountingDashboard />;
+      case 'inputtransaksi': return <InputTransaksiPage />;
+      case 'laporankeuangan': return <LaporanKeuanganPage />;
+      case 'invoicepo': return <InvoicePOPage />;
       default: return <Dashboard />;
     }
   };
 
   return (
     <AppProvider>
+      <AccountingProvider>
       <div className="flex h-screen bg-gray-50 overflow-hidden">
         <Sidebar
           currentPage={currentPage}
@@ -83,6 +84,7 @@ function AppContent() {
           </div>
         </main>
       </div>
+      </AccountingProvider>
     </AppProvider>
   );
 }
