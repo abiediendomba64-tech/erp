@@ -907,60 +907,76 @@ function logAudit(aksi, tabel, recordId, nilaiLama, nilaiBaru) {
 function setupDatabase() {
   const ss = getErpSpreadsheet_();
   
-  // Sheet BUKU_KAS
-  let sheet = ss.getSheetByName('BUKU_KAS');
-  if (!sheet) {
-    sheet = ss.insertSheet('BUKU_KAS');
-    sheet.appendRow(['id', 'tanggal', 'no_ref', 'kode_bukti', 'keterangan', 'kategori', 'masuk', 'keluar', 'status_verifikasi', 'created_at']);
+  // Sheets use stable headers; append new columns to existing databases without overwriting rows.
+  let sheet = ss.getSheetByName('BUKU_KAS') || ss.insertSheet('BUKU_KAS');
+  ensureSheetHeaders_(sheet, [
+    'id', 'tanggal', 'no_ref', 'kode_bukti', 'keterangan', 'kategori',
+    'masuk', 'keluar', 'status_verifikasi', 'created_at', 'jenis', 'idempotency_key'
+  ]);
+
+  sheet = ss.getSheetByName('JURNAL') || ss.insertSheet('JURNAL');
+  ensureSheetHeaders_(sheet, [
+    'id', 'transaksi_id', 'tanggal', 'akun_kode', 'akun_nama',
+    'debit', 'kredit', 'keterangan', 'created_at', 'status'
+  ]);
+
+  sheet = ss.getSheetByName('ARSIP_BUKTI') || ss.insertSheet('ARSIP_BUKTI');
+  ensureSheetHeaders_(sheet, [
+    'id', 'kode_bukti', 'jenis', 'link_drive', 'tgl_upload',
+    'terverifikasi', 'catatan_audit', 'penerima', 'nominal',
+    'keterangan', 'confidence', 'created_at'
+  ]);
+
+  sheet = ss.getSheetByName('AUDIT_LOG') || ss.insertSheet('AUDIT_LOG');
+  ensureSheetHeaders_(sheet, [
+    'id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id',
+    'nilai_lama', 'nilai_baru', 'alasan'
+  ]);
+
+  const accountSheet = ss.getSheetByName('AKUN') || ss.insertSheet('AKUN');
+  ensureSheetHeaders_(accountSheet, ['kode', 'nama', 'tipe', 'kategori', 'saldo_normal']);
+  const defaultAkun = [
+    ['1-1001', 'Kas', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1002', 'Bank', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1003', 'Piutang Usaha', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1004', 'Persediaan Barang', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1005', 'Biaya Dibayar Dimuka', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1006', 'PPN Masukan', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-2001', 'Peralatan', 'Aset', 'Aset Tetap', 'Debit'],
+    ['1-2002', 'Kendaraan', 'Aset', 'Aset Tetap', 'Debit'],
+    ['1-2003', 'Bangunan', 'Aset', 'Aset Tetap', 'Debit'],
+    ['1-2004', 'Akumulasi Penyusutan', 'Aset', 'Aset Tetap', 'Kredit'],
+    ['2-1001', 'Utang Usaha', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
+    ['2-1002', 'Utang Bank', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
+    ['2-1003', 'Utang Pajak', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
+    ['2-1004', 'Pendapatan Diterima Dimuka', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
+    ['2-2001', 'Utang Jangka Panjang', 'Kewajiban', 'Kewajiban Jangka Panjang', 'Kredit'],
+    ['3-1001', 'Modal Pemilik', 'Ekuitas', 'Ekuitas', 'Kredit'],
+    ['3-1002', 'Laba Ditahan', 'Ekuitas', 'Ekuitas', 'Kredit'],
+    ['3-1003', 'Prive', 'Ekuitas', 'Ekuitas', 'Debit'],
+    ['4-1001', 'Pendapatan Penjualan', 'Pendapatan', 'Pendapatan Usaha', 'Kredit'],
+    ['4-1002', 'Pendapatan Jasa', 'Pendapatan', 'Pendapatan Usaha', 'Kredit'],
+    ['4-1003', 'Pendapatan Lain-lain', 'Pendapatan', 'Pendapatan Non-Usaha', 'Kredit'],
+    ['5-1001', 'Harga Pokok Penjualan', 'Beban', 'Beban Langsung', 'Debit'],
+    ['5-2001', 'Beban Gaji', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2002', 'Beban Sewa', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2003', 'Beban Listrik & Air', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2004', 'Beban Telepon & Internet', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2005', 'Beban Transportasi', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2006', 'Beban Perlengkapan', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2007', 'Beban Penyusutan', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2008', 'Beban Lain-lain', 'Beban', 'Beban Operasional', 'Debit']
+  ];
+  const existingAccountCodes = new Set(
+    accountSheet.getLastRow() > 1
+      ? accountSheet.getRange(2, 1, accountSheet.getLastRow() - 1, 1).getValues().flat().map(String)
+      : []
+  );
+  const missingAccounts = defaultAkun.filter(account => !existingAccountCodes.has(account[0]));
+  if (missingAccounts.length) {
+    accountSheet.getRange(accountSheet.getLastRow() + 1, 1, missingAccounts.length, defaultAkun[0].length).setValues(missingAccounts);
   }
-  
-  // Sheet JURNAL
-  sheet = ss.getSheetByName('JURNAL');
-  if (!sheet) {
-    sheet = ss.insertSheet('JURNAL');
-    sheet.appendRow(['id', 'transaksi_id', 'tanggal', 'akun_kode', 'akun_nama', 'debit', 'kredit', 'keterangan', 'created_at']);
-  }
-  
-  // Sheet ARSIP_BUKTI
-  sheet = ss.getSheetByName('ARSIP_BUKTI');
-  if (!sheet) {
-    sheet = ss.insertSheet('ARSIP_BUKTI');
-    sheet.appendRow(['id', 'kode_bukti', 'jenis', 'link_drive', 'tgl_upload', 'terverifikasi', 'catatan_audit', 'penerima', 'nominal', 'keterangan', 'confidence', 'created_at']);
-  }
-  
-  // Sheet AUDIT_LOG
-  sheet = ss.getSheetByName('AUDIT_LOG');
-  if (!sheet) {
-    sheet = ss.insertSheet('AUDIT_LOG');
-    sheet.appendRow(['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan']);
-  }
-  
-  // Sheet AKUN (Chart of Accounts)
-  sheet = ss.getSheetByName('AKUN');
-  if (!sheet) {
-    sheet = ss.insertSheet('AKUN');
-    sheet.appendRow(['kode', 'nama', 'tipe', 'kategori', 'saldo_normal']);
-    
-    // Insert default accounts
-    const defaultAkun = [
-      ['1-1001', 'Kas', 'Aset', 'Aset Lancar', 'Debit'],
-      ['1-1002', 'Bank', 'Aset', 'Aset Lancar', 'Debit'],
-      ['1-1003', 'Piutang Usaha', 'Aset', 'Aset Lancar', 'Debit'],
-      ['2-1001', 'Utang Usaha', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
-      ['2-1003', 'Utang Pajak', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
-      ['3-1001', 'Modal Pemilik', 'Ekuitas', 'Ekuitas', 'Kredit'],
-      ['3-1002', 'Laba Ditahan', 'Ekuitas', 'Ekuitas', 'Kredit'],
-      ['4-1001', 'Pendapatan Penjualan', 'Pendapatan', 'Pendapatan Usaha', 'Kredit'],
-      ['4-1002', 'Pendapatan Jasa', 'Pendapatan', 'Pendapatan Usaha', 'Kredit'],
-      ['5-1001', 'Harga Pokok Penjualan', 'Beban', 'Beban Langsung', 'Debit'],
-      ['5-2001', 'Beban Gaji', 'Beban', 'Beban Operasional', 'Debit'],
-      ['5-2002', 'Beban Sewa', 'Beban', 'Beban Operasional', 'Debit'],
-      ['5-2008', 'Beban Lain-lain', 'Beban', 'Beban Operasional', 'Debit'],
-    ];
-    
-    defaultAkun.forEach(akun => sheet.appendRow(akun));
-  }
-  
+
   return 'Database setup complete!';
 }
 
