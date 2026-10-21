@@ -1,4 +1,5 @@
-import type { BukuKas, Akun, JurnalUmum, JurnalEntry } from '../types';
+import type { BukuKas } from '../types';
+import type { Akun, JurnalUmum, JurnalEntry } from '../types/accounting';
 import { getLocalDateISO } from '../data';
 
 function uniqueId(prefix: string): string {
