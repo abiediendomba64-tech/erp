@@ -87,53 +87,29 @@ export const initialArusKas: ArusKas[] = [
 ];
 
 // ============ ERP DATA - CONTOH REALISTIS ============
-export const initialStok: StokBarang[] = [
-  { id: 'STK-001', kode: 'BB-001', nama: 'Semen Portland 50kg', kategori: 'Bahan_Baku', satuan: 'zak', stok_awal: 100, masuk: 50, keluar: 80, harga_pokok: 65000, harga_jual: 75000, min_stok: 20, lokasi: 'Gudang A' },
-  { id: 'STK-002', kode: 'BB-002', nama: 'Pasir Pasang', kategori: 'Bahan_Baku', satuan: 'truk', stok_awal: 10, masuk: 5, keluar: 8, harga_pokok: 800000, harga_jual: 950000, min_stok: 3, lokasi: 'Yard' },
-  { id: 'STK-003', kode: 'BB-003', nama: 'Besi Beton 10mm', kategori: 'Bahan_Baku', satuan: 'batang', stok_awal: 200, masuk: 100, keluar: 150, harga_pokok: 85000, harga_jual: 95000, min_stok: 50, lokasi: 'Gudang A' },
-  { id: 'STK-004', kode: 'BJ-001', nama: 'Rumah Type 36', kategori: 'Barang_Jadi', satuan: 'unit', stok_awal: 0, masuk: 2, keluar: 1, harga_pokok: 250000000, harga_jual: 350000000, min_stok: 0, lokasi: 'Site A' },
-  { id: 'STK-005', kode: 'BD-001', nama: 'Keramik 40x40', kategori: 'Barang_Dagang', satuan: 'dus', stok_awal: 50, masuk: 30, keluar: 40, harga_pokok: 120000, harga_jual: 150000, min_stok: 10, lokasi: 'Gudang B' },
-];
+export const initialStok: StokBarang[] = [];
+// Dataset contoh stok dihapus. Masukkan stok awal yang benar-benar sudah diverifikasi.
 
-export const initialProduksi: Produksi[] = [
-  { id: 'PRD-001', no_produksi: 'SPK-2024-001', tanggal: '2024-01-10', produk: 'Rumah Type 36', jumlah: 1, bahan_baku: [{ barang_id: 'STK-001', jumlah: 40 }, { barang_id: 'STK-003', jumlah: 100 }], biaya_tenaga_kerja: 15000000, biaya_overhead: 3000000, status: 'Selesai', catatan: 'Unit 1 Site A' },
-  { id: 'PRD-002', no_produksi: 'SPK-2024-002', tanggal: '2024-02-01', produk: 'Rumah Type 36', jumlah: 1, bahan_baku: [{ barang_id: 'STK-001', jumlah: 40 }, { barang_id: 'STK-003', jumlah: 100 }], biaya_tenaga_kerja: 15000000, biaya_overhead: 3000000, status: 'Dalam_Proses', catatan: 'Unit 2 Site A - progress 60%' },
-];
+export const initialProduksi: Produksi[] = [];
+// Data produksi awal sengaja kosong; jangan tampilkan SPK demo sebagai pekerjaan aktual.
 
-export const initialPenjualan: Penjualan[] = [
-  { id: 'PJ-001', no_invoice: 'INV-2024-001', tanggal: '2024-02-15', pelanggan: 'Budi Santoso', items: [{ barang_id: 'STK-004', jumlah: 1, harga: 350000000, subtotal: 350000000 }], diskon: 10000000, ppn: 0, status_bayar: 'Lunas', metode_bayar: 'Transfer', jatuh_tempo: '' },
-  { id: 'PJ-002', no_invoice: 'INV-2024-002', tanggal: '2024-03-01', pelanggan: 'Ahmad Wijaya', items: [{ barang_id: 'STK-005', jumlah: 10, harga: 150000, subtotal: 1500000 }], diskon: 0, ppn: 165000, status_bayar: 'Belum_Bayar', metode_bayar: 'Tunai', jatuh_tempo: '2024-04-01' },
-];
+export const initialPenjualan: Penjualan[] = [];
+// Data penjualan contoh dihapus; mulai dari invoice/transaksi yang memiliki bukti.
 
-export const initialPembelian: Pembelian[] = [
-  { id: 'PB-001', no_po: 'PO-2024-001', tanggal: '2024-01-05', supplier: 'PT Semen Indonesia', items: [{ barang_id: 'STK-001', jumlah: 50, harga: 65000, subtotal: 3250000 }], ppn: 357500, status_bayar: 'Lunas', status_terima: 'Lengkap', jatuh_tempo: '' },
-  { id: 'PB-002', no_po: 'PO-2024-002', tanggal: '2024-01-20', supplier: 'Toko Besi Jaya', items: [{ barang_id: 'STK-003', jumlah: 100, harga: 85000, subtotal: 8500000 }], ppn: 935000, status_bayar: 'DP', status_terima: 'Lengkap', jatuh_tempo: '2024-02-20' },
-];
+export const initialPembelian: Pembelian[] = [];
+// Data pembelian contoh dihapus; isi dari PO/tagihan yang terverifikasi.
 
-export const initialPenggajian: Penggajian[] = [
-  { id: 'GJ-001', nip: 'EMP-001', nama: 'Budi Hermawan', jabatan: 'Mandor', departemen: 'Produksi', gaji_pokok: 5000000, tunjangan: 1000000, lembur: 500000, potongan: 100000, pph21: 100000, periode: '2024-03', status: 'Dibayar' },
-  { id: 'GJ-002', nip: 'EMP-002', nama: 'Sri Wahyuni', jabatan: 'Admin', departemen: 'Keuangan', gaji_pokok: 4500000, tunjangan: 800000, lembur: 0, potongan: 80000, pph21: 80000, periode: '2024-03', status: 'Dibayar' },
-  { id: 'GJ-003', nip: 'EMP-003', nama: 'Agus Prasetyo', jabatan: 'Operator Beko', departemen: 'Proyek', gaji_pokok: 5500000, tunjangan: 1500000, lembur: 800000, potongan: 150000, pph21: 150000, periode: '2024-03', status: 'Disetujui' },
-];
+export const initialPenggajian: Penggajian[] = [];
+// Data gaji contoh dihapus untuk mencegah nama dan angka fiktif masuk laporan.
 
-export const initialAnggaran: Anggaran[] = [
-  { id: 'AG-001', kategori: 'Pembebasan Tanah', anggaran: 500000000, realisasi: 309400000, periode: '2024', catatan: 'Termasuk DP Sukiat, Ija, Enapsiah' },
-  { id: 'AG-002', kategori: 'Cut & Fill (Beko)', anggaran: 200000000, realisasi: 71350000, periode: '2024', catatan: 'Item 1-6' },
-  { id: 'AG-003', kategori: 'Material & Perlengkapan', anggaran: 150000000, realisasi: 13596000, periode: '2024', catatan: 'ATK PT' },
-  { id: 'AG-004', kategori: 'Tenaga Kerja', anggaran: 120000000, realisasi: 22820000, periode: '2024', catatan: 'Gaji 3 karyawan + lembur' },
-];
+export const initialAnggaran: Anggaran[] = [];
+// Anggaran contoh dihapus; input anggaran proyek yang sudah disetujui.
 
-export const initialOCR: OCRResult[] = [
-  { id: 'OCR-001', timestamp: '2024-03-15T10:30:00', image_url: 'https://drive.google.com/file/d/xxx1', jenis_dokumen: 'Kwitansi', data_ekstrak: { penerima: 'Sukiat', nominal: 1400000, tanggal: '2024-01-15', nomor_bukti: 'KW-001', keterangan: 'DP Tanah 18 BT' }, confidence: 95, status: 'Terverifikasi', catatan: 'Cocok dengan BUKTI-001' },
-  { id: 'OCR-002', timestamp: '2024-03-15T10:35:00', image_url: 'https://drive.google.com/file/d/xxx2', jenis_dokumen: 'Kwitansi', data_ekstrak: { penerima: 'Ija', nominal: 30000000, tanggal: '2024-01-20', nomor_bukti: 'KW-002', keterangan: 'DP Tanah 79 BT' }, confidence: 92, status: 'Terverifikasi', catatan: 'Cocok dengan BUKTI-002' },
-  { id: 'OCR-003', timestamp: '2024-03-16T09:00:00', image_url: 'https://drive.google.com/file/d/xxx3', jenis_dokumen: 'Kwitansi', data_ekstrak: { penerima: '???', nominal: 13000000, tanggal: '', nomor_bukti: '', keterangan: 'Tidak terbaca jelas' }, confidence: 45, status: 'Pending', catatan: 'Foto buram, perlu upload ulang' },
-];
+export const initialOCR: OCRResult[] = [];
+// Hasil OCR contoh/URL placeholder dihapus; simpan hanya scan sungguhan.
 
-export const initialWhatsApp: WhatsAppLog[] = [
-  { id: 'WA-001', timestamp: '2024-03-15T08:00:00', nomor: '081234567890', nama: 'Budi Santoso', pesan_masuk: 'Saya sudah transfer DP rumah type 36 sebesar 50jt', respon_sistem: 'Terima kasih. Pembayaran DP Rp50.000.000 tercatat. Invoice: INV-2024-001', tipe: 'Input_Transaksi', status: 'Terkirim' },
-  { id: 'WA-002', timestamp: '2024-03-15T09:30:00', nomor: '081298765432', nama: 'Siti Aminah', pesan_masuk: 'Kapan jatuh tempo cicilan saya?', respon_sistem: 'Jatuh tempo cicilan: 1 Juni 2024. Sisa: Rp400.000.000', tipe: 'Laporan', status: 'Terkirim' },
-  { id: 'WA-003', timestamp: '2024-03-16T07:00:00', nomor: 'SYSTEM', nama: 'Sistem', pesan_masuk: '', respon_sistem: 'Reminder: Jatuh tempo PO-2024-002 (Toko Besi Jaya) pada 20 Feb 2024', tipe: 'Reminder', status: 'Terkirim' },
-];
+export const initialWhatsApp: WhatsAppLog[] = [];
+// Log WhatsApp demo dihapus; tampilkan hanya pesan yang benar-benar diterima.
 
 export const initialMenuConfig: MenuItem[] = [
   { id: 'M-01', label: 'Dashboard', icon: 'LayoutDashboard', page: 'dashboard', order: 1, visible: true, role_access: ['ADMIN', 'KEUANGAN', 'PROYEK', 'VIEWER'] },
