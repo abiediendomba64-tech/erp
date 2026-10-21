@@ -511,40 +511,9 @@ Modul ini adalah fondasi implementasi, bukan paket akuntansi yang telah disertif
 
 - State akuntansi saat ini disimpan pada browser/perangkat yang sama; belum menjadi cloud source of truth multi-user.
 - Google Apps Script dan API helper memerlukan deployment, konfigurasi URL/Script Properties, kontrol akses, serta pengujian end-to-end. Jangan membuka endpoint tulis keuangan untuk publik tanpa autentikasi yang aman.
-- Export yang terbukti di halaman laporan akuntansi adalah CSV; upload Drive/OCR/WhatsApp/Telegram belum dinyatakan aktif sebelum masing-masing diuji.
+- Export yang tersedia di halaman laporan akuntansi adalah CSV; upload Drive/OCR/WhatsApp/Telegram belum dinyatakan aktif sebelum masing-masing diuji.
 - Hasil neraca/laba rugi/arus kas bergantung pada saldo awal, klasifikasi akun, stok/HPP, pajak, aset tetap, dan periode yang benar.
 - Data seed pada modul operasional harus dibandingkan dengan bukti asli sebelum dipakai sebagai catatan resmi.
 - CI typecheck/build/test yang lolos adalah prasyarat teknis, bukan pengganti audit akuntansi atau review PSAK oleh profesional.
 
 Gunakan data uji sampai akses, backup, integrasi, dan rekonsiliasi keuangan telah diverifikasi.
-
-
-
-Sistem ERP akuntansi ini adalah solusi **lengkap** untuk UMKM/PT/CV yang membutuhkan:
-- ✅ Sistem akuntansi profesional
-- ✅ Laporan keuangan otomatis
-- ✅ Mudah digunakan (awam akuntansi)
-- ✅ Compatible semua device
-- ✅ Harga terjangkau
-
-**Tidak perlu lagi:**
-- ❌ Hire akuntan mahal
-- ❌ Input manual di Excel
-- ❌ Hitung laporan keuangan manual
-- ❌ Takut salah hitung
-
-**Cukup:**
-- ✅ Input transaksi di form
-- ✅ Sistem auto-generate semua
-- ✅ Laporan keuangan siap pakai
-
----
-
-**Dibuat oleh:** AI Assistant  
-**Tanggal:** 21 Oktober 2026  
-**Versi:** 1.0  
-**Status:** ✅ READY TO USE  
-**Build Status:** ✅ Success
-
-**Quote:**  
-*"Akuntansi tidak pernah semudah ini. Input transaksi, sistem yang mengerjakan sisanya."*
