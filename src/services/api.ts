@@ -105,29 +105,38 @@ export async function reverseTransaksi(transaksi_id: string, alasan: string): Pr
 /**
  * Scan foto kwitansi dengan Gemini API
  */
-export async function scanKwitansi(imageUrl: string): Promise<{
+export async function scanKwitansi(
+  imageUrl: string,
+  jenisDokumen: 'Kwitansi' | 'Nota' | 'Transfer_Bank' | 'Lainnya' = 'Kwitansi'
+): Promise<{
   penerima?: string;
   nominal?: number;
   tanggal?: string;
   nomor_bukti?: string;
   keterangan?: string;
+  confidence?: number;
 }> {
   try {
     if (!imageUrl.trim()) throw new Error('URL foto kwitansi wajib diisi.');
     const response = await fetch(getApiUrl('/ocr'), {
       method: 'POST',
       headers: jsonRequestHeaders,
-      body: JSON.stringify({ imageUrl })
+      body: JSON.stringify({ imageUrl, jenisDokumen })
     });
     
     const result = await readApiResponse<any>(response);
     const data = result && result.data ? result.data : result;
     return {
       penerima: data.vendor ?? data.penerima ?? undefined,
-      nominal: Number.isFinite(Number(data.total ?? data.nominal)) ? Number(data.total ?? data.nominal) : undefined,
+      nominal: data.total == null && data.nominal == null
+        ? undefined
+        : Number.isFinite(Number(data.total ?? data.nominal)) ? Number(data.total ?? data.nominal) : undefined,
       tanggal: data.tanggal ?? undefined,
       nomor_bukti: data.nomor_bukti ?? undefined,
       keterangan: data.keterangan ?? undefined,
+      confidence: data.confidence == null
+        ? undefined
+        : Number.isFinite(Number(data.confidence)) ? Number(data.confidence) : undefined,
     };
   } catch (error) {
     console.error('Error scanning kwitansi:', error);
