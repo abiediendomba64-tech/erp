@@ -140,7 +140,14 @@ function doPost(e) {
  * @returns {Object} - { vendor, tanggal, total, kategori, confidence }
  */
 function handleOCR(data) {
-  const imageUrl = data.imageUrl;
+  const imageUrl = String(data.imageUrl || '').trim();
+  const documentType = String(data.jenisDokumen || 'Kwitansi');
+  if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) {
+    throw new Error('OCR membutuhkan URL gambar HTTP/HTTPS yang bisa diakses Apps Script.');
+  }
+  if (!['Kwitansi', 'Nota', 'Transfer_Bank', 'Lainnya'].includes(documentType)) {
+    throw new Error('Jenis dokumen OCR tidak dikenal.');
+  }
   if (!imageUrl) {
     throw new Error('imageUrl is required');
   }
@@ -204,12 +211,12 @@ Jika field tidak ditemukan, isi dengan null. Kembalikan HANYA JSON, tanpa teks l
       const ocrData = JSON.parse(jsonMatch[0]);
       
       // Simpan ke sheet ARSIP_BUKTI
-      saveToArsipBukti(ocrData, imageUrl);
+      saveToArsipBukti(ocrData, imageUrl, documentType);
       
       return {
         success: true,
         data: ocrData,
-        message: 'OCR berhasil. Data disimpan ke ARSIP_BUKTI.'
+        message: 'OCR berhasil. Hasil disimpan sebagai Perlu_Konfirmasi; confidence tidak dianggap sebagai persetujuan manusia.'
       };
     }
   }
@@ -220,7 +227,7 @@ Jika field tidak ditemukan, isi dengan null. Kembalikan HANYA JSON, tanpa teks l
 /**
  * Simpan hasil OCR ke sheet ARSIP_BUKTI
  */
-function saveToArsipBukti(ocrData, imageUrl) {
+function saveToArsipBukti(ocrData, imageUrl, documentType) {
   const ss = getErpSpreadsheet_();
   let sheet = ss.getSheetByName('ARSIP_BUKTI');
   
@@ -230,13 +237,20 @@ function saveToArsipBukti(ocrData, imageUrl) {
   }
   
   const id = 'BUKTI-' + new Date().getTime();
-  const confidence = ocrData.confidence || 0;
-  const status = confidence >= 90 ? 'Ya' : confidence >= 70 ? 'Perlu_Konfirmasi' : 'Tidak';
+  const confidence = Number(ocrData.confidence) || 0;
+  const documentTypes = {
+    Kwitansi: 'Kwitansi_Foto',
+    Nota: 'Nota_Foto',
+    Transfer_Bank: 'Transfer_Bank',
+    Lainnya: 'Lainnya'
+  };
+  // Confidence is only a model score, not human authorization.
+  const status = 'Perlu_Konfirmasi';
   
   sheet.appendRow([
     id,
     ocrData.nomor_bukti || '',
-    'Kwitansi_Foto',
+    documentTypes[documentType] || 'Kwitansi_Foto',
     imageUrl,
     new Date().toISOString().split('T')[0],
     status,
