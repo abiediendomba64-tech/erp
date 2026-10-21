@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useAppContext } from '../store';
+import { useAccounting } from '../store/accounting';
 import { formatRupiah, getLocalDateISO } from '../data';
 import type { ArsipBukti } from '../types';
 import {
@@ -11,6 +12,7 @@ import {
   previewLocalDocumentFile,
   saveLocalDocumentFile
 } from '../utils/localDocuments';
+import { createCashbookJournal, journalTotalsAreBalanced } from '../utils/cashbookJournal';
 
 type DocumentKind = ArsipBukti['jenis'];
 type RelatedModule = NonNullable<ArsipBukti['modul_terkait']>;
@@ -76,6 +78,7 @@ function hasUsableEvidence(document: ArsipBukti): boolean {
 
 export default function ArsipBuktiPage() {
   const { state, dispatch } = useAppContext();
+  const { state: accountingState, dispatch: dispatchAccounting } = useAccounting();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -163,13 +166,62 @@ export default function ArsipBuktiPage() {
       return;
     }
     const existing = editingId ? state.arsipBukti.find(item => item.id === editingId) : undefined;
+    const localFileAlreadyExists = Boolean(existing?.local_file_key);
+    const hasEvidence = Boolean(selectedFile || localFileAlreadyExists || form.link_drive.trim());
     if (form.terverifikasi === 'Ya') {
-      if (!selectedFile && !existing?.local_file_key && !form.link_drive.trim()) {
+      if (!hasEvidence) {
         setError('Dokumen tidak dapat diverifikasi tanpa lampiran file atau tautan bukti.');
         return;
       }
       if (!form.diverifikasi_oleh.trim()) {
         setError('Isi nama pemeriksa yang benar-benar memeriksa dokumen.');
+        return;
+      }
+    }
+
+    const matchingCashRows = (moduleName: string, relatedId: string, proofCode: string) => {
+      if (moduleName !== 'Buku Kas') return [];
+      return state.bukuKas.filter(row =>
+        (Boolean(relatedId) && row.id === relatedId.trim()) ||
+        (Boolean(proofCode) && Boolean(row.kode_bukti) && row.kode_bukti === proofCode.trim())
+      );
+    };
+    const newMatchRows = matchingCashRows(form.modul_terkait, form.id_terkait, form.kode_bukti);
+    const oldMatchRows = existing
+      ? matchingCashRows(existing.modul_terkait || '', existing.id_terkait || '', existing.kode_bukti || '')
+      : [];
+    const postedRowsProtected = oldMatchRows.filter(row =>
+      row.posting_status === 'POSTED' &&
+      Boolean(row.jurnal_id) &&
+      accountingState.jurnal.some(journal => journal.id === row.jurnal_id && journal.status === 'Posted')
+    );
+    if (postedRowsProtected.length > 0 &&
+        (form.terverifikasi !== 'Ya' ||
+         form.modul_terkait !== existing?.modul_terkait ||
+         form.id_terkait.trim() !== (existing?.id_terkait || '').trim() ||
+         form.kode_bukti.trim() !== (existing?.kode_bukti || '').trim())) {
+      setError('Bukti ini sudah mendukung jurnal Posted. Jangan mencabut atau memindahkan tautan tanpa membuat reversal/koreksi transaksi dari menu Buku Kas terlebih dahulu.');
+      return;
+    }
+
+    const isPaymentEvidence = ['Kwitansi_Foto', 'Transfer_Bank', 'Nota_Foto'].includes(form.jenis);
+    const verifiedPaymentLink = form.terverifikasi === 'Ya' && hasEvidence &&
+      form.modul_terkait === 'Buku Kas' && isPaymentEvidence;
+    if (verifiedPaymentLink && form.id_terkait.trim() && newMatchRows.length === 0) {
+      setError('ID Buku Kas tidak ditemukan. Periksa ID record terkait atau pilih modul yang benar.');
+      return;
+    }
+    if (verifiedPaymentLink && newMatchRows.length > 0) {
+      if (nominal <= 0) {
+        setError('Nominal dokumen pembayaran wajib diisi sebelum dipakai memposting jurnal.');
+        return;
+      }
+      const mismatched = newMatchRows.find(row =>
+        Math.abs(nominal - (Math.max(0, Number(row.masuk) || 0) + Math.max(0, Number(row.keluar) || 0))) > 0.005
+      );
+      if (mismatched) {
+        setError('Nominal bukti tidak sama dengan nominal transaksi Buku Kas ' + mismatched.id +
+          '. Jurnal tidak diposting. Periksa bukti/nominal dahulu; jangan ubah angka agar sekadar cocok jika bukti asli tidak mendukung.');
         return;
       }
     }
@@ -205,12 +257,73 @@ export default function ArsipBuktiPage() {
         waktu_dibuat: existing?.waktu_dibuat || now,
       };
 
+      let postedJournalCount = 0;
+      let draftJournalCount = 0;
+      if (verifiedPaymentLink) {
+        for (const cashRow of newMatchRows) {
+          // Historic rows never get journalled automatically, because they may already be
+          // included in another ledger. Only new app-created Drafts can be promoted.
+          if (cashRow.posting_status === 'HISTORICAL' || (!cashRow.posting_status && !cashRow.jurnal_id)) continue;
+          if (!cashRow.jurnal_id || !cashRow.akun_kas_kode || !cashRow.akun_lawan_kode) {
+            draftJournalCount++;
+            continue;
+          }
+          const journal = accountingState.jurnal.find(item => item.id === cashRow.jurnal_id);
+          if (cashRow.posting_status === 'DRAFT' && journal?.status === 'Draft') {
+            if (!journalTotalsAreBalanced(journal)) {
+              throw new Error('Jurnal Draft untuk transaksi ' + cashRow.id + ' tidak balance; periksa jurnal sebelum posting.');
+            }
+            dispatchAccounting({
+              type: 'UPDATE_JURNAL',
+              payload: { ...journal, status: 'Posted' }
+            });
+            dispatch({
+              type: 'UPDATE_BUKU_KAS',
+              payload: { ...cashRow, status_verifikasi: 'LENGKAP', posting_status: 'POSTED' }
+            });
+            postedJournalCount++;
+          } else if (cashRow.posting_status === 'REVERSED') {
+            const newJournal = createCashbookJournal(cashRow, accountingState.akun, 'Posted');
+            if (!journalTotalsAreBalanced(newJournal)) {
+              throw new Error('Jurnal baru untuk transaksi ' + cashRow.id + ' tidak balance; jurnal tetap tidak diposting.');
+            }
+            dispatchAccounting({ type: 'ADD_JURNAL', payload: newJournal });
+            dispatch({
+              type: 'UPDATE_BUKU_KAS',
+              payload: {
+                ...cashRow,
+                jurnal_id: newJournal.id,
+                posting_status: 'POSTED',
+                status_verifikasi: 'LENGKAP'
+              }
+            });
+            postedJournalCount++;
+          } else if (cashRow.posting_status === 'POSTED' && journal?.status === 'Posted') {
+            postedJournalCount++;
+          } else {
+            draftJournalCount++;
+          }
+        }
+      }
+
       if (editingId) dispatch({ type: 'UPDATE_ARSIP_BUKTI', payload: record });
       else dispatch({ type: 'ADD_ARSIP_BUKTI', payload: record });
+
       setShowForm(false);
       setSelectedFile(null);
       setEditingId(null);
-      setMessage(editingId ? 'Metadata dokumen diperbarui.' : 'Dokumen dicatat. Simpan salinan cloud/backup secara terpisah karena lampiran file ini berada di browser ini.');
+      const messages = [editingId ? 'Metadata dokumen diperbarui.' : 'Dokumen dicatat.'];
+      if (postedJournalCount > 0) {
+        messages.push(postedJournalCount + ' jurnal telah diposting ke laporan Akuntansi karena cocok dengan nominal Buku Kas dan bukti pembayaran yang ditandai diverifikasi manual.');
+      }
+      if (draftJournalCount > 0) {
+        messages.push(draftJournalCount + ' transaksi masih Draft/tidak diposting. Periksa akun lawan dan status jurnal; catatan historis tidak otomatis dijurnal.');
+      }
+      if (!verifiedPaymentLink || newMatchRows.length === 0) {
+        messages.push('Dokumen disimpan, tetapi tidak ada jurnal yang diposting otomatis. Pastikan jenis dokumen, ID Buku Kas, nominal, dan bukti asli sesuai.');
+      }
+      messages.push('File lampiran tersimpan lokal pada browser ini; tautan Google Drive/cloud tidak dibuat otomatis.');
+      setMessage(messages.join(' '));
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
     } finally {
