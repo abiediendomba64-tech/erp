@@ -2,7 +2,8 @@ import {
   LayoutDashboard, BookOpen, FolderArchive, Scale,
   LandPlot, Truck, History, FileBarChart, Menu, X,
   Package, Factory, ShoppingCart, Users, PieChart,
-  Scan, MessageCircle, Settings, DollarSign, Shield
+  Scan, MessageCircle, Settings, DollarSign, Shield,
+  UserCog
 } from 'lucide-react';
 import { Page } from '../App';
 
@@ -34,6 +35,8 @@ const adminMenu: { id: Page; label: string; icon: React.ReactNode; section: stri
   { id: 'alokasi', label: 'Alokasi Dana Detail', icon: <DollarSign size={20} />, section: 'ERP' },
   { id: 'ocr', label: 'OCR / Vision AI', icon: <Scan size={20} />, section: 'Integrasi' },
   { id: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle size={20} />, section: 'Integrasi' },
+  { id: 'users', label: 'Manajemen User', icon: <Users size={20} />, section: 'Sistem' },
+  { id: 'settings', label: 'Pengaturan', icon: <Settings size={20} />, section: 'Sistem' },
   { id: 'auditlog', label: 'Audit Log', icon: <History size={20} />, section: 'Sistem' },
   { id: 'menuconfig', label: 'Konfigurasi', icon: <Settings size={20} />, section: 'Sistem' },
 ];

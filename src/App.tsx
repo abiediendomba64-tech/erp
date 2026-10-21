@@ -20,8 +20,10 @@ import OCRPage from './pages/OCRPage';
 import WhatsAppPage from './pages/WhatsAppPage';
 import MenuConfigPage from './pages/MenuConfigPage';
 import AlokasiDanaPage from './pages/AlokasiDanaPage';
+import UserManagementPage from './pages/UserManagementPage';
+import SettingsPage from './pages/SettingsPage';
 
-export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig';
+export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings';
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
@@ -49,6 +51,8 @@ function AppContent() {
       case 'ocr': return <OCRPage />;
       case 'whatsapp': return <WhatsAppPage />;
       case 'menuconfig': return <MenuConfigPage />;
+      case 'users': return <UserManagementPage />;
+      case 'settings': return <SettingsPage />;
       default: return <Dashboard />;
     }
   };
