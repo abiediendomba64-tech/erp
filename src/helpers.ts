@@ -14,7 +14,6 @@ export const getTanahNilaiTotal = (t: Tanah): number => {
 
 export const getTanahSisa = (t: Tanah): number => Math.max(0, getTanahNilaiTotal(t) - Math.max(0, t.dp));
 export const getTanahKelebihanBayar = (t: Tanah): number => Math.max(0, Math.max(0, t.dp) - getTanahNilaiTotal(t));
-export const getTanahKelebihanBayar = (t: Tanah): number => Math.max(0, Math.max(0, t.dp) - getTanahNilaiTotal(t));
 
 // Handle edge case: BK-01 mobilisasi tanpa dimensi tapi ada nilai tetap
 export const getBekoVolume = (b: Beko): number => {
