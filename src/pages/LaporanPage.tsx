@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useAppContext } from '../store';
 import { formatRupiah, getLocalDateISO } from '../data';
 import {
-  getTanahNilaiTotal, getTanahSisa, getTanahKelebihanBayar,
+  getTanahNilaiTotal, getTanahSisa, getTanahKelebihanBayar, hasKnownLandContractValue,
   getBekoNilai, getBukuKasVerificationStatus,
   getRelatedDocuments, hasDocumentEvidence
 } from '../helpers';
@@ -23,6 +23,7 @@ export default function LaporanPage() {
   const saldoCatatan = totalMasuk - totalKeluar;
 
   const nilaiTanah = state.tanah.reduce((sum, item) => sum + getTanahNilaiTotal(item), 0);
+  const bidangNilaiBelumDiketahui = state.tanah.filter(item => !hasKnownLandContractValue(item)).length;
   const pembayaranTanah = state.tanah.reduce((sum, item) => sum + Math.max(0, Number(item.dp) || 0), 0);
   const sisaTanah = state.tanah.reduce((sum, item) => sum + getTanahSisa(item), 0);
   const kelebihanBayarTanah = state.tanah.reduce((sum, item) => sum + getTanahKelebihanBayar(item), 0);
@@ -42,7 +43,7 @@ export default function LaporanPage() {
     !getRelatedDocuments(state.arsipBukti, 'Tanah', item.id, item.kode_bukti)
       .some(document => document.terverifikasi === 'Ya' && hasDocumentEvidence(document))
   );
-  const utangTanah = state.posKewajiban.reduce((sum, item) => sum + Math.max(0, item.nilai_menurut_dokumen - item.dp_dibayar), 0);
+  const utangTanah = state.tanah.reduce((sum, item) => sum + getTanahSisa(item), 0);
   const arsipWithoutFile = state.arsipBukti.filter(document => !hasDocumentEvidence(document));
   const verifiedArchive = state.arsipBukti.filter(document => document.terverifikasi === 'Ya' && hasDocumentEvidence(document));
 
@@ -143,11 +144,11 @@ export default function LaporanPage() {
         <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Kas masuk tercatat</p><p className="mt-2 text-xl font-bold text-emerald-700">{formatRupiah(totalMasuk)}</p><p className="mt-1 text-xs text-gray-500">Sampai {tanggalAsOf}</p></div>
         <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Kas keluar tercatat</p><p className="mt-2 text-xl font-bold text-red-700">{formatRupiah(totalKeluar)}</p><p className="mt-1 text-xs text-gray-500">Sampai {tanggalAsOf}</p></div>
         <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Saldo catatan</p><p className={`mt-2 text-xl font-bold ${saldoCatatan < 0 ? 'text-red-700' : 'text-indigo-700'}`}>{formatRupiah(saldoCatatan)}</p><p className="mt-1 text-xs text-gray-500">Bukan saldo rekening terkonfirmasi</p></div>
-        <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Utang tanah menurut register</p><p className="mt-2 text-xl font-bold text-red-700">{formatRupiah(utangTanah)}</p><p className="mt-1 text-xs text-gray-500">Berdasarkan data kewajiban yang diinput</p></div>
+        <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Sisa tanah (nilai diketahui)</p><p className="mt-2 text-xl font-bold text-red-700">{formatRupiah(utangTanah)}</p><p className="mt-1 text-xs text-gray-500">Rumus dari Register Tanah; {bidangNilaiBelumDiketahui} bidang tanpa nilai kontrak diketahui</p></div>
       </section>
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <div className="rounded-xl border bg-white p-5"><div className="flex items-center gap-2"><LandPlot size={18} className="text-blue-600" /><h2 className="font-semibold">Pembebasan tanah</h2></div><div className="mt-3 space-y-2 text-sm"><div className="flex justify-between"><span>Nilai formula</span><strong>{formatRupiah(nilaiTanah)}</strong></div><div className="flex justify-between"><span>Pembayaran tercatat</span><strong>{formatRupiah(pembayaranTanah)}</strong></div><div className="flex justify-between"><span>Sisa formula</span><strong className="text-red-700">{formatRupiah(sisaTanah)}</strong></div>{kelebihanBayarTanah > 0 && <p className="rounded bg-red-50 p-2 text-xs text-red-800">Potensi kelebihan bayar: {formatRupiah(kelebihanBayarTanah)}</p>}</div></div>
+        <div className="rounded-xl border bg-white p-5"><div className="flex items-center gap-2"><LandPlot size={18} className="text-blue-600" /><h2 className="font-semibold">Pembebasan tanah</h2></div><div className="mt-3 space-y-2 text-sm"><div className="flex justify-between"><span>Nilai kontrak diketahui</span><strong>{formatRupiah(nilaiTanah)}</strong></div><div className="flex justify-between"><span>Bidang nilai belum diketahui</span><strong className="text-amber-700">{bidangNilaiBelumDiketahui}</strong></div><div className="flex justify-between"><span>Pembayaran tercatat</span><strong>{formatRupiah(pembayaranTanah)}</strong></div><div className="flex justify-between"><span>Sisa formula</span><strong className="text-red-700">{formatRupiah(sisaTanah)}</strong></div>{kelebihanBayarTanah > 0 && <p className="rounded bg-red-50 p-2 text-xs text-red-800">Potensi kelebihan bayar: {formatRupiah(kelebihanBayarTanah)}</p>}</div></div>
         <div className="rounded-xl border bg-white p-5"><div className="flex items-center gap-2"><Truck size={18} className="text-orange-600" /><h2 className="font-semibold">Beko / cut & fill</h2></div><div className="mt-3 space-y-2 text-sm"><div className="flex justify-between"><span>Biaya di lingkup rekap</span><strong>{formatRupiah(nilaiBeko)}</strong></div><div className="flex justify-between"><span>Di luar lingkup</span><strong>{formatRupiah(nilaiBekoDiLuar)}</strong></div><div className="flex justify-between"><span>Belum didukung dokumen terverifikasi</span><strong className="text-red-700">{formatRupiah(nilaiBekoBelumDidukung)}</strong></div></div></div>
         <div className="rounded-xl border bg-white p-5"><div className="flex items-center gap-2"><FolderArchive size={18} className="text-purple-600" /><h2 className="font-semibold">Arsip dokumen</h2></div><div className="mt-3 space-y-2 text-sm"><div className="flex justify-between"><span>Semua catatan dokumen</span><strong>{state.arsipBukti.length}</strong></div><div className="flex justify-between"><span>File/URL tidak tersedia</span><strong className="text-red-700">{arsipWithoutFile.length}</strong></div><div className="flex justify-between"><span>File/URL ditandai terverifikasi</span><strong className="text-emerald-700">{verifiedArchive.length}</strong></div><div className="flex justify-between"><span>Bidang tanah tanpa dokumen</span><strong className="text-amber-700">{tanahTanpaDokumen.length}</strong></div></div></div>
       </section>
