@@ -3,6 +3,7 @@ import { useAppContext } from '../store';
 import { useAccounting } from '../store/accounting';
 import { formatRupiah, getLocalDateISO } from '../data';
 import type { ArsipBukti } from '../types';
+import DokumenProyekGenerator from '../components/DokumenProyekGenerator';
 import {
   FolderArchive, FileText, Upload, Search, ExternalLink, Download,
   Pencil, CheckCircle, AlertTriangle, ShieldAlert, X, Save
@@ -372,6 +373,8 @@ export default function ArsipBuktiPage() {
 
       {message && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>}
       {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+
+      <DokumenProyekGenerator />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-xl border bg-white p-4"><p className="text-xs text-gray-500">Jumlah catatan dokumen</p><p className="mt-1 text-2xl font-bold">{state.arsipBukti.length}</p></div>
