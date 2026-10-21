@@ -1,346 +1,567 @@
 /**
- * GOOGLE APPS SCRIPT - BACKEND API
+ * GOOGLE APPS SCRIPT - BACKEND LENGKAP
  * 
- * Cara Setup:
- * 1. Buka https://script.google.com
- * 2. Buat project baru
- * 3. Copy-paste kode ini
- * 4. Deploy sebagai Web App
- * 5. Copy URL untuk digunakan di frontend
+ * CARA SETUP:
+ * 1. Buka Google Sheets Anda
+ * 2. Extensions → Apps Script
+ * 3. Copy-paste semua kode ini
+ * 4. Ganti GEMINI_API_KEY dengan API key Anda dari aistudio.google.com
+ * 5. Deploy → New deployment → Web app → Access: Anyone
+ * 6. Copy URL deployment untuk digunakan di React frontend
  * 
- * Endpoints:
- * - POST /transaksi - Input transaksi baru
- * - GET /transaksi - List semua transaksi
- * - PUT /transaksi/:id - Update transaksi
- * - DELETE /transaksi/:id - Hapus transaksi
- * - POST /ocr - Scan foto kwitansi
- * - GET /laporan/laba-rugi - Laporan laba rugi
- * - GET /laporan/neraca - Laporan neraca
+ * FITUR:
+ * ✅ OCR Kwitansi dengan Gemini Vision
+ * ✅ Webhook WhatsApp/Telegram
+ * ✅ Auto-generate Jurnal Double-Entry
+ * ✅ Reversal Journal (koreksi tanpa edit)
+ * ✅ Audit Trail otomatis
+ * ✅ Integrasi Google Sheets native
  */
 
 // ============ KONFIGURASI ============
-const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE'; // Ganti dengan ID Google Sheets Anda
-const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY_HERE'; // Ganti dengan API key Gemini Anda
+const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY_HERE'; // Ganti dengan API key Anda
+const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
 
-// ============ MAIN FUNCTIONS ============
+// ============ WEBHOOK HANDLERS ============
 
 /**
- * Handle GET requests
+ * Handle GET requests (untuk testing)
  */
 function doGet(e) {
-  const path = e.parameter.path || '';
-  
-  try {
-    if (path === '/transaksi') {
-      return jsonResponse(getAllTransaksi());
-    } else if (path === '/laporan/laba-rugi') {
-      return jsonResponse(generateLabaRugi());
-    } else if (path === '/laporan/neraca') {
-      return jsonResponse(generateNeraca());
-    } else if (path === '/akun') {
-      return jsonResponse(getAllAkun());
-    } else {
-      return jsonResponse({ error: 'Endpoint not found' }, 404);
-    }
-  } catch (error) {
-    return jsonResponse({ error: error.toString() }, 500);
-  }
+  return jsonResponse({ 
+    status: 'OK', 
+    message: 'ERP Backend API is running',
+    endpoints: [
+      'POST /ocr - Scan kwitansi',
+      'POST /webhook/whatsapp - WhatsApp webhook',
+      'POST /webhook/telegram - Telegram webhook',
+      'POST /transaksi - Input transaksi',
+      'GET /transaksi - List transaksi',
+      'POST /reversal - Reversal jurnal',
+      'GET /laporan/laba-rugi - Laporan laba rugi',
+      'GET /laporan/neraca - Laporan neraca'
+    ]
+  });
 }
 
 /**
  * Handle POST requests
  */
 function doPost(e) {
-  const path = e.parameter.path || '';
-  const data = JSON.parse(e.postData.contents);
-  
   try {
-    if (path === '/transaksi') {
-      const result = addTransaksi(data);
-      return jsonResponse(result);
-    } else if (path === '/ocr') {
-      const result = scanKwitansi(data.imageUrl);
-      return jsonResponse(result);
+    const path = e.parameter.path || '';
+    const data = JSON.parse(e.postData.contents);
+    
+    // Route ke handler yang sesuai
+    if (path === '/ocr') {
+      return jsonResponse(handleOCR(data));
+    } else if (path === '/webhook/whatsapp') {
+      return jsonResponse(handleWhatsAppWebhook(data));
+    } else if (path === '/webhook/telegram') {
+      return jsonResponse(handleTelegramWebhook(data));
+    } else if (path === '/transaksi') {
+      return jsonResponse(handleAddTransaksi(data));
+    } else if (path === '/reversal') {
+      return jsonResponse(handleReversal(data));
     } else {
       return jsonResponse({ error: 'Endpoint not found' }, 404);
     }
   } catch (error) {
     return jsonResponse({ error: error.toString() }, 500);
   }
-}
-
-/**
- * Handle PUT requests
- */
-function doPut(e) {
-  const path = e.parameter.path || '';
-  const data = JSON.parse(e.postData.contents);
-  
-  try {
-    if (path.startsWith('/transaksi/')) {
-      const id = path.split('/')[2];
-      const result = updateTransaksi(id, data);
-      return jsonResponse(result);
-    } else {
-      return jsonResponse({ error: 'Endpoint not found' }, 404);
-    }
-  } catch (error) {
-    return jsonResponse({ error: error.toString() }, 500);
-  }
-}
-
-/**
- * Handle DELETE requests
- */
-function doDelete(e) {
-  const path = e.parameter.path || '';
-  
-  try {
-    if (path.startsWith('/transaksi/')) {
-      const id = path.split('/')[2];
-      const result = deleteTransaksi(id);
-      return jsonResponse(result);
-    } else {
-      return jsonResponse({ error: 'Endpoint not found' }, 404);
-    }
-  } catch (error) {
-    return jsonResponse({ error: error.toString() }, 500);
-  }
-}
-
-// ============ TRANSAKSI FUNCTIONS ============
-
-/**
- * Get semua transaksi
- */
-function getAllTransaksi() {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Transaksi');
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  
-  return data.slice(1).map(row => {
-    const obj = {};
-    headers.forEach((header, i) => {
-      obj[header] = row[i];
-    });
-    return obj;
-  });
-}
-
-/**
- * Tambah transaksi baru
- */
-function addTransaksi(transaksi) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Transaksi');
-  
-  // Generate ID
-  const id = 'TRX-' + new Date().getTime();
-  
-  // Generate jurnal otomatis
-  const jurnal = generateJurnal(transaksi);
-  
-  // Simpan transaksi
-  sheet.appendRow([
-    id,
-    transaksi.tanggal,
-    transaksi.jenis,
-    transaksi.keterangan,
-    transaksi.jumlah,
-    transaksi.ppn || 0,
-    transaksi.pihak || '',
-    transaksi.referensi || '',
-    new Date().toISOString(),
-    'Admin'
-  ]);
-  
-  // Simpan jurnal
-  const jurnalSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Jurnal');
-  jurnal.forEach(entry => {
-    jurnalSheet.appendRow([
-      id,
-      entry.akun_kode,
-      entry.akun_nama,
-      entry.debit,
-      entry.kredit,
-      new Date().toISOString()
-    ]);
-  });
-  
-  return { success: true, id: id, jurnal: jurnal };
-}
-
-/**
- * Update transaksi
- */
-function updateTransaksi(id, data) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Transaksi');
-  const dataRange = sheet.getDataRange();
-  const values = dataRange.getValues();
-  
-  for (let i = 1; i < values.length; i++) {
-    if (values[i][0] === id) {
-      // Update data
-      sheet.getRange(i + 1, 2, 1, 8).setValues([[
-        data.tanggal,
-        data.jenis,
-        data.keterangan,
-        data.jumlah,
-        data.ppn || 0,
-        data.pihak || '',
-        data.referensi || '',
-        new Date().toISOString()
-      ]]);
-      
-      return { success: true, id: id };
-    }
-  }
-  
-  throw new Error('Transaksi tidak ditemukan');
-}
-
-/**
- * Hapus transaksi
- */
-function deleteTransaksi(id) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Transaksi');
-  const dataRange = sheet.getDataRange();
-  const values = dataRange.getValues();
-  
-  for (let i = 1; i < values.length; i++) {
-    if (values[i][0] === id) {
-      sheet.deleteRow(i + 1);
-      
-      // Hapus jurnal terkait
-      const jurnalSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Jurnal');
-      const jurnalValues = jurnalSheet.getDataRange().getValues();
-      
-      for (let j = jurnalValues.length - 1; j >= 1; j--) {
-        if (jurnalValues[j][0] === id) {
-          jurnalSheet.deleteRow(j + 1);
-        }
-      }
-      
-      return { success: true, id: id };
-    }
-  }
-  
-  throw new Error('Transaksi tidak ditemukan');
-}
-
-// ============ JURNAL FUNCTIONS ============
-
-/**
- * Generate jurnal dari transaksi (Double-Entry)
- */
-function generateJurnal(transaksi) {
-  const jurnal = [];
-  const totalKredit = transaksi.jumlah + (transaksi.ppn || 0);
-  
-  switch (transaksi.jenis) {
-    case 'penjualan_tunai':
-      jurnal.push(
-        { akun_kode: '1-1001', akun_nama: 'Kas', debit: totalKredit, kredit: 0 },
-        { akun_kode: '4-1001', akun_nama: 'Pendapatan Penjualan', debit: 0, kredit: transaksi.jumlah }
-      );
-      if (transaksi.ppn > 0) {
-        jurnal.push({ akun_kode: '2-1003', akun_nama: 'Utang Pajak', debit: 0, kredit: transaksi.ppn });
-      }
-      break;
-      
-    case 'penjualan_kredit':
-      jurnal.push(
-        { akun_kode: '1-1003', akun_nama: 'Piutang Usaha', debit: totalKredit, kredit: 0 },
-        { akun_kode: '4-1001', akun_nama: 'Pendapatan Penjualan', debit: 0, kredit: transaksi.jumlah }
-      );
-      if (transaksi.ppn > 0) {
-        jurnal.push({ akun_kode: '2-1003', akun_nama: 'Utang Pajak', debit: 0, kredit: transaksi.ppn });
-      }
-      break;
-      
-    case 'pembelian_tunai':
-      jurnal.push(
-        { akun_kode: '5-1001', akun_nama: 'Harga Pokok Penjualan', debit: transaksi.jumlah, kredit: 0 },
-        { akun_kode: '1-1001', akun_nama: 'Kas', debit: 0, kredit: totalKredit }
-      );
-      if (transaksi.ppn > 0) {
-        jurnal.push({ akun_kode: '1-1005', akun_nama: 'Biaya Dibayar Dimuka', debit: transaksi.ppn, kredit: 0 });
-      }
-      break;
-      
-    case 'pembelian_kredit':
-      jurnal.push(
-        { akun_kode: '5-1001', akun_nama: 'Harga Pokok Penjualan', debit: transaksi.jumlah, kredit: 0 },
-        { akun_kode: '2-1001', akun_nama: 'Utang Usaha', debit: 0, kredit: totalKredit }
-      );
-      if (transaksi.ppn > 0) {
-        jurnal.push({ akun_kode: '1-1005', akun_nama: 'Biaya Dibayar Dimuka', debit: transaksi.ppn, kredit: 0 });
-      }
-      break;
-      
-    case 'terima_piutang':
-      jurnal.push(
-        { akun_kode: '1-1001', akun_nama: 'Kas', debit: transaksi.jumlah, kredit: 0 },
-        { akun_kode: '1-1003', akun_nama: 'Piutang Usaha', debit: 0, kredit: transaksi.jumlah }
-      );
-      break;
-      
-    case 'bayar_utang':
-      jurnal.push(
-        { akun_kode: '2-1001', akun_nama: 'Utang Usaha', debit: transaksi.jumlah, kredit: 0 },
-        { akun_kode: '1-1001', akun_nama: 'Kas', debit: 0, kredit: transaksi.jumlah }
-      );
-      break;
-      
-    case 'beban_operasional':
-      jurnal.push(
-        { akun_kode: '5-2008', akun_nama: 'Beban Lain-lain', debit: transaksi.jumlah, kredit: 0 },
-        { akun_kode: '1-1001', akun_nama: 'Kas', debit: 0, kredit: transaksi.jumlah }
-      );
-      break;
-  }
-  
-  return jurnal;
 }
 
 // ============ OCR FUNCTIONS ============
 
 /**
- * Scan foto kwitansi dengan Gemini API
+ * OCR Kwitansi dengan Gemini Vision API
+ * @param {Object} data - { imageUrl: string }
+ * @returns {Object} - { vendor, tanggal, total, kategori, confidence }
  */
-function scanKwitansi(imageUrl) {
-  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+function handleOCR(data) {
+  const imageUrl = data.imageUrl;
+  if (!imageUrl) {
+    throw new Error('imageUrl is required');
+  }
+  
+  // Download gambar
+  const blob = UrlFetchApp.fetch(imageUrl).getBlob();
+  const base64 = Utilities.base64Encode(blob.getBytes());
+  
+  // Kirim ke Gemini API
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
   
   const payload = {
     contents: [{
-      parts: [{
-        fileData: {
-          mimeType: 'image/jpeg',
-          fileUri: imageUrl
+      parts: [
+        { 
+          text: `Ekstrak data dari kwitansi/faktur ini dan kembalikan dalam format JSON dengan field:
+- vendor: nama penjual/supplier (string)
+- tanggal: tanggal dalam format YYYY-MM-DD (string)
+- total: total amount dalam angka (number)
+- kategori: kategori transaksi (string, pilih dari: tanah, beko, material, operasional, lain-lain)
+- nomor_bukti: nomor kwitansi/invoice jika ada (string)
+- keterangan: deskripsi singkat (string)
+- confidence: skor kepercayaan 0-100 (number)
+
+Jika field tidak ditemukan, isi dengan null. Kembalikan HANYA JSON, tanpa teks lain.`
+        },
+        { 
+          inline_data: { 
+            mime_type: blob.getContentType(), 
+            data: base64 
+          } 
         }
-      }, {
-        text: 'Ekstrak data dari kwitansi ini dalam format JSON dengan field: penerima, nominal, tanggal, nomor_bukti, keterangan. Jika field tidak ditemukan, isi dengan null.'
-      }]
-    }]
+      ]
+    }],
+    generationConfig: {
+      temperature: 0.1,
+      topK: 1,
+      topP: 1,
+      maxOutputTokens: 2048,
+    }
   };
   
   const options = {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    payload: JSON.stringify(payload)
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  
+  const response = UrlFetchApp.fetch(url, options);
+  const result = JSON.parse(response.getContentText());
+  
+  // Parse hasil OCR
+  if (result.candidates && result.candidates[0] && result.candidates[0].content) {
+    const text = result.candidates[0].content.parts[0].text;
+    
+    // Extract JSON dari response
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const ocrData = JSON.parse(jsonMatch[0]);
+      
+      // Simpan ke sheet ARSIP_BUKTI
+      saveToArsipBukti(ocrData, imageUrl);
+      
+      return {
+        success: true,
+        data: ocrData,
+        message: 'OCR berhasil. Data disimpan ke ARSIP_BUKTI.'
+      };
+    }
+  }
+  
+  throw new Error('Gagal parse hasil OCR: ' + JSON.stringify(result));
+}
+
+/**
+ * Simpan hasil OCR ke sheet ARSIP_BUKTI
+ */
+function saveToArsipBukti(ocrData, imageUrl) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let sheet = ss.getSheetByName('ARSIP_BUKTI');
+  
+  if (!sheet) {
+    sheet = ss.insertSheet('ARSIP_BUKTI');
+    sheet.appendRow(['id', 'kode_bukti', 'jenis', 'link_drive', 'tgl_upload', 'terverifikasi', 'catatan_audit', 'penerima', 'nominal', 'keterangan', 'confidence', 'created_at']);
+  }
+  
+  const id = 'BUKTI-' + new Date().getTime();
+  const confidence = ocrData.confidence || 0;
+  const status = confidence >= 90 ? 'Ya' : confidence >= 70 ? 'Perlu_Konfirmasi' : 'Tidak';
+  
+  sheet.appendRow([
+    id,
+    ocrData.nomor_bukti || '',
+    'Kwitansi_Foto',
+    imageUrl,
+    new Date().toISOString().split('T')[0],
+    status,
+    `OCR confidence: ${confidence}%`,
+    ocrData.vendor || '',
+    ocrData.total || 0,
+    ocrData.keterangan || '',
+    confidence,
+    new Date().toISOString()
+  ]);
+}
+
+// ============ WHATSAPP WEBHOOK ============
+
+/**
+ * Handle WhatsApp webhook
+ * @param {Object} data - WhatsApp webhook payload
+ */
+function handleWhatsAppWebhook(data) {
+  // Extract message data
+  const entry = data.entry && data.entry[0];
+  if (!entry) return { success: false, message: 'No entry found' };
+  
+  const changes = entry.changes && entry.entry[0].changes[0];
+  if (!changes) return { success: false, message: 'No changes found' };
+  
+  const value = changes.value;
+  const messages = value.messages;
+  
+  if (!messages || messages.length === 0) {
+    return { success: false, message: 'No messages found' };
+  }
+  
+  const message = messages[0];
+  const messageType = message.type;
+  const from = message.from;
+  
+  // Handle image message
+  if (messageType === 'image') {
+    const imageId = message.image.id;
+    const caption = message.image.caption || '';
+    
+    // Download image dari WhatsApp
+    const imageUrl = downloadWhatsAppMedia(imageId);
+    
+    // OCR gambar
+    const ocrResult = handleOCR({ imageUrl: imageUrl });
+    
+    // Kirim konfirmasi ke WhatsApp
+    sendWhatsAppMessage(from, `✅ Kwitansi berhasil diproses:\n\nVendor: ${ocrResult.data.vendor}\nTotal: Rp${ocrResult.data.total?.toLocaleString('id-ID')}\nTanggal: ${ocrResult.data.tanggal}\n\nData sudah masuk ke sistem.`);
+    
+    return { success: true, message: 'Image processed', ocrResult: ocrResult };
+  }
+  
+  // Handle text message
+  if (messageType === 'text') {
+    const text = message.text.body;
+    
+    // Parse command
+    if (text.toLowerCase().includes('saldo')) {
+      const saldo = getSaldoKas();
+      sendWhatsAppMessage(from, `💰 Saldo Kas: Rp${saldo.toLocaleString('id-ID')}`);
+    } else if (text.toLowerCase().includes('laporan')) {
+      const laporan = generateLabaRugi();
+      sendWhatsAppMessage(from, `📊 Laba Rugi:\n\nPendapatan: Rp${laporan.total_pendapatan.toLocaleString('id-ID')}\nBeban: Rp${laporan.total_beban.toLocaleString('id-ID')}\nLaba Bersih: Rp${laporan.laba_bersih.toLocaleString('id-ID')}`);
+    } else {
+      sendWhatsAppMessage(from, 'Perintah tidak dikenali. Kirim "saldo" atau "laporan".');
+    }
+    
+    return { success: true, message: 'Text message processed' };
+  }
+  
+  return { success: false, message: 'Unsupported message type' };
+}
+
+/**
+ * Download media dari WhatsApp
+ */
+function downloadWhatsAppMedia(mediaId) {
+  // Implementasi ini memerlukan WhatsApp Cloud API access token
+  // Untuk saat ini, return placeholder
+  // TODO: Implementasi dengan WhatsApp Cloud API
+  
+  const accessToken = PropertiesService.getScriptProperties().getProperty('WHATSAPP_ACCESS_TOKEN');
+  const url = `https://graph.facebook.com/v18.0/${mediaId}`;
+  
+  const options = {
+    method: 'get',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
+    },
+    muteHttpExceptions: true
   };
   
   const response = UrlFetchApp.fetch(url, options);
   const data = JSON.parse(response.getContentText());
   
-  // Parse hasil OCR
-  const text = data.candidates[0].content.parts[0].text;
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  return data.url;
+}
+
+/**
+ * Kirim pesan WhatsApp
+ */
+function sendWhatsAppMessage(to, message) {
+  // Implementasi ini memerlukan WhatsApp Cloud API
+  // TODO: Implementasi dengan WhatsApp Cloud API
   
-  if (jsonMatch) {
-    return JSON.parse(jsonMatch[0]);
+  const accessToken = PropertiesService.getScriptProperties().getProperty('WHATSAPP_ACCESS_TOKEN');
+  const phoneNumberId = PropertiesService.getScriptProperties().getProperty('WHATSAPP_PHONE_NUMBER_ID');
+  
+  const url = `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`;
+  
+  const payload = {
+    messaging_product: 'whatsapp',
+    to: to,
+    text: { body: message }
+  };
+  
+  const options = {
+    method: 'post',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  
+  UrlFetchApp.fetch(url, options);
+}
+
+// ============ TELEGRAM WEBHOOK ============
+
+/**
+ * Handle Telegram webhook
+ */
+function handleTelegramWebhook(data) {
+  const message = data.message;
+  if (!message) return { success: false };
+  
+  const chatId = message.chat.id;
+  const text = message.text;
+  
+  // Handle photo
+  if (message.photo) {
+    const photo = message.photo[message.photo.length - 1]; // Get highest resolution
+    const fileId = photo.file_id;
+    
+    // Download photo dari Telegram
+    const photoUrl = downloadTelegramPhoto(fileId);
+    
+    // OCR photo
+    const ocrResult = handleOCR({ imageUrl: photoUrl });
+    
+    // Kirim konfirmasi ke Telegram
+    sendTelegramMessage(chatId, `✅ Kwitansi berhasil diproses:\n\nVendor: ${ocrResult.data.vendor}\nTotal: Rp${ocrResult.data.total?.toLocaleString('id-ID')}\nTanggal: ${ocrResult.data.tanggal}`);
+    
+    return { success: true, ocrResult: ocrResult };
   }
   
-  throw new Error('Gagal parse hasil OCR');
+  // Handle text command
+  if (text) {
+    if (text === '/saldo') {
+      const saldo = getSaldoKas();
+      sendTelegramMessage(chatId, `💰 Saldo Kas: Rp${saldo.toLocaleString('id-ID')}`);
+    } else if (text === '/laporan') {
+      const laporan = generateLabaRugi();
+      sendTelegramMessage(chatId, `📊 Laba Rugi:\n\nPendapatan: Rp${laporan.total_pendapatan.toLocaleString('id-ID')}\nBeban: Rp${laporan.total_beban.toLocaleString('id-ID')}\nLaba Bersih: Rp${laporan.laba_bersih.toLocaleString('id-ID')}`);
+    }
+  }
+  
+  return { success: true };
+}
+
+/**
+ * Download photo dari Telegram
+ */
+function downloadTelegramPhoto(fileId) {
+  const botToken = PropertiesService.getScriptProperties().getProperty('TELEGRAM_BOT_TOKEN');
+  
+  // Get file path
+  const url = `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`;
+  const response = UrlFetchApp.fetch(url);
+  const data = JSON.parse(response.getContentText());
+  
+  const filePath = data.result.file_path;
+  return `https://api.telegram.org/file/bot${botToken}/${filePath}`;
+}
+
+/**
+ * Kirim pesan Telegram
+ */
+function sendTelegramMessage(chatId, text) {
+  const botToken = PropertiesService.getScriptProperties().getProperty('TELEGRAM_BOT_TOKEN');
+  const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+  
+  const payload = {
+    chat_id: chatId,
+    text: text
+  };
+  
+  UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload)
+  });
+}
+
+// ============ TRANSAKSI FUNCTIONS ============
+
+/**
+ * Tambah transaksi baru + auto-generate jurnal
+ */
+function handleAddTransaksi(data) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const transaksiSheet = ss.getSheetByName('BUKU_KAS') || ss.insertSheet('BUKU_KAS');
+  const jurnalSheet = ss.getSheetByName('JURNAL') || ss.insertSheet('JURNAL');
+  
+  // Setup headers jika belum ada
+  if (transaksiSheet.getLastRow() === 0) {
+    transaksiSheet.appendRow(['id', 'tanggal', 'no_ref', 'kode_bukti', 'keterangan', 'kategori', 'masuk', 'keluar', 'status_verifikasi', 'created_at']);
+  }
+  if (jurnalSheet.getLastRow() === 0) {
+    jurnalSheet.appendRow(['id', 'transaksi_id', 'tanggal', 'akun_kode', 'akun_nama', 'debit', 'kredit', 'keterangan', 'created_at']);
+  }
+  
+  // Generate ID
+  const transaksiId = 'TRX-' + new Date().getTime();
+  const jurnalId = 'JRN-' + new Date().getTime();
+  
+  // Generate jurnal double-entry
+  const jurnalEntries = generateJurnalDoubleEntry(data);
+  
+  // Simpan transaksi
+  transaksiSheet.appendRow([
+    transaksiId,
+    data.tanggal,
+    data.no_ref || transaksiId,
+    data.kode_bukti || '',
+    data.keterangan,
+    data.kategori || 'Operasional',
+    data.masuk || 0,
+    data.keluar || 0,
+    data.status_verifikasi || 'LENGKAP',
+    new Date().toISOString()
+  ]);
+  
+  // Simpan jurnal entries
+  jurnalEntries.forEach(entry => {
+    jurnalSheet.appendRow([
+      jurnalId + '-' + Math.random().toString(36).substr(2, 9),
+      transaksiId,
+      data.tanggal,
+      entry.akun_kode,
+      entry.akun_nama,
+      entry.debit,
+      entry.kredit,
+      entry.keterangan || data.keterangan,
+      new Date().toISOString()
+    ]);
+  });
+  
+  // Log ke audit trail
+  logAudit('CREATE', 'BUKU_KAS', transaksiId, '-', `Transaksi: ${data.keterangan} - ${data.masuk || data.keluar}`);
+  
+  return {
+    success: true,
+    transaksi_id: transaksiId,
+    jurnal_id: jurnalId,
+    jurnal_entries: jurnalEntries.length,
+    message: 'Transaksi dan jurnal berhasil disimpan'
+  };
+}
+
+/**
+ * Generate jurnal double-entry dari transaksi
+ */
+function generateJurnalDoubleEntry(transaksi) {
+  const entries = [];
+  const masuk = transaksi.masuk || 0;
+  const keluar = transaksi.keluar || 0;
+  
+  if (masuk > 0) {
+    // Penerimaan kas
+    entries.push({
+      akun_kode: '1-1001',
+      akun_nama: 'Kas',
+      debit: masuk,
+      kredit: 0,
+      keterangan: transaksi.keterangan
+    });
+    
+    // Sumber penerimaan
+    entries.push({
+      akun_kode: transaksi.sumber_akun || '4-1001',
+      akun_nama: transaksi.sumber_nama || 'Pendapatan',
+      debit: 0,
+      kredit: masuk,
+      keterangan: transaksi.keterangan
+    });
+  }
+  
+  if (keluar > 0) {
+    // Pengeluaran kas
+    entries.push({
+      akun_kode: transaksi.beban_akun || '5-2008',
+      akun_nama: transaksi.beban_nama || 'Beban',
+      debit: keluar,
+      kredit: 0,
+      keterangan: transaksi.keterangan
+    });
+    
+    entries.push({
+      akun_kode: '1-1001',
+      akun_nama: 'Kas',
+      debit: 0,
+      kredit: keluar,
+      keterangan: transaksi.keterangan
+    });
+  }
+  
+  return entries;
+}
+
+// ============ REVERSAL FUNCTIONS ============
+
+/**
+ * Reversal jurnal (koreksi tanpa edit)
+ */
+function handleReversal(data) {
+  const transaksiId = data.transaksi_id;
+  const alasan = data.alasan || 'Reversal';
+  
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const jurnalSheet = ss.getSheetByName('JURNAL');
+  
+  if (!jurnalSheet) {
+    throw new Error('Sheet JURNAL tidak ditemukan');
+  }
+  
+  // Cari jurnal original
+  const jurnalData = jurnalSheet.getDataRange().getValues();
+  const originalEntries = jurnalData.filter(row => row[1] === transaksiId);
+  
+  if (originalEntries.length === 0) {
+    throw new Error('Transaksi tidak ditemukan');
+  }
+  
+  // Generate reversal entries (swap debit/kredit)
+  const reversalJurnalId = 'REV-' + new Date().getTime();
+  const reversalEntries = [];
+  
+  originalEntries.forEach(entry => {
+    reversalEntries.push({
+      akun_kode: entry[3],
+      akun_nama: entry[4],
+      debit: entry[5], // Swap: original kredit jadi reversal debit
+      kredit: entry[6], // Swap: original debit jadi reversal kredit
+      keterangan: `REVERSAL: ${alasan} (dari ${transaksiId})`
+    });
+  });
+  
+  // Simpan reversal entries
+  reversalEntries.forEach(entry => {
+    jurnalSheet.appendRow([
+      reversalJurnalId + '-' + Math.random().toString(36).substr(2, 9),
+      transaksiId + '-REVERSAL',
+      new Date().toISOString().split('T')[0],
+      entry.akun_kode,
+      entry.akun_nama,
+      entry.kredit, // Swap
+      entry.debit,  // Swap
+      entry.keterangan,
+      new Date().toISOString()
+    ]);
+  });
+  
+  // Log ke audit trail
+  logAudit('REVERSAL', 'JURNAL', transaksiId, 'Original', `Reversal: ${alasan}`);
+  
+  return {
+    success: true,
+    reversal_jurnal_id: reversalJurnalId,
+    original_transaksi_id: transaksiId,
+    reversal_entries: reversalEntries.length,
+    message: 'Reversal berhasil. Jurnal original tetap ada, jurnal pembalik ditambahkan.'
+  };
 }
 
 // ============ LAPORAN FUNCTIONS ============
@@ -349,42 +570,32 @@ function scanKwitansi(imageUrl) {
  * Generate laporan Laba Rugi
  */
 function generateLabaRugi() {
-  const jurnalSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Jurnal');
-  const jurnalData = jurnalSheet.getDataRange().getValues();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const jurnalSheet = ss.getSheetByName('JURNAL');
   
+  if (!jurnalSheet || jurnalSheet.getLastRow() === 0) {
+    return { total_pendapatan: 0, total_beban: 0, laba_bersih: 0 };
+  }
+  
+  const jurnalData = jurnalSheet.getDataRange().getValues();
   let totalPendapatan = 0;
   let totalBeban = 0;
   
-  // Hitung saldo per akun
-  const saldoAkun = {};
-  
+  // Skip header row
   for (let i = 1; i < jurnalData.length; i++) {
-    const akunKode = jurnalData[i][1];
-    const debit = jurnalData[i][3];
-    const kredit = jurnalData[i][4];
+    const akunKode = jurnalData[i][3];
+    const debit = jurnalData[i][5] || 0;
+    const kredit = jurnalData[i][6] || 0;
     
-    if (!saldoAkun[akunKode]) {
-      saldoAkun[akunKode] = 0;
+    // Pendapatan (4-xxxx) - saldo normal kredit
+    if (akunKode && akunKode.startsWith('4-')) {
+      totalPendapatan += kredit - debit;
     }
-    
-    // Akun pendapatan (4-xxxx) - saldo normal kredit
-    if (akunKode.startsWith('4-')) {
-      saldoAkun[akunKode] += kredit - debit;
-    }
-    // Akun beban (5-xxxx) - saldo normal debit
-    else if (akunKode.startsWith('5-')) {
-      saldoAkun[akunKode] += debit - kredit;
+    // Beban (5-xxxx) - saldo normal debit
+    else if (akunKode && akunKode.startsWith('5-')) {
+      totalBeban += debit - kredit;
     }
   }
-  
-  // Hitung total
-  Object.keys(saldoAkun).forEach(akunKode => {
-    if (akunKode.startsWith('4-')) {
-      totalPendapatan += saldoAkun[akunKode];
-    } else if (akunKode.startsWith('5-')) {
-      totalBeban += saldoAkun[akunKode];
-    }
-  });
   
   return {
     total_pendapatan: totalPendapatan,
@@ -397,75 +608,167 @@ function generateLabaRugi() {
  * Generate laporan Neraca
  */
 function generateNeraca() {
-  const jurnalSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Jurnal');
-  const jurnalData = jurnalSheet.getDataRange().getValues();
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const jurnalSheet = ss.getSheetByName('JURNAL');
   
-  // Hitung saldo per akun
-  const saldoAkun = {};
-  
-  for (let i = 1; i < jurnalData.length; i++) {
-    const akunKode = jurnalData[i][1];
-    const debit = jurnalData[i][3];
-    const kredit = jurnalData[i][4];
-    
-    if (!saldoAkun[akunKode]) {
-      saldoAkun[akunKode] = 0;
-    }
-    
-    // Akun aset (1-xxxx) - saldo normal debit
-    if (akunKode.startsWith('1-')) {
-      saldoAkun[akunKode] += debit - kredit;
-    }
-    // Akun kewajiban (2-xxxx) - saldo normal kredit
-    else if (akunKode.startsWith('2-')) {
-      saldoAkun[akunKode] += kredit - debit;
-    }
-    // Akun ekuitas (3-xxxx) - saldo normal kredit
-    else if (akunKode.startsWith('3-')) {
-      saldoAkun[akunKode] += kredit - debit;
-    }
+  if (!jurnalSheet || jurnalSheet.getLastRow() === 0) {
+    return { total_aset: 0, total_kewajiban: 0, total_ekuitas: 0, balance: true };
   }
   
-  // Hitung total
+  const jurnalData = jurnalSheet.getDataRange().getValues();
   let totalAset = 0;
   let totalKewajiban = 0;
   let totalEkuitas = 0;
   
-  Object.keys(saldoAkun).forEach(akunKode => {
+  // Skip header row
+  for (let i = 1; i < jurnalData.length; i++) {
+    const akunKode = jurnalData[i][3];
+    const debit = jurnalData[i][5] || 0;
+    const kredit = jurnalData[i][6] || 0;
+    
+    if (!akunKode) continue;
+    
+    // Aset (1-xxxx) - saldo normal debit
     if (akunKode.startsWith('1-')) {
-      totalAset += saldoAkun[akunKode];
-    } else if (akunKode.startsWith('2-')) {
-      totalKewajiban += saldoAkun[akunKode];
-    } else if (akunKode.startsWith('3-')) {
-      totalEkuitas += saldoAkun[akunKode];
+      totalAset += debit - kredit;
     }
-  });
+    // Kewajiban (2-xxxx) - saldo normal kredit
+    else if (akunKode.startsWith('2-')) {
+      totalKewajiban += kredit - debit;
+    }
+    // Ekuitas (3-xxxx) - saldo normal kredit
+    else if (akunKode.startsWith('3-')) {
+      totalEkuitas += kredit - debit;
+    }
+  }
   
   return {
     total_aset: totalAset,
     total_kewajiban: totalKewajiban,
     total_ekuitas: totalEkuitas,
-    balance: totalAset === (totalKewajiban + totalEkuitas)
+    balance: Math.abs(totalAset - (totalKewajiban + totalEkuitas)) < 1 // Allow small rounding differences
   };
 }
 
-// ============ AKUN FUNCTIONS ============
+/**
+ * Get saldo kas
+ */
+function getSaldoKas() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const jurnalSheet = ss.getSheetByName('JURNAL');
+  
+  if (!jurnalSheet || jurnalSheet.getLastRow() === 0) {
+    return 0;
+  }
+  
+  const jurnalData = jurnalSheet.getDataRange().getValues();
+  let saldoKas = 0;
+  
+  for (let i = 1; i < jurnalData.length; i++) {
+    const akunKode = jurnalData[i][3];
+    const debit = jurnalData[i][5] || 0;
+    const kredit = jurnalData[i][6] || 0;
+    
+    if (akunKode === '1-1001') { // Kas
+      saldoKas += debit - kredit;
+    }
+  }
+  
+  return saldoKas;
+}
+
+// ============ AUDIT LOG ============
 
 /**
- * Get semua akun
+ * Log aktivitas ke audit trail
  */
-function getAllAkun() {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('Akun');
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
+function logAudit(aksi, tabel, recordId, nilaiLama, nilaiBaru) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  let sheet = ss.getSheetByName('AUDIT_LOG');
   
-  return data.slice(1).map(row => {
-    const obj = {};
-    headers.forEach((header, i) => {
-      obj[header] = row[i];
-    });
-    return obj;
-  });
+  if (!sheet) {
+    sheet = ss.insertSheet('AUDIT_LOG');
+    sheet.appendRow(['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan']);
+  }
+  
+  const user = Session.getActiveUser().getEmail() || 'System';
+  
+  sheet.appendRow([
+    'LOG-' + new Date().getTime(),
+    new Date().toISOString(),
+    user,
+    aksi,
+    tabel,
+    recordId,
+    nilaiLama,
+    nilaiBaru,
+    aksi
+  ]);
+}
+
+// ============ SETUP FUNCTIONS ============
+
+/**
+ * Setup database sheets (jalankan sekali)
+ */
+function setupDatabase() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  
+  // Sheet BUKU_KAS
+  let sheet = ss.getSheetByName('BUKU_KAS');
+  if (!sheet) {
+    sheet = ss.insertSheet('BUKU_KAS');
+    sheet.appendRow(['id', 'tanggal', 'no_ref', 'kode_bukti', 'keterangan', 'kategori', 'masuk', 'keluar', 'status_verifikasi', 'created_at']);
+  }
+  
+  // Sheet JURNAL
+  sheet = ss.getSheetByName('JURNAL');
+  if (!sheet) {
+    sheet = ss.insertSheet('JURNAL');
+    sheet.appendRow(['id', 'transaksi_id', 'tanggal', 'akun_kode', 'akun_nama', 'debit', 'kredit', 'keterangan', 'created_at']);
+  }
+  
+  // Sheet ARSIP_BUKTI
+  sheet = ss.getSheetByName('ARSIP_BUKTI');
+  if (!sheet) {
+    sheet = ss.insertSheet('ARSIP_BUKTI');
+    sheet.appendRow(['id', 'kode_bukti', 'jenis', 'link_drive', 'tgl_upload', 'terverifikasi', 'catatan_audit', 'penerima', 'nominal', 'keterangan', 'confidence', 'created_at']);
+  }
+  
+  // Sheet AUDIT_LOG
+  sheet = ss.getSheetByName('AUDIT_LOG');
+  if (!sheet) {
+    sheet = ss.insertSheet('AUDIT_LOG');
+    sheet.appendRow(['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan']);
+  }
+  
+  // Sheet AKUN (Chart of Accounts)
+  sheet = ss.getSheetByName('AKUN');
+  if (!sheet) {
+    sheet = ss.insertSheet('AKUN');
+    sheet.appendRow(['kode', 'nama', 'tipe', 'kategori', 'saldo_normal']);
+    
+    // Insert default accounts
+    const defaultAkun = [
+      ['1-1001', 'Kas', 'Aset', 'Aset Lancar', 'Debit'],
+      ['1-1002', 'Bank', 'Aset', 'Aset Lancar', 'Debit'],
+      ['1-1003', 'Piutang Usaha', 'Aset', 'Aset Lancar', 'Debit'],
+      ['2-1001', 'Utang Usaha', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
+      ['2-1003', 'Utang Pajak', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
+      ['3-1001', 'Modal Pemilik', 'Ekuitas', 'Ekuitas', 'Kredit'],
+      ['3-1002', 'Laba Ditahan', 'Ekuitas', 'Ekuitas', 'Kredit'],
+      ['4-1001', 'Pendapatan Penjualan', 'Pendapatan', 'Pendapatan Usaha', 'Kredit'],
+      ['4-1002', 'Pendapatan Jasa', 'Pendapatan', 'Pendapatan Usaha', 'Kredit'],
+      ['5-1001', 'Harga Pokok Penjualan', 'Beban', 'Beban Langsung', 'Debit'],
+      ['5-2001', 'Beban Gaji', 'Beban', 'Beban Operasional', 'Debit'],
+      ['5-2002', 'Beban Sewa', 'Beban', 'Beban Operasional', 'Debit'],
+      ['5-2008', 'Beban Lain-lain', 'Beban', 'Beban Operasional', 'Debit'],
+    ];
+    
+    defaultAkun.forEach(akun => sheet.appendRow(akun));
+  }
+  
+  return 'Database setup complete!';
 }
 
 // ============ HELPER FUNCTIONS ============
@@ -477,71 +780,4 @@ function jsonResponse(data, statusCode = 200) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
-}
-
-// ============ SETUP FUNCTIONS ============
-
-/**
- * Setup database sheets (jalankan sekali)
- */
-function setupDatabase() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  
-  // Sheet Transaksi
-  let sheet = ss.getSheetByName('Transaksi');
-  if (!sheet) {
-    sheet = ss.insertSheet('Transaksi');
-    sheet.appendRow(['id', 'tanggal', 'jenis', 'keterangan', 'jumlah', 'ppn', 'pihak', 'referensi', 'created_at', 'created_by']);
-  }
-  
-  // Sheet Jurnal
-  sheet = ss.getSheetByName('Jurnal');
-  if (!sheet) {
-    sheet = ss.insertSheet('Jurnal');
-    sheet.appendRow(['transaksi_id', 'akun_kode', 'akun_nama', 'debit', 'kredit', 'created_at']);
-  }
-  
-  // Sheet Akun
-  sheet = ss.getSheetByName('Akun');
-  if (!sheet) {
-    sheet = ss.insertSheet('Akun');
-    sheet.appendRow(['kode', 'nama', 'tipe', 'kategori', 'saldo_normal', 'saldo']);
-    
-    // Insert default accounts
-    const defaultAkun = [
-      ['1-1001', 'Kas', 'Aset', 'Aset Lancar', 'Debit', 0],
-      ['1-1002', 'Bank', 'Aset', 'Aset Lancar', 'Debit', 0],
-      ['1-1003', 'Piutang Usaha', 'Aset', 'Aset Lancar', 'Debit', 0],
-      ['1-1004', 'Persediaan Barang', 'Aset', 'Aset Lancar', 'Debit', 0],
-      ['1-1005', 'Biaya Dibayar Dimuka', 'Aset', 'Aset Lancar', 'Debit', 0],
-      ['1-2001', 'Peralatan', 'Aset', 'Aset Tetap', 'Debit', 0],
-      ['1-2002', 'Kendaraan', 'Aset', 'Aset Tetap', 'Debit', 0],
-      ['1-2003', 'Bangunan', 'Aset', 'Aset Tetap', 'Debit', 0],
-      ['1-2004', 'Akumulasi Penyusutan', 'Aset', 'Aset Tetap', 'Kredit', 0],
-      ['2-1001', 'Utang Usaha', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit', 0],
-      ['2-1002', 'Utang Bank', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit', 0],
-      ['2-1003', 'Utang Pajak', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit', 0],
-      ['2-1004', 'Pendapatan Diterima Dimuka', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit', 0],
-      ['2-2001', 'Utang Jangka Panjang', 'Kewajiban', 'Kewajiban Jangka Panjang', 'Kredit', 0],
-      ['3-1001', 'Modal Pemilik', 'Ekuitas', 'Ekuitas', 'Kredit', 0],
-      ['3-1002', 'Laba Ditahan', 'Ekuitas', 'Ekuitas', 'Kredit', 0],
-      ['3-1003', 'Prive', 'Ekuitas', 'Ekuitas', 'Debit', 0],
-      ['4-1001', 'Pendapatan Penjualan', 'Pendapatan', 'Pendapatan Usaha', 'Kredit', 0],
-      ['4-1002', 'Pendapatan Jasa', 'Pendapatan', 'Pendapatan Usaha', 'Kredit', 0],
-      ['4-1003', 'Pendapatan Lain-lain', 'Pendapatan', 'Pendapatan Non-Usaha', 'Kredit', 0],
-      ['5-1001', 'Harga Pokok Penjualan', 'Beban', 'Beban Langsung', 'Debit', 0],
-      ['5-2001', 'Beban Gaji', 'Beban', 'Beban Operasional', 'Debit', 0],
-      ['5-2002', 'Beban Sewa', 'Beban', 'Beban Operasional', 'Debit', 0],
-      ['5-2003', 'Beban Listrik & Air', 'Beban', 'Beban Operasional', 'Debit', 0],
-      ['5-2004', 'Beban Telepon & Internet', 'Beban', 'Beban Operasional', 'Debit', 0],
-      ['5-2005', 'Beban Transportasi', 'Beban', 'Beban Operasional', 'Debit', 0],
-      ['5-2006', 'Beban Perlengkapan', 'Beban', 'Beban Operasional', 'Debit', 0],
-      ['5-2007', 'Beban Penyusutan', 'Beban', 'Beban Operasional', 'Debit', 0],
-      ['5-2008', 'Beban Lain-lain', 'Beban', 'Beban Operasional', 'Debit', 0],
-    ];
-    
-    defaultAkun.forEach(akun => sheet.appendRow(akun));
-  }
-  
-  return 'Database setup complete!';
 }
