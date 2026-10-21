@@ -5,6 +5,10 @@ import { Tanah, Beko, PosKewajiban, StokBarang, Produksi, Penjualan, Pembelian, 
 
 // Nilai kontrak tidak boleh disimpulkan otomatis dari jumlah yang sudah dibayar.
 // Untuk bidang tanpa luas/harga, simpan nilai kesepakatan pada nilai_total_manual.
+export const hasKnownLandContractValue = (t: Tanah): boolean =>
+  (Number.isFinite(t.nilai_total_manual) && Number(t.nilai_total_manual) > 0) ||
+  (Number(t.luas_bt) > 0 && Number(t.harga_per_bt) > 0);
+
 export const getTanahNilaiTotal = (t: Tanah): number => {
   if (Number.isFinite(t.nilai_total_manual) && Number(t.nilai_total_manual) > 0) {
     return Number(t.nilai_total_manual);
@@ -12,8 +16,8 @@ export const getTanahNilaiTotal = (t: Tanah): number => {
   return Math.max(0, Number(t.luas_bt) || 0) * Math.max(0, Number(t.harga_per_bt) || 0);
 };
 
-export const getTanahSisa = (t: Tanah): number => Math.max(0, getTanahNilaiTotal(t) - Math.max(0, t.dp));
-export const getTanahKelebihanBayar = (t: Tanah): number => Math.max(0, Math.max(0, t.dp) - getTanahNilaiTotal(t));
+export const getTanahSisa = (t: Tanah): number => hasKnownLandContractValue(t) ? Math.max(0, getTanahNilaiTotal(t) - Math.max(0, t.dp)) : 0;
+export const getTanahKelebihanBayar = (t: Tanah): number => hasKnownLandContractValue(t) ? Math.max(0, Math.max(0, t.dp) - getTanahNilaiTotal(t)) : 0;
 
 // Handle edge case: BK-01 mobilisasi tanpa dimensi tapi ada nilai tetap
 export const getBekoVolume = (b: Beko): number => {
