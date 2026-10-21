@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useAppContext } from '../store';
 import { formatRupiah, generateId } from '../data';
 import type { StokBarang } from '../types';
+import { calculateStockBalance, calculateInventoryValue } from '../utils/operationalFormulas';
 import { Package, Plus, Pencil, Save, X, Download, AlertTriangle } from 'lucide-react';
 
 type StockForm = Omit<StokBarang, 'id'>;
@@ -11,7 +12,7 @@ const emptyForm = (): StockForm => ({
   min_stok: 0, lokasi: ''
 });
 const endingStock = (item: Pick<StokBarang, 'stok_awal' | 'masuk' | 'keluar'>) =>
-  Number(item.stok_awal || 0) + Number(item.masuk || 0) - Number(item.keluar || 0);
+  calculateStockBalance(item.stok_awal, item.masuk, item.keluar);
 
 export default function StokPage() {
   const { state, dispatch } = useAppContext();
@@ -24,7 +25,7 @@ export default function StokPage() {
 
   const rows = useMemo(() => state.stok.map(item => {
     const balance = endingStock(item);
-    return { item, balance, value: balance * item.harga_pokok };
+    return { item, balance, value: calculateInventoryValue(balance, item.harga_pokok) };
   }).filter(row => (row.item.kode + ' ' + row.item.nama + ' ' + row.item.lokasi).toLowerCase().includes(search.trim().toLowerCase()))
     .sort((a, b) => a.item.nama.localeCompare(b.item.nama)), [state.stok, search]);
 
@@ -132,7 +133,7 @@ export default function StokPage() {
         <label className="text-sm">Minimum stok<input type="number" min="0" step="any" value={form.min_stok} onChange={e=>setField('min_stok',Number(e.target.value))} className="mt-1 w-full rounded border px-3 py-2"/></label>
         <label className="text-sm">Lokasi/gudang<input value={form.lokasi} onChange={e=>setField('lokasi',e.target.value)} className="mt-1 w-full rounded border px-3 py-2"/></label>
       </div>
-      <div className="mt-4 rounded-lg bg-blue-50 p-3 text-sm">Stok akhir terhitung: <strong>{endingStock(form)} {form.satuan}</strong> · Nilai inventori terhitung: <strong>{formatRupiah(endingStock(form)*form.harga_pokok)}</strong></div>
+      <div className="mt-4 rounded-lg bg-blue-50 p-3 text-sm">Stok akhir terhitung: <strong>{endingStock(form)} {form.satuan}</strong> · Nilai inventori terhitung: <strong>{formatRupiah(calculateInventoryValue(endingStock(form),form.harga_pokok))}</strong></div>
       <div className="mt-4 flex gap-2"><button onClick={save} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white"><Save size={16}/>Simpan</button><button onClick={()=>setShowForm(false)} className="rounded-lg bg-gray-100 px-4 py-2">Batal</button></div>
     </section>}
     <div className="flex gap-2"><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cari kode, nama atau gudang…" className="w-full rounded-lg border bg-white px-3 py-2"/></div>
