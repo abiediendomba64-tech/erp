@@ -124,6 +124,7 @@ export interface Beko {
   catatan: string;
   termasuk_rekap?: boolean;
   satuan_volume?: 'm3' | 'unit' | 'ls';
+  status_pembayaran?: 'Belum_Dikonfirmasi' | 'Belum_Bayar' | 'DP' | 'Lunas';
   // COMPUTED: volume × tarif; item LS menggunakan tarif sebagai nilai lumpsum.
 }
 
