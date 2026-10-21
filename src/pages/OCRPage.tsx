@@ -2,29 +2,77 @@ import { useState } from 'react';
 import { useAppContext } from '../store';
 import { formatRupiah } from '../data';
 import { Scan, Camera, Upload, Sparkles } from 'lucide-react';
+import { scanKwitansi } from '../services/api';
+import type { OCRResult } from '../types';
 
 export default function OCRPage() {
-  const { state } = useAppContext();
+  const { state, dispatch } = useAppContext();
   const [showUpload, setShowUpload] = useState(false);
+  const [imageUrl, setImageUrl] = useState('');
+  const [jenisDokumen, setJenisDokumen] = useState<OCRResult['jenis_dokumen']>('Kwitansi');
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState('');
+  const [scanMessage, setScanMessage] = useState('');
 
   const terverifikasi = state.ocr.filter(o => o.status === 'Terverifikasi');
   const pending = state.ocr.filter(o => o.status === 'Pending');
   const avgConfidence = state.ocr.length > 0 ? state.ocr.reduce((s, o) => s + o.confidence, 0) / state.ocr.length : 0;
 
+  const handleScan = async () => {
+    setScanError('');
+    setScanMessage('');
+    if (!imageUrl.trim()) {
+      setScanError('Masukkan URL gambar terlebih dahulu. Form ini belum mengunggah file dari perangkat.');
+      return;
+    }
+
+    setScanning(true);
+    try {
+      const result = await scanKwitansi(imageUrl.trim(), jenisDokumen);
+      if (!result.penerima && result.nominal === undefined && !result.tanggal && !result.keterangan) {
+        throw new Error('OCR tidak mengembalikan field yang dapat digunakan. Periksa URL gambar dan coba lagi.');
+      }
+
+      const record: OCRResult = {
+        id: 'OCR-' + Date.now(),
+        timestamp: new Date().toISOString(),
+        image_url: imageUrl.trim(),
+        jenis_dokumen: jenisDokumen,
+        data_ekstrak: {
+          penerima: result.penerima,
+          nominal: result.nominal,
+          tanggal: result.tanggal,
+          nomor_bukti: result.nomor_bukti,
+          keterangan: result.keterangan,
+        },
+        confidence: Math.max(0, Math.min(100, result.confidence ?? 0)),
+        status: 'Pending',
+        catatan: 'Hasil OCR belum diverifikasi manusia dan tidak otomatis masuk jurnal atau buku kas.',
+      };
+      dispatch({ type: 'ADD_OCR', payload: record });
+      setScanMessage('Hasil tersimpan dengan status Pending. Periksa bukti dan data sebelum pembukuan.');
+      setShowUpload(false);
+    } catch (error) {
+      setScanError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setScanning(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Scan size={24} className="text-violet-500" />OCR / Vision AI</h1><p className="text-gray-500 mt-1">Ekstraksi data otomatis dari foto kwitansi/nota menggunakan Gemini Vision API</p></div>
-        <button onClick={() => setShowUpload(!showUpload)} className="flex items-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-lg hover:bg-violet-700"><Upload size={18} />Upload & Scan</button>
+        <div><h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Scan size={24} className="text-violet-500" />OCR / Vision AI</h1><p className="text-gray-500 mt-1">Ekstraksi OCR dari URL gambar; hasil tetap Pending sampai diperiksa manusia</p></div>
+        <button onClick={() => setShowUpload(!showUpload)} className="flex items-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-lg hover:bg-violet-700"><Upload size={18} />Scan dari URL</button>
       </div>
 
       <div className="bg-violet-50 border border-violet-200 rounded-xl p-4">
         <h3 className="font-semibold text-violet-800 flex items-center gap-2"><Sparkles size={16} />Cara Kerja OCR + Vision AI</h3>
         <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div className="bg-white rounded-lg p-3 border border-violet-100"><div className="w-8 h-8 bg-violet-100 rounded-full flex items-center justify-center text-violet-600 font-bold text-sm mb-2">1</div><p className="text-xs text-violet-800 font-medium">Upload Foto</p><p className="text-xs text-violet-600">Foto kwitansi/nota dari HP atau Drive</p></div>
+          <div className="bg-white rounded-lg p-3 border border-violet-100"><div className="w-8 h-8 bg-violet-100 rounded-full flex items-center justify-center text-violet-600 font-bold text-sm mb-2">1</div><p className="text-xs text-violet-800 font-medium">Masukkan URL</p><p className="text-xs text-violet-600">Gambar harus dapat diakses Apps Script</p></div>
           <div className="bg-white rounded-lg p-3 border border-violet-100"><div className="w-8 h-8 bg-violet-100 rounded-full flex items-center justify-center text-violet-600 font-bold text-sm mb-2">2</div><p className="text-xs text-violet-800 font-medium">Gemini Vision</p><p className="text-xs text-violet-600">AI membaca teks, nominal, tanggal, penerima</p></div>
-          <div className="bg-white rounded-lg p-3 border border-violet-100"><div className="w-8 h-8 bg-violet-100 rounded-full flex items-center justify-center text-violet-600 font-bold text-sm mb-2">3</div><p className="text-xs text-violet-800 font-medium">Auto-Matching</p><p className="text-xs text-violet-600">Cocokkan dengan data spreadsheet & buku kas</p></div>
-          <div className="bg-white rounded-lg p-3 border border-violet-100"><div className="w-8 h-8 bg-violet-100 rounded-full flex items-center justify-center text-violet-600 font-bold text-sm mb-2">4</div><p className="text-xs text-violet-800 font-medium">Verifikasi</p><p className="text-xs text-violet-600">Konfirmasi hasil atau minta scan ulang</p></div>
+          <div className="bg-white rounded-lg p-3 border border-violet-100"><div className="w-8 h-8 bg-violet-100 rounded-full flex items-center justify-center text-violet-600 font-bold text-sm mb-2">3</div><p className="text-xs text-violet-800 font-medium">Simpan Pending</p><p className="text-xs text-violet-600">OCR tidak membuat jurnal otomatis</p></div>
+          <div className="bg-white rounded-lg p-3 border border-violet-100"><div className="w-8 h-8 bg-violet-100 rounded-full flex items-center justify-center text-violet-600 font-bold text-sm mb-2">4</div><p className="text-xs text-violet-800 font-medium">Review Manual</p><p className="text-xs text-violet-600">Confidence bukan persetujuan</p></div>
         </div>
       </div>
 
@@ -37,18 +85,16 @@ export default function OCRPage() {
 
       {showUpload && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2"><Camera size={18} className="text-violet-500" />Upload & Scan Dokumen</h3>
+          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2"><Camera size={18} className="text-violet-500" />Scan URL Gambar</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className="text-sm font-medium text-gray-700">Jenis Dokumen</label><select className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"><option>Kwitansi</option><option>Nota</option><option>Transfer Bank</option><option>Lainnya</option></select></div>
-            <div><label className="text-sm font-medium text-gray-700">URL Gambar / Drive Link</label><input type="url" placeholder="https://drive.google.com/..." className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="text-sm font-medium text-gray-700">Jenis Dokumen</label><select value={jenisDokumen} onChange={event => setJenisDokumen(event.target.value as OCRResult['jenis_dokumen'])} className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"><option value="Kwitansi">Kwitansi</option><option value="Nota">Nota</option><option value="Transfer_Bank">Transfer Bank</option><option value="Lainnya">Lainnya</option></select></div>
+            <div><label className="text-sm font-medium text-gray-700">URL Gambar Publik</label><input type="url" value={imageUrl} onChange={event => setImageUrl(event.target.value)} placeholder="https://contoh.com/bukti.jpg" className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
           </div>
-          <div className="mt-4 border-2 border-dashed border-violet-300 rounded-xl p-8 text-center bg-violet-50/50">
-            <Camera size={40} className="mx-auto text-violet-400 mb-2" />
-            <p className="text-sm text-violet-700 font-medium">Drop foto kwitansi/nota di sini</p>
-            <p className="text-xs text-violet-500 mt-1">atau klik untuk browse dari perangkat Anda</p>
-          </div>
+          <p className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">Form ini mengirim URL ke Apps Script; belum ada upload file lokal ke Drive. Link Drive privat mungkin tidak dapat dibaca. Backend harus dikonfigurasi melalui VITE_ERP_API_URL sebelum scan dapat digunakan.</p>
+          {scanError && <p role="alert" className="mt-3 rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-800">{scanError}</p>}
+          {scanMessage && <p role="status" className="mt-3 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-800">{scanMessage}</p>}
           <div className="mt-4 flex gap-2">
-            <button className="bg-violet-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-violet-700 flex items-center gap-2"><Sparkles size={14} />Scan dengan AI</button>
+            <button onClick={handleScan} disabled={scanning || !imageUrl.trim()} className="bg-violet-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-violet-700 disabled:opacity-50 flex items-center gap-2"><Sparkles size={14} />{scanning ? 'Sedang memproses…' : 'Scan URL dengan AI'}</button>
             <button onClick={() => setShowUpload(false)} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm">Batal</button>
           </div>
         </div>
