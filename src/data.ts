@@ -29,9 +29,9 @@ export const initialTanah: Tanah[] = [
   { id: 'T-07', pemilik: 'Sanaris (19 BT)', luas_bt: 19, harga_per_bt: 800000, dp: 5200000, status: 'DP', kode_bukti: '', url_bukti: '', catatan: 'Belum lunas - sisa 10jt' },
   { id: 'T-08', pemilik: 'Ija (Sutija)', luas_bt: 2.5, harga_per_bt: 800000, dp: 2000000, status: 'Lunas', kode_bukti: '', url_bukti: '', catatan: 'Bidang 8' },
   { id: 'T-09', pemilik: 'Ija (Sutija)', luas_bt: 79, harga_per_bt: 800000, dp: 63200000, status: 'Lunas', kode_bukti: '', url_bukti: '', catatan: 'Bidang 9' },
-  { id: 'T-10', pemilik: 'Ija (Sutija) - Lain', luas_bt: 0, harga_per_bt: 0, dp: 1000000, nilai_total_manual: 1000000, status: 'Lunas', kode_bukti: '', url_bukti: '', catatan: 'Tanpa luas - nominal langsung' },
+  { id: 'T-10', pemilik: 'Ija (Sutija) - Lain', luas_bt: 0, harga_per_bt: 0, dp: 1000000, status: 'Dalam_Penelusuran', kode_bukti: '', url_bukti: '', catatan: 'Tanpa luas - nominal pembayaran tercatat; nilai kesepakatan harus dicek pada perjanjian' },
   { id: 'T-11', pemilik: 'DUDI', luas_bt: 36.5, harga_per_bt: 800000, dp: 15000000, status: 'DP', kode_bukti: '', url_bukti: '', catatan: 'Belum lunas - sisa 14.2jt' },
-  { id: 'T-12', pemilik: 'Enapsiah', luas_bt: 0, harga_per_bt: 0, dp: 70000000, nilai_total_manual: 70000000, status: 'Lunas', kode_bukti: '', url_bukti: '', catatan: 'Tanpa luas - nominal langsung' },
+  { id: 'T-12', pemilik: 'Enapsiah', luas_bt: 0, harga_per_bt: 0, dp: 70000000, status: 'Dalam_Penelusuran', kode_bukti: '', url_bukti: '', catatan: 'Tanpa luas - nominal langsung' },
   { id: 'T-13', pemilik: 'Balong', luas_bt: 30, harga_per_bt: 850000, dp: 15000000, status: 'DP', kode_bukti: '', url_bukti: '', catatan: 'Belum lunas - sisa 10.5jt' },
 ];
 
