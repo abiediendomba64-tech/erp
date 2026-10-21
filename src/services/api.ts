@@ -58,7 +58,7 @@ export async function addTransaksi(transaksi: {
   referensi?: string;
 }): Promise<{ success: boolean; transaksi_id: string; jurnal_id: string; jurnal_entries: number; total_debit: number; total_kredit: number }> {
   try {
-    const response = await fetch(`${API_BASE_URL}?path=/transaksi`, {
+    const response = await fetch(getApiUrl('/transaksi'), {
       method: 'POST',
       headers: jsonRequestHeaders,
       body: JSON.stringify(transaksi)
@@ -75,34 +75,29 @@ export async function addTransaksi(transaksi: {
  * Update transaksi
  */
 export async function updateTransaksi(id: string, data: any): Promise<{ success: boolean; id: string }> {
-  try {
-    const response = await fetch(getApiUrl(`/transaksi/${encodeURIComponent(id)}`), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    
-    return await readApiResponse<{ success: boolean; id: string }>(response);
-  } catch (error) {
-    console.error('Error updating transaksi:', error);
-    throw error;
-  }
+  void id;
+  void data;
+  throw new Error('Update transaksi yang sudah dibukukan tidak didukung. Buat jurnal reversal lalu catat transaksi yang benar agar jejak audit tetap utuh.');
 }
 
 /**
  * Hapus transaksi
  */
 export async function deleteTransaksi(id: string): Promise<{ success: boolean; id: string }> {
-  try {
-    const response = await fetch(`${API_BASE_URL}?path=/transaksi/${id}`, {
-      method: 'DELETE'
-    });
-    
-    return await readApiResponse<{ success: boolean; id: string }>(response);
-  } catch (error) {
-    console.error('Error deleting transaksi:', error);
-    throw error;
+  void id;
+  throw new Error('Penghapusan transaksi yang sudah dibukukan dinonaktifkan. Gunakan reversal jurnal agar saldo dan jejak audit tetap dapat ditelusuri.');
+}
+
+export async function reverseTransaksi(transaksi_id: string, alasan: string): Promise<any> {
+  if (!transaksi_id.trim() || !alasan.trim()) {
+    throw new Error('ID transaksi dan alasan reversal wajib diisi.');
   }
+  const response = await fetch(getApiUrl('/reversal'), {
+    method: 'POST',
+    headers: jsonRequestHeaders,
+    body: JSON.stringify({ transaksi_id, alasan })
+  });
+  return await readApiResponse<any>(response);
 }
 
 // ============ OCR API ============
@@ -118,6 +113,7 @@ export async function scanKwitansi(imageUrl: string): Promise<{
   keterangan?: string;
 }> {
   try {
+    if (!imageUrl.trim()) throw new Error('URL foto kwitansi wajib diisi.');
     const response = await fetch(getApiUrl('/ocr'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -209,7 +205,7 @@ export async function uploadToDrive(file: File): Promise<string> {
  */
 export async function testConnection(): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE_URL}?path=/akun`);
+    const response = await fetch(getApiUrl('/akun'));
     return response.ok;
   } catch (error) {
     console.error('Connection test failed:', error);
