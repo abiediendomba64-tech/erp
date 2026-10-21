@@ -96,7 +96,7 @@ function appReducer(state: AppState, action: Action): AppState {
   }
 }
 
-const initialState: AppState = {
+const seedState: AppState = {
   bukuKas: initialBukuKas,
   arsipBukti: initialArsipBukti,
   posKewajiban: initialPosKewajiban,
@@ -116,13 +116,47 @@ const initialState: AppState = {
   menuConfig: initialMenuConfig,
 };
 
+const APP_STORAGE_KEY = 'abiedien.erp.app.v1';
+
+function loadAppState(): AppState {
+  if (typeof window === 'undefined') return seedState;
+  try {
+    const raw = window.localStorage.getItem(APP_STORAGE_KEY);
+    if (!raw) return seedState;
+    const saved = JSON.parse(raw) as Partial<AppState>;
+    const arrays = [
+      'bukuKas', 'arsipBukti', 'posKewajiban', 'auditLog', 'tanah', 'beko',
+      'notaMaterial', 'stok', 'produksi', 'penjualan', 'pembelian', 'penggajian',
+      'anggaran', 'arusKas', 'ocr', 'whatsapp', 'menuConfig'
+    ] as const;
+
+    const result = { ...seedState } as AppState;
+    for (const key of arrays) {
+      const value = saved[key];
+      if (Array.isArray(value)) (result as any)[key] = value;
+    }
+    return result;
+  } catch (error) {
+    console.error('Data ERP lokal tidak dapat dibaca; menggunakan data awal yang tersedia.', error);
+    return seedState;
+  }
+}
+
 const AppContext = createContext<{
   state: AppState;
   dispatch: React.Dispatch<Action>;
 } | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(appReducer, initialState);
+  const [state, dispatch] = useReducer(appReducer, undefined, loadAppState);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(state));
+    } catch (error) {
+      console.error('Gagal menyimpan data ERP ke browser. Buat backup JSON sesegera mungkin.', error);
+    }
+  }, [state]);
   return (
     <AppContext.Provider value={{ state, dispatch }}>
       {children}
