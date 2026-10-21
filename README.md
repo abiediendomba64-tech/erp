@@ -193,27 +193,22 @@ LEVEL 5: LAPORAN KEUANGAN (Auto-Generate)
 3. Klik "Create API key"
 4. Copy API key (format: `AIzaSy...`)
 
-### **Langkah 2: Setup Google Apps Script (30 menit)**
-1. Buka Google Sheets Anda
-2. Extensions → Apps Script
-3. Copy-paste kode dari `google-apps-script/Code.gs`
-4. Ganti `GEMINI_API_KEY` dengan API key Anda
-5. Klik Save
-6. Run function `setupDatabase`
-7. Authorize akses
+### Langkah 2: Siapkan Google Apps Script
+1. Mulai dari spreadsheet uji dan pilih Extensions → Apps Script.
+2. Salin kode dari google-apps-script/Code.gs.
+3. Pada Project Settings → Script Properties, isi GEMINI_API_KEY hanya jika ingin mengaktifkan OCR. Jangan simpan kunci di source code atau frontend.
+4. Jika project tidak terikat ke spreadsheet, tambahkan Script Property SPREADSHEET_ID.
+5. Jalankan setupDatabase() lalu periksa header semua sheet.
 
-### **Langkah 3: Deploy sebagai Web App (10 menit)**
-1. Deploy → New deployment
-2. Pilih "Web app"
-3. Access: "Anyone"
-4. Deploy
-5. Copy URL deployment
+### Langkah 3: Deployment dengan kontrol akses
+- Mulai dengan data uji, bukan data keuangan sensitif.
+- Jangan membuka endpoint tulis keuangan ke publik dengan akses “Anyone”; otentikasi/otorisasi produksi belum tersedia.
+- Webhook provider perlu verifikasi masing-masing. Deployment berhasil tidak berarti integrasinya sudah aktif.
 
-### **Langkah 4: Update React Frontend (30 menit)**
-1. Buka `src/services/api.ts`
-2. Ganti `API_BASE_URL` dengan URL deployment
-3. Update komponen untuk gunakan API calls
-4. Build dan deploy
+### Langkah 4: Konfigurasi frontend
+- Set environment build VITE_ERP_API_URL ke URL Web App Apps Script.
+- Setelah mengganti environment Cloudflare Pages, jalankan build/deploy baru.
+- Ini hanya mengonfigurasi helper API; komponen UI belum seluruhnya memakai backend dan sebagian state masih localStorage.
 
 ### **Langkah 5: Test End-to-End (30 menit)**
 1. Test OCR dengan foto kwitansi
