@@ -269,13 +269,13 @@ export default function DokumenProyekGenerator() {
       setError('Pop-up diblokir browser. Izinkan pop-up untuk membuka dokumen cetak.');
       return;
     }
+    popup.onload = () => {
+      popup.focus();
+      popup.print();
+    };
     popup.document.open();
     popup.document.write(documentBody(form));
     popup.document.close();
-    popup.focus();
-    popup.onload = () => {
-      popup.print();
-    };
   };
 
   const saveDraftToArchive = async () => {
