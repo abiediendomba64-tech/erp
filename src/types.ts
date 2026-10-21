@@ -242,11 +242,13 @@ export interface Anggaran {
   id: string;
   kategori: string;
   anggaran: number;
-  realisasi: number;
-  periode: string;
+  realisasi: number; // Legacy field; UI/report derive actual realization from Buku Kas, do not trust this stored value.
+  periode: string; // YYYY-MM
+  proyek?: string;
   catatan: string;
-  // COMPUTED: sisa = anggaran - realisasi
-  // COMPUTED: persentase = (realisasi / anggaran) × 100
+  // COMPUTED: realisasi = verified or recorded Buku Kas outflows matched by period/category/project
+  // COMPUTED: sisa = anggaran - realisasi; negative means over budget
+  // COMPUTED: persentase = anggaran > 0 ? realisasi / anggaran * 100 : 0
 }
 
 // ARUS KAS
