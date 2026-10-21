@@ -12,7 +12,7 @@ export default function LaporanKeuanganPage() {
   const [periode, setPeriode] = useState(() => getLocalDateISO().slice(0, 7));
 
   // Periode laba rugi/arus kas mengikuti bulan terpilih; neraca memakai tanggal akhir bulan yang valid.
-  const periodeValid = /^\\d{4}-\\d{2}$/.test(periode) ? periode : getLocalDateISO().slice(0, 7);
+  const periodeValid = /^\d{4}-\d{2}$/.test(periode) ? periode : getLocalDateISO().slice(0, 7);
   const [tahunLaporan, bulanLaporan] = periodeValid.split('-').map(Number);
   const tanggalNeraca = getLocalDateISO(new Date(tahunLaporan, bulanLaporan, 0));
   const labaRugi = generateLabaRugi(state.akun, state.jurnal, periodeValid);
@@ -54,7 +54,7 @@ export default function LaporanKeuanganPage() {
     }
 
     const escapeCell = (value: string | number) => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const csv = '\\uFEFF' + rows.map(row => row.map(escapeCell).join(';')).join('\\r\\n');
+    const csv = '\uFEFF' + rows.map(row => row.map(escapeCell).join(';')).join('\r\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
