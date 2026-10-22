@@ -1,9 +1,9 @@
 # 🏢 SISTEM ERP AKUNTANSI - DOKUMENTASI UTAMA
 
-**Status:** ✅ CORE SYSTEM READY + FULL GOOGLE STACK AVAILABLE  
-**Versi:** 1.0  
+**Status:** PARTIAL IMPLEMENTATION — NOT PRODUCTION-READY  
+**Versi:** 1.1 (perbaikan bertahap)  
 **Tanggal:** 21 Oktober 2026  
-**Biaya:** Rp0 (100% Gratis dengan Google Stack)
+**Catatan:** biaya, kuota, dan batas layanan tergantung konfigurasi provider
 
 ---
 
@@ -19,82 +19,45 @@
 
 ---
 
-## 🎯 OVERVIEW SISTEM
+## 🎯 Gambaran Sistem
 
-Sistem ERP akuntansi lengkap untuk UMKM/PT/CV dengan **double-entry bookkeeping**, **auto-generate laporan keuangan**, dan **integrasi OCR/WhatsApp/Google Sheets**.
+Repository berisi aplikasi React untuk akuntansi dan operasional proyek, serta integrasi Google Apps Script yang masih memerlukan konfigurasi.
 
-### **Fitur Utama:**
-- ✅ Parser angka Indonesia (750.000 → 750000)
-- ✅ Double-entry bookkeeping (Debit = Kredit selalu)
-- ✅ Anti-duplikasi transaksi (idempotency key)
-- ✅ Auto-generate jurnal dari transaksi
-- ✅ Laporan keuangan otomatis (Laba Rugi, Neraca, Arus Kas)
-- ✅ Invoice & Purchase Order
-- ✅ OCR kwitansi dengan Gemini Vision
-- ✅ Auto-input dari WhatsApp/Telegram
-- ✅ Database cloud (Google Sheets)
-- ✅ Multi-user access
-- ✅ Reversal journal (koreksi tanpa edit)
-- ✅ Audit trail lengkap
-- ✅ Export CSV/Excel/JSON
-- ✅ **100% GRATIS** dengan Google Stack
+### Fungsi yang tersedia pada aplikasi
+- Input transaksi akuntansi dengan preview jurnal dan validasi debit/kredit.
+- Dashboard dan laporan laba rugi, neraca, serta arus kas yang dihitung dari jurnal modul akuntansi.
+- Form invoice dan purchase order; PO tidak otomatis membukukan utang sebelum penerimaan/tagihan benar-benar diakui.
+- Chart of Accounts standar.
+- Penyimpanan browser untuk state modul akuntansi dan sebagian data operasional.
 
----
+### Batasan penting
+- localStorage hanya ada pada browser/perangkat yang sama; bukan cloud sync atau database multi-user.
+- Sebagian modul operasional masih memuat seed data awal. Verifikasi setiap record sebelum dipakai sebagai angka aktual.
+- Koneksi frontend ke Google Apps Script belum menyeluruh. URL backend harus dikonfigurasi; URL kosong sengaja menghasilkan error.
+- OCR, upload Google Drive, WhatsApp/Telegram, serta login/otorisasi multi-user belum siap produksi.
+- Export laporan yang tersedia di halaman akuntansi adalah CSV; jangan menganggap PDF/XLSX tersedia hanya dari dokumentasi.
 
-## 📊 STATUS IMPLEMENTASI
+> Laporan harus direkonsiliasi dengan bukti transaksi, saldo awal, persediaan/HPP, pajak, dan aset tetap sebelum dipakai untuk keputusan resmi.
 
-### **✅ Yang SUDAH BERFUNGSI (100% Working)**
+## 📊 Status Implementasi
 
-#### **1. Core Accounting Functions**
-- ✅ **Parser Angka Indonesia** - Support semua format
-- ✅ **Double-Entry Bookkeeping** - Debit = Kredit selalu balance
-- ✅ **Transaction Guard** - Anti-duplikasi dengan idempotency key
-- ✅ **Laporan Keuangan** - Laba Rugi, Neraca, Arus Kas auto-generate
-- ✅ **Chart of Accounts** - 30+ akun standar
+### Perbaikan inti pada branch ini
+- State akuntansi bertahan setelah navigasi dan reload pada browser yang sama.
+- Data contoh jurnal/invoice/PO/RAB/schedule di modul akuntansi dihapus sebagai nilai awal; data akuntansi baru dimulai kosong.
+- Laba rugi dan arus kas memakai jurnal Posted sesuai periode; neraca memakai saldo kumulatif hingga tanggal laporan.
+- Input nominal menerima format Indonesia, misalnya 750.000, dan divalidasi sebelum jurnal disimpan.
+- Export laporan menghasilkan file CSV nyata, bukan alert placeholder.
+- Endpoint Apps Script untuk GET akun/transaksi/laporan dan POST transaksi/reversal sudah diselaraskan, tetapi perlu uji pada deployment dan spreadsheet nyata.
 
-#### **2. Data Management**
-- ✅ **Input Transaksi Manual** - 7 jenis transaksi
-- ✅ **Input Data Master** - Tanah, Beko, Pelanggan, Supplier
-- ✅ **Invoice & Purchase Order** - Multi-item, auto-calculate
-- ✅ **Alokasi Dana** - Per periode dengan detail
-- ✅ **Export CSV/Excel/JSON** - Backup dan reporting
+### Belum terbukti / belum tersedia penuh
+- Belum ada cloud database multi-user yang menjadi source of truth untuk seluruh UI.
+- Belum ada autentikasi dan otorisasi produksi yang kuat pada backend keuangan.
+- OCR serta upload Google Drive belum diverifikasi end-to-end.
+- UI OCR/WhatsApp masih memiliki bagian rancangan dan seed data.
+- Belum ada validasi independen untuk klaim kepatuhan PSAK atau kesiapan audit.
+- Persediaan/HPP, aset tetap, penyusutan, pajak, dan closing period masih butuh pengembangan dan pengujian.
 
-#### **3. UI/UX**
-- ✅ **Dashboard Akuntansi** - Real-time metrics
-- ✅ **Form Input** - Validasi, preview jurnal
-- ✅ **Responsive Design** - Mobile, tablet, desktop
-- ✅ **Multi-role** - Admin, Keuangan, Proyek, Viewer
-
-#### **4. Backend (Full Google Stack)**
-- ✅ **Google Apps Script** - Backend API (20,000 calls/hari)
-- ✅ **Google Sheets** - Database cloud (unlimited)
-- ✅ **Gemini API** - OCR kwitansi (1,500 requests/hari)
-- ✅ **Google Drive** - File storage (15 GB)
-- ✅ **WhatsApp/Telegram** - Auto-input webhook
-
----
-
-### **⚠️ Yang PERLU SETUP (Tapi Kode Sudah Ada)**
-
-#### **1. OCR Gemini**
-- ✅ Kode sudah ada di `google-apps-script/Code.gs`
-- ⚠️ Perlu: Gemini API key dari aistudio.google.com
-- ⚠️ Perlu: Deploy Apps Script sebagai Web App
-- **Waktu setup:** 30 menit
-
-#### **2. WhatsApp/Telegram Integration**
-- ✅ Kode sudah ada di `google-apps-script/Code.gs`
-- ⚠️ Perlu: WhatsApp Business API atau Telegram Bot Token
-- ⚠️ Perlu: Setup webhook
-- **Waktu setup:** 1-2 jam
-
-#### **3. Frontend-Backend Integration**
-- ✅ API service sudah ada di `src/services/api.ts`
-- ⚠️ Perlu: Update URL deployment
-- ⚠️ Perlu: Ganti localStorage dengan API calls
-- **Waktu setup:** 1 jam
-
----
+**Jangan gunakan seed data atau laporan sistem untuk keputusan pajak/audit sebelum direkonsiliasi dengan dokumen asli dan diperiksa akuntan.**
 
 ## 📝 CARA INPUT & UPDATE DATA
 
@@ -230,27 +193,22 @@ LEVEL 5: LAPORAN KEUANGAN (Auto-Generate)
 3. Klik "Create API key"
 4. Copy API key (format: `AIzaSy...`)
 
-### **Langkah 2: Setup Google Apps Script (30 menit)**
-1. Buka Google Sheets Anda
-2. Extensions → Apps Script
-3. Copy-paste kode dari `google-apps-script/Code.gs`
-4. Ganti `GEMINI_API_KEY` dengan API key Anda
-5. Klik Save
-6. Run function `setupDatabase`
-7. Authorize akses
+### Langkah 2: Siapkan Google Apps Script
+1. Mulai dari spreadsheet uji dan pilih Extensions → Apps Script.
+2. Salin kode dari google-apps-script/Code.gs.
+3. Pada Project Settings → Script Properties, isi GEMINI_API_KEY hanya jika ingin mengaktifkan OCR. Jangan simpan kunci di source code atau frontend.
+4. Jika project tidak terikat ke spreadsheet, tambahkan Script Property SPREADSHEET_ID.
+5. Jalankan setupDatabase() lalu periksa header semua sheet.
 
-### **Langkah 3: Deploy sebagai Web App (10 menit)**
-1. Deploy → New deployment
-2. Pilih "Web app"
-3. Access: "Anyone"
-4. Deploy
-5. Copy URL deployment
+### Langkah 3: Deployment dengan kontrol akses
+- Mulai dengan data uji, bukan data keuangan sensitif.
+- Jangan membuka endpoint tulis keuangan ke publik dengan akses “Anyone”; otentikasi/otorisasi produksi belum tersedia.
+- Webhook provider perlu verifikasi masing-masing. Deployment berhasil tidak berarti integrasinya sudah aktif.
 
-### **Langkah 4: Update React Frontend (30 menit)**
-1. Buka `src/services/api.ts`
-2. Ganti `API_BASE_URL` dengan URL deployment
-3. Update komponen untuk gunakan API calls
-4. Build dan deploy
+### Langkah 4: Konfigurasi frontend
+- Set environment build VITE_ERP_API_URL ke URL Web App Apps Script.
+- Setelah mengganti environment Cloudflare Pages, jalankan build/deploy baru.
+- Ini hanya mengonfigurasi helper API; komponen UI belum seluruhnya memakai backend dan sebagian state masih localStorage.
 
 ### **Langkah 5: Test End-to-End (30 menit)**
 1. Test OCR dengan foto kwitansi
@@ -412,70 +370,26 @@ Total: Rp0/bulan = GRATIS!
 
 ---
 
-## 🎉 KESIMPULAN
+## Kesimpulan
 
-### **Status Sistem:**
-✅ **CORE FUNCTIONS SOLID** - Parser, double-entry, laporan semua bekerja  
-✅ **FRONTEND LENGKAP** - Semua form dan UI sudah ada  
-✅ **BACKEND CODE READY** - Apps Script sudah ditulis, tinggal deploy  
-⚠️ **PERLU SETUP** - Gemini API, WhatsApp/Telegram, deploy Apps Script  
-✅ **100% GRATIS** - Full Google Stack tanpa biaya bulanan  
+Repository memiliki perbaikan inti akuntansi dan build gate pada branch perbaikan, tetapi **belum siap produksi**.
 
-### **Next Steps:**
-1. ✅ **Test core functions** - Sistem sudah bisa digunakan untuk demo
-2. ⏳ **Setup Full Google Stack** - 2 jam untuk production-ready
-3. ⏳ **Migrasi data** - Pindah dari localStorage ke cloud
-4. ⏳ **Go live** - Sistem siap produksi
+- Penyimpanan akuntansi masih lokal pada browser.
+- Integrasi cloud belum end-to-end dan belum memakai autentikasi/otorisasi produksi yang kuat.
+- Hasil typecheck/build tidak membuktikan angka laporan benar untuk seluruh skenario bisnis.
+- Saldo awal, pajak, persediaan/HPP, aset tetap, dan periode akuntansi perlu rekonsiliasi serta pemeriksaan akuntan.
+- Seed data pada modul operasional harus diverifikasi sebelum dipakai sebagai data transaksi asli.
 
-### **Quote:**
-*"Sistem ERP akuntansi lengkap dengan OCR, WhatsApp, dan Google Sheets integration bisa dibangun 100% GRATIS dengan Google Stack. Yang dibutuhkan hanya 2 jam waktu setup dan kreativitas."*
+## Pertanyaan umum
 
----
+**Apakah transaksi bertahan setelah reload?**  
+State modul akuntansi disimpan ke localStorage pada browser yang sama. Ini bukan cloud sync dan tidak membuat data tersedia pada perangkat lain.
 
-**Dibuat oleh:** AI Assistant  
-**Tanggal:** 21 Oktober 2026  
-**Versi:** 1.0  
-**Status:** ✅ CORE SYSTEM READY, FULL GOOGLE STACK AVAILABLE
+**Apakah laporan otomatis dibuat?**  
+Laporan dihitung dari jurnal Posted yang tersimpan pada modul akuntansi. Ketepatan hasil tetap bergantung pada ketepatan dan kelengkapan jurnal.
 
-**Quick Links:**
-- Setup Guide: `IMPLEMENTASI_NYATA.md`
-- Backend Code: `google-apps-script/Code.gs`
-- API Service: `src/services/api.ts`
-- Testing: `test-all-functions.js`
+**Apakah OCR, Google Drive, WhatsApp, dan Telegram otomatis aktif?**  
+Belum. Komponen, helper dan backend masih memerlukan konfigurasi, wiring UI, credentials, kontrol akses, serta uji end-to-end.
 
----
-
-## 📞 FINAL ANSWER TO YOUR QUESTIONS
-
-### ❓ **Bagaimana ini berfungsi untuk data input?**
-✅ **Input manual melalui form** (sudah berfungsi)  
-✅ **OCR otomatis** (setelah setup Gemini API - 30 menit)  
-✅ **WhatsApp/Telegram auto-input** (setelah setup webhook - 1-2 jam)
-
-### ❓ **Bagaimana untuk data update?**
-✅ **Edit manual untuk data master** (sudah berfungsi)  
-✅ **Reversal journal untuk transaksi posted** (sudah berfungsi)  
-✅ **Audit trail tercatat** (sudah berfungsi)
-
-### ❓ **Apakah saya perlu input manual?**
-✅ **YA, untuk saat ini** (localStorage)  
-⏳ **TIDAK, setelah setup Full Google Stack** (OCR/WhatsApp aktif)
-
-### ❓ **Apakah saya perlu edit manual?**
-✅ **YA, untuk data master** (sudah berfungsi)  
-✅ **TIDAK, untuk transaksi posted** (gunakan reversal journal)
-
-### ❓ **Bagaimana hirarki data?**
-✅ **5 Level:** Master → Transaksi → Jurnal → Buku Besar → Laporan  
-✅ **Auto-generate:** Jurnal, Buku Besar, Laporan dari transaksi
-
-### ❓ **Bagaimana kelengkapan data di lapangan?**
-⚠️ **Data dasar sudah ada** (13 tanah, 8 beko, 6 periode)  
-⚠️ **Perlu tambah data lapangan** (kwitansi, nota, bukti transfer)  
-✅ **OCR bisa bantu** (setelah setup Gemini API)
-
----
-
-**Status Final:** ✅ **SISTEM SIAP DIGUNAKAN**  
-**Production Ready:** ⏳ **PERLU SETUP 2 JAM**  
-**Cost:** 💰 **RP0 (GRATIS)**
+**Apakah sistem sudah PSAK/siap audit?**  
+Belum diverifikasi secara independen. Gunakan bukti asli, rekonsiliasi saldo, dan pemeriksaan profesional sebelum menerbitkan laporan resmi.

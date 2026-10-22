@@ -10,13 +10,43 @@ export interface BukuKas {
   masuk: number;
   keluar: number;
   status_verifikasi: 'LENGKAP' | 'TANPA_BUKTI' | 'PERLU_KONFIRMASI';
+  // Journal created from new cashbook inputs is Draft until a real supporting receipt/transfer is verified.
+  akun_kas_kode?: string;
+  akun_lawan_kode?: string;
+  jurnal_id?: string;
+  posting_status?: 'HISTORICAL' | 'DRAFT' | 'POSTED' | 'REVERSED';
 }
 
 // ============ LAYER 2: ARSIP BUKTI ============
 export interface ArsipBukti {
   id: string;
   kode_bukti: string;
-  jenis: 'Kwitansi_Foto' | 'Transfer_Bank' | 'BAST' | 'Tidak_Ada';
+  jenis:
+    | 'Kwitansi_Foto'
+    | 'Transfer_Bank'
+    | 'BAST'
+    | 'Tidak_Ada'
+    | 'Nota_Foto'
+    | 'Invoice_Faktur'
+    | 'Perjanjian_Jual_Beli'
+    | 'PPJB'
+    | 'AJB'
+    | 'Akta_Notaris'
+    | 'Sertifikat_SHM'
+    | 'Sertifikat_SHGB'
+    | 'PBB'
+    | 'Surat_Kuasa'
+    | 'KTP_NPWP'
+    | 'Surat_Pernyataan'
+    | 'Kontrak_Kerja'
+    | 'SPK'
+    | 'Addendum_Kontrak'
+    | 'RAB'
+    | 'Progress_Pekerjaan'
+    | 'Dokumen_PBG_IMB'
+    | 'SLF'
+    | 'NIB'
+    | 'Lainnya';
   link_drive: string;
   tgl_upload: string;
   terverifikasi: 'Ya' | 'Tidak' | 'Perlu_Konfirmasi';
@@ -24,6 +54,21 @@ export interface ArsipBukti {
   penerima: string;
   nominal: number;
   keterangan: string;
+  // Metadata dokumen pendukung. File lokal disimpan pada IndexedDB perangkat/browser ini.
+  judul_dokumen?: string;
+  nomor_dokumen?: string;
+  tanggal_dokumen?: string;
+  proyek?: string;
+  modul_terkait?: 'Buku Kas' | 'Tanah' | 'Beko' | 'Utang Tanah' | 'Nota Material' | 'Kontrak' | 'Proyek' | 'Lainnya';
+  id_terkait?: string;
+  nama_file?: string;
+  mime_type?: string;
+  ukuran_bytes?: number;
+  local_file_key?: string;
+  nama_pengunggah?: string;
+  waktu_dibuat?: string;
+  diverifikasi_oleh?: string;
+  waktu_verifikasi?: string;
 }
 
 // ============ LAYER 3: POS KEWAJIBAN ============
@@ -33,7 +78,8 @@ export interface PosKewajiban {
   pihak: string;
   nilai_menurut_dokumen: number; // Nilai total menurut dokumen
   nilai_menurut_workbook: number; // Nilai total menurut workbook
-  dp_dibayar: number; // DP yang sudah dibayar
+  dp_dibayar: number; // DP referensi yang sudah dibayar
+  tanah_id?: string; // jika terhubung, register Tanah menjadi sumber nilai/pembayaran terkini
   status: 'Sepakat' | 'Dalam_Penelusuran' | 'Sengketa';
   keterangan: string;
   // COMPUTED: sisa_utang = nilai_menurut_dokumen - dp_dibayar
@@ -65,8 +111,9 @@ export interface Tanah {
   kode_bukti: string;
   url_bukti: string;
   catatan: string;
-  // COMPUTED: nilai_total = luas_bt × harga_per_bt
-  // COMPUTED: sisa = nilai_total - dp
+  nilai_total_manual?: number; // wajib isi jika luas/harga tidak tersedia dan nilai berasal dari nominal kesepakatan langsung
+  // COMPUTED: nilai_total = nilai_total_manual jika ada; selain itu luas_bt × harga_per_bt
+  // COMPUTED: sisa = max(0, nilai_total - dp)
 }
 
 // ============ BEKO (Excavator Records) ============
@@ -81,7 +128,10 @@ export interface Beko {
   kode_bukti: string;
   url_bukti: string;
   catatan: string;
-  // COMPUTED: nilai = panjang × lebar × tinggi × tarif
+  termasuk_rekap?: boolean;
+  satuan_volume?: 'm3' | 'unit' | 'ls';
+  status_pembayaran?: 'Belum_Dikonfirmasi' | 'Belum_Bayar' | 'DP' | 'Lunas';
+  // COMPUTED: volume × tarif; item LS menggunakan tarif sebagai nilai lumpsum.
 }
 
 // ============ NOTA MATERIAL ============
@@ -192,11 +242,13 @@ export interface Anggaran {
   id: string;
   kategori: string;
   anggaran: number;
-  realisasi: number;
-  periode: string;
+  realisasi: number; // Legacy field; UI/report derive actual realization from Buku Kas, do not trust this stored value.
+  periode: string; // YYYY-MM
+  proyek?: string;
   catatan: string;
-  // COMPUTED: sisa = anggaran - realisasi
-  // COMPUTED: persentase = (realisasi / anggaran) × 100
+  // COMPUTED: realisasi = verified or recorded Buku Kas outflows matched by period/category/project
+  // COMPUTED: sisa = anggaran - realisasi; negative means over budget
+  // COMPUTED: persentase = anggaran > 0 ? realisasi / anggaran * 100 : 0
 }
 
 // ARUS KAS

@@ -8,8 +8,27 @@
  * 4. Import dan gunakan di komponen React
  */
 
-// GANTI DENGAN URL DEPLOYMENT ANDA
-const API_BASE_URL = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec';
+// Set VITE_ERP_API_URL ke URL deployment Google Apps Script pada environment build.
+const API_BASE_URL = String((import.meta as any).env?.VITE_ERP_API_URL || '').trim().replace(/\/$/, '');
+
+function getApiUrl(path: string): string {
+  if (!API_BASE_URL || API_BASE_URL.includes('YOUR_DEPLOYMENT_ID')) {
+    throw new Error('ERP API belum dikonfigurasi. Set VITE_ERP_API_URL ke URL Web App Apps Script; aplikasi tidak akan berpura-pura tersambung.');
+  }
+  const separator = API_BASE_URL.includes('?') ? '&' : '?';
+  return `${API_BASE_URL}${separator}path=${encodeURIComponent(path)}`;
+}
+
+async function readApiResponse<T>(response: Response): Promise<T> {
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(`ERP API gagal (HTTP ${response.status}).`);
+  if (payload && typeof payload === 'object' && payload.success === false) {
+    throw new Error(String(payload.error || payload.message || 'ERP API menolak permintaan.'));
+  }
+  return payload as T;
+}
+
+const jsonRequestHeaders = { 'Content-Type': 'text/plain;charset=utf-8' };
 
 // ============ TRANSAKSI API ============
 
@@ -18,9 +37,8 @@ const API_BASE_URL = 'https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec
  */
 export async function getAllTransaksi(): Promise<any[]> {
   try {
-    const response = await fetch(`${API_BASE_URL}?path=/transaksi`);
-    if (!response.ok) throw new Error('Failed to fetch transaksi');
-    return await response.json();
+    const response = await fetch(getApiUrl('/transaksi'));
+    return await readApiResponse<any[]>(response);
   } catch (error) {
     console.error('Error getting transaksi:', error);
     throw error;
@@ -38,16 +56,15 @@ export async function addTransaksi(transaksi: {
   ppn?: number;
   pihak?: string;
   referensi?: string;
-}): Promise<{ success: boolean; id: string; jurnal: any[] }> {
+}): Promise<{ success: boolean; transaksi_id: string; jurnal_id: string; jurnal_entries: number; total_debit: number; total_kredit: number }> {
   try {
-    const response = await fetch(`${API_BASE_URL}?path=/transaksi`, {
+    const response = await fetch(getApiUrl('/transaksi'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: jsonRequestHeaders,
       body: JSON.stringify(transaksi)
     });
     
-    if (!response.ok) throw new Error('Failed to add transaksi');
-    return await response.json();
+    return await readApiResponse<{ success: boolean; transaksi_id: string; jurnal_id: string; jurnal_entries: number; total_debit: number; total_kredit: number }>(response);
   } catch (error) {
     console.error('Error adding transaksi:', error);
     throw error;
@@ -58,36 +75,29 @@ export async function addTransaksi(transaksi: {
  * Update transaksi
  */
 export async function updateTransaksi(id: string, data: any): Promise<{ success: boolean; id: string }> {
-  try {
-    const response = await fetch(`${API_BASE_URL}?path=/transaksi/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    
-    if (!response.ok) throw new Error('Failed to update transaksi');
-    return await response.json();
-  } catch (error) {
-    console.error('Error updating transaksi:', error);
-    throw error;
-  }
+  void id;
+  void data;
+  throw new Error('Update transaksi yang sudah dibukukan tidak didukung. Buat jurnal reversal lalu catat transaksi yang benar agar jejak audit tetap utuh.');
 }
 
 /**
  * Hapus transaksi
  */
 export async function deleteTransaksi(id: string): Promise<{ success: boolean; id: string }> {
-  try {
-    const response = await fetch(`${API_BASE_URL}?path=/transaksi/${id}`, {
-      method: 'DELETE'
-    });
-    
-    if (!response.ok) throw new Error('Failed to delete transaksi');
-    return await response.json();
-  } catch (error) {
-    console.error('Error deleting transaksi:', error);
-    throw error;
+  void id;
+  throw new Error('Penghapusan transaksi yang sudah dibukukan dinonaktifkan. Gunakan reversal jurnal agar saldo dan jejak audit tetap dapat ditelusuri.');
+}
+
+export async function reverseTransaksi(transaksi_id: string, alasan: string): Promise<any> {
+  if (!transaksi_id.trim() || !alasan.trim()) {
+    throw new Error('ID transaksi dan alasan reversal wajib diisi.');
   }
+  const response = await fetch(getApiUrl('/reversal'), {
+    method: 'POST',
+    headers: jsonRequestHeaders,
+    body: JSON.stringify({ transaksi_id, alasan })
+  });
+  return await readApiResponse<any>(response);
 }
 
 // ============ OCR API ============
@@ -95,22 +105,39 @@ export async function deleteTransaksi(id: string): Promise<{ success: boolean; i
 /**
  * Scan foto kwitansi dengan Gemini API
  */
-export async function scanKwitansi(imageUrl: string): Promise<{
+export async function scanKwitansi(
+  imageUrl: string,
+  jenisDokumen: 'Kwitansi' | 'Nota' | 'Transfer_Bank' | 'Lainnya' = 'Kwitansi'
+): Promise<{
   penerima?: string;
   nominal?: number;
   tanggal?: string;
   nomor_bukti?: string;
   keterangan?: string;
+  confidence?: number;
 }> {
   try {
-    const response = await fetch(`${API_BASE_URL}?path=/ocr`, {
+    if (!imageUrl.trim()) throw new Error('URL foto kwitansi wajib diisi.');
+    const response = await fetch(getApiUrl('/ocr'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageUrl })
+      headers: jsonRequestHeaders,
+      body: JSON.stringify({ imageUrl, jenisDokumen })
     });
     
-    if (!response.ok) throw new Error('Failed to scan kwitansi');
-    return await response.json();
+    const result = await readApiResponse<any>(response);
+    const data = result && result.data ? result.data : result;
+    return {
+      penerima: data.vendor ?? data.penerima ?? undefined,
+      nominal: data.total == null && data.nominal == null
+        ? undefined
+        : Number.isFinite(Number(data.total ?? data.nominal)) ? Number(data.total ?? data.nominal) : undefined,
+      tanggal: data.tanggal ?? undefined,
+      nomor_bukti: data.nomor_bukti ?? undefined,
+      keterangan: data.keterangan ?? undefined,
+      confidence: data.confidence == null
+        ? undefined
+        : Number.isFinite(Number(data.confidence)) ? Number(data.confidence) : undefined,
+    };
   } catch (error) {
     console.error('Error scanning kwitansi:', error);
     throw error;
@@ -128,9 +155,8 @@ export async function getLabaRugi(): Promise<{
   laba_bersih: number;
 }> {
   try {
-    const response = await fetch(`${API_BASE_URL}?path=/laporan/laba-rugi`);
-    if (!response.ok) throw new Error('Failed to fetch laba rugi');
-    return await response.json();
+    const response = await fetch(getApiUrl('/laporan/laba-rugi'));
+    return await readApiResponse<{ total_pendapatan: number; total_beban: number; laba_bersih: number }>(response);
   } catch (error) {
     console.error('Error getting laba rugi:', error);
     throw error;
@@ -147,9 +173,8 @@ export async function getNeraca(): Promise<{
   balance: boolean;
 }> {
   try {
-    const response = await fetch(`${API_BASE_URL}?path=/laporan/neraca`);
-    if (!response.ok) throw new Error('Failed to fetch neraca');
-    return await response.json();
+    const response = await fetch(getApiUrl('/laporan/neraca'));
+    return await readApiResponse<{ total_aset: number; total_kewajiban: number; total_ekuitas: number; balance: boolean }>(response);
   } catch (error) {
     console.error('Error getting neraca:', error);
     throw error;
@@ -163,9 +188,8 @@ export async function getNeraca(): Promise<{
  */
 export async function getAllAkun(): Promise<any[]> {
   try {
-    const response = await fetch(`${API_BASE_URL}?path=/akun`);
-    if (!response.ok) throw new Error('Failed to fetch akun');
-    return await response.json();
+    const response = await fetch(getApiUrl('/akun'));
+    return await readApiResponse<any[]>(response);
   } catch (error) {
     console.error('Error getting akun:', error);
     throw error;
@@ -179,11 +203,10 @@ export async function getAllAkun(): Promise<any[]> {
  * (Perlu setup Google Drive API terpisah)
  */
 export async function uploadToDrive(file: File): Promise<string> {
-  // Implementasi ini memerlukan Google Drive API
-  // Untuk saat ini, gunakan manual upload ke Drive
-  
-  alert('Upload ke Drive belum tersedia. Silakan upload manual ke Google Drive dan copy link.');
-  return '';
+  // Jangan mengembalikan string kosong seolah-olah upload sukses.
+  void file;
+  throw new Error('Upload Google Drive belum diimplementasikan pada backend. File tidak diunggah.');
+
 }
 
 /**
@@ -191,8 +214,12 @@ export async function uploadToDrive(file: File): Promise<string> {
  */
 export async function testConnection(): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE_URL}?path=/akun`);
-    return response.ok;
+    if (!API_BASE_URL || API_BASE_URL.includes('YOUR_DEPLOYMENT_ID')) return false;
+    const response = await fetch(getApiUrl('/akun'));
+    if (!response.ok) return false;
+    const payload = await response.json().catch(() => null);
+    if (payload && typeof payload === 'object' && payload.success === false) return false;
+    return Array.isArray(payload);
   } catch (error) {
     console.error('Connection test failed:', error);
     return false;

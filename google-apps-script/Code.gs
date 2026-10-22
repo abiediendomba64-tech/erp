@@ -19,8 +19,53 @@
  */
 
 // ============ KONFIGURASI ============
-const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY_HERE'; // Ganti dengan API key Anda
-const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
+const SPREADSHEET_ID = (function () {
+  const configuredId = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  return configuredId || (activeSpreadsheet ? activeSpreadsheet.getId() : '');
+})();
+
+function getErpSpreadsheet_() {
+  if (!SPREADSHEET_ID) {
+    throw new Error('Spreadsheet belum dikonfigurasi. Set Script Property SPREADSHEET_ID atau pasang Apps Script pada Google Sheet.');
+  }
+  return SpreadsheetApp.openById(SPREADSHEET_ID);
+}
+
+function getGeminiApiKey_() {
+  const key = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+  if (!key) throw new Error('GEMINI_API_KEY belum diatur di Apps Script > Project Settings > Script Properties.');
+  return key;
+}
+
+function readSheetRecords(sheetName) {
+  const sheet = getErpSpreadsheet_().getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const rows = sheet.getDataRange().getValues();
+  const headers = rows[0].map(value => String(value || '').trim());
+  return rows.slice(1)
+    .filter(row => row.some(value => value !== '' && value !== null))
+    .map(row => headers.reduce((record, header, index) => {
+      if (header) record[header] = row[index];
+      return record;
+    }, {}));
+}
+
+function ensureSheetHeaders_(sheet, requiredHeaders) {
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, requiredHeaders.length).setValues([requiredHeaders]);
+    return requiredHeaders.slice();
+  }
+  const width = Math.max(sheet.getLastColumn(), 1);
+  const existing = sheet.getRange(1, 1, 1, width).getValues()[0].map(value => String(value || '').trim());
+  requiredHeaders.forEach(header => {
+    if (!existing.includes(header)) {
+      existing.push(header);
+      sheet.getRange(1, existing.length).setValue(header);
+    }
+  });
+  return existing;
+}
 
 // ============ WEBHOOK HANDLERS ============
 
@@ -28,48 +73,64 @@ const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
  * Handle GET requests (untuk testing)
  */
 function doGet(e) {
-  return jsonResponse({ 
-    status: 'OK', 
-    message: 'ERP Backend API is running',
-    endpoints: [
-      'POST /ocr - Scan kwitansi',
-      'POST /webhook/whatsapp - WhatsApp webhook',
-      'POST /webhook/telegram - Telegram webhook',
-      'POST /transaksi - Input transaksi',
-      'GET /transaksi - List transaksi',
-      'POST /reversal - Reversal jurnal',
-      'GET /laporan/laba-rugi - Laporan laba rugi',
-      'GET /laporan/neraca - Laporan neraca'
-    ]
-  });
+  try {
+    const path = e && e.parameter && e.parameter.path ? e.parameter.path : '/health';
+
+    if (path === '/transaksi') return jsonResponse(readSheetRecords('BUKU_KAS'));
+    if (path === '/akun') return jsonResponse(readSheetRecords('AKUN'));
+    if (path === '/laporan/laba-rugi') return jsonResponse(generateLabaRugi());
+    if (path === '/laporan/neraca') return jsonResponse(generateNeraca());
+
+    return jsonResponse({
+      status: 'OK',
+      message: 'ERP Backend API is running',
+      endpoints: [
+        'GET /transaksi',
+        'GET /akun',
+        'GET /laporan/laba-rugi',
+        'GET /laporan/neraca',
+        'POST /transaksi',
+        'POST /reversal',
+        'POST /ocr',
+        'POST /webhook/whatsapp',
+        'POST /webhook/telegram'
+      ]
+    });
+  } catch (error) {
+    return jsonResponse({ success: false, error: String(error && error.message ? error.message : error) });
+  }
 }
+
+
 
 /**
  * Handle POST requests
  */
 function doPost(e) {
   try {
-    const path = e.parameter.path || '';
-    const data = JSON.parse(e.postData.contents);
-    
-    // Route ke handler yang sesuai
-    if (path === '/ocr') {
-      return jsonResponse(handleOCR(data));
-    } else if (path === '/webhook/whatsapp') {
-      return jsonResponse(handleWhatsAppWebhook(data));
-    } else if (path === '/webhook/telegram') {
-      return jsonResponse(handleTelegramWebhook(data));
-    } else if (path === '/transaksi') {
-      return jsonResponse(handleAddTransaksi(data));
-    } else if (path === '/reversal') {
-      return jsonResponse(handleReversal(data));
-    } else {
-      return jsonResponse({ error: 'Endpoint not found' }, 404);
+    const path = e && e.parameter && e.parameter.path ? e.parameter.path : '';
+    const rawBody = e && e.postData && e.postData.contents ? e.postData.contents : '';
+    const data = rawBody ? JSON.parse(rawBody) : {};
+
+    if (path === '/ocr') return jsonResponse(handleOCR(data));
+    if (path === '/webhook/whatsapp') return jsonResponse(handleWhatsAppWebhook(data));
+    if (path === '/webhook/telegram') return jsonResponse(handleTelegramWebhook(data));
+    if (path === '/transaksi') return jsonResponse(handleAddTransaksi(data));
+    if (path === '/reversal') return jsonResponse(handleReversal(data));
+
+    if (path.indexOf('/transaksi/') === 0) {
+      return jsonResponse({
+        success: false,
+        error: 'Update/hapus transaksi posted tidak didukung. Gunakan reversal jurnal agar audit trail tetap utuh.'
+      });
     }
+    return jsonResponse({ success: false, error: 'Endpoint tidak dikenal: ' + path });
   } catch (error) {
-    return jsonResponse({ error: error.toString() }, 500);
+    return jsonResponse({ success: false, error: String(error && error.message ? error.message : error) });
   }
 }
+
+
 
 // ============ OCR FUNCTIONS ============
 
@@ -79,7 +140,14 @@ function doPost(e) {
  * @returns {Object} - { vendor, tanggal, total, kategori, confidence }
  */
 function handleOCR(data) {
-  const imageUrl = data.imageUrl;
+  const imageUrl = String(data.imageUrl || '').trim();
+  const documentType = String(data.jenisDokumen || 'Kwitansi');
+  if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) {
+    throw new Error('OCR membutuhkan URL gambar HTTP/HTTPS yang bisa diakses Apps Script.');
+  }
+  if (!['Kwitansi', 'Nota', 'Transfer_Bank', 'Lainnya'].includes(documentType)) {
+    throw new Error('Jenis dokumen OCR tidak dikenal.');
+  }
   if (!imageUrl) {
     throw new Error('imageUrl is required');
   }
@@ -89,7 +157,8 @@ function handleOCR(data) {
   const base64 = Utilities.base64Encode(blob.getBytes());
   
   // Kirim ke Gemini API
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+  const apiKey = getGeminiApiKey_();
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
   
   const payload = {
     contents: [{
@@ -142,12 +211,12 @@ Jika field tidak ditemukan, isi dengan null. Kembalikan HANYA JSON, tanpa teks l
       const ocrData = JSON.parse(jsonMatch[0]);
       
       // Simpan ke sheet ARSIP_BUKTI
-      saveToArsipBukti(ocrData, imageUrl);
+      saveToArsipBukti(ocrData, imageUrl, documentType);
       
       return {
         success: true,
         data: ocrData,
-        message: 'OCR berhasil. Data disimpan ke ARSIP_BUKTI.'
+        message: 'OCR berhasil. Hasil disimpan sebagai Perlu_Konfirmasi; confidence tidak dianggap sebagai persetujuan manusia.'
       };
     }
   }
@@ -158,33 +227,41 @@ Jika field tidak ditemukan, isi dengan null. Kembalikan HANYA JSON, tanpa teks l
 /**
  * Simpan hasil OCR ke sheet ARSIP_BUKTI
  */
-function saveToArsipBukti(ocrData, imageUrl) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  let sheet = ss.getSheetByName('ARSIP_BUKTI');
-  
-  if (!sheet) {
-    sheet = ss.insertSheet('ARSIP_BUKTI');
-    sheet.appendRow(['id', 'kode_bukti', 'jenis', 'link_drive', 'tgl_upload', 'terverifikasi', 'catatan_audit', 'penerima', 'nominal', 'keterangan', 'confidence', 'created_at']);
-  }
-  
-  const id = 'BUKTI-' + new Date().getTime();
-  const confidence = ocrData.confidence || 0;
-  const status = confidence >= 90 ? 'Ya' : confidence >= 70 ? 'Perlu_Konfirmasi' : 'Tidak';
-  
-  sheet.appendRow([
-    id,
-    ocrData.nomor_bukti || '',
-    'Kwitansi_Foto',
-    imageUrl,
-    new Date().toISOString().split('T')[0],
-    status,
-    `OCR confidence: ${confidence}%`,
-    ocrData.vendor || '',
-    ocrData.total || 0,
-    ocrData.keterangan || '',
-    confidence,
-    new Date().toISOString()
+function saveToArsipBukti(ocrData, imageUrl, documentType) {
+  const ss = getErpSpreadsheet_();
+  const sheet = ss.getSheetByName('ARSIP_BUKTI') || ss.insertSheet('ARSIP_BUKTI');
+  const headers = ensureSheetHeaders_(sheet, [
+    'id', 'kode_bukti', 'jenis', 'link_drive', 'tgl_upload',
+    'terverifikasi', 'catatan_audit', 'penerima', 'nominal',
+    'keterangan', 'confidence', 'created_at'
   ]);
+
+  const id = 'BUKTI-' + Utilities.getUuid();
+  const confidence = Math.max(0, Math.min(100, Number(ocrData.confidence) || 0));
+  const documentTypes = {
+    Kwitansi: 'Kwitansi_Foto',
+    Nota: 'Nota_Foto',
+    Transfer_Bank: 'Transfer_Bank',
+    Lainnya: 'Lainnya'
+  };
+
+  // Confidence is only a model score, never human authorization.
+  const record = {
+    id: id,
+    kode_bukti: String(ocrData.nomor_bukti || ''),
+    jenis: documentTypes[documentType] || 'Kwitansi_Foto',
+    link_drive: imageUrl,
+    tgl_upload: new Date().toISOString().slice(0, 10),
+    terverifikasi: 'Perlu_Konfirmasi',
+    catatan_audit: 'OCR confidence: ' + confidence + '%. Menunggu verifikasi manual.',
+    penerima: String(ocrData.vendor || ''),
+    nominal: Number(ocrData.total) || 0,
+    keterangan: String(ocrData.keterangan || ''),
+    confidence: confidence,
+    created_at: new Date().toISOString()
+  };
+  const row = headers.map(header => record[header] === undefined ? '' : record[header]);
+  sheet.appendRow(row);
 }
 
 // ============ WHATSAPP WEBHOOK ============
@@ -198,7 +275,7 @@ function handleWhatsAppWebhook(data) {
   const entry = data.entry && data.entry[0];
   if (!entry) return { success: false, message: 'No entry found' };
   
-  const changes = entry.changes && entry.entry[0].changes[0];
+  const changes = entry.changes && entry.changes[0];
   if (!changes) return { success: false, message: 'No changes found' };
   
   const value = changes.value;
@@ -389,115 +466,243 @@ function sendTelegramMessage(chatId, text) {
  * Tambah transaksi baru + auto-generate jurnal
  */
 function handleAddTransaksi(data) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const transaksiSheet = ss.getSheetByName('BUKU_KAS') || ss.insertSheet('BUKU_KAS');
-  const jurnalSheet = ss.getSheetByName('JURNAL') || ss.insertSheet('JURNAL');
-  
-  // Setup headers jika belum ada
-  if (transaksiSheet.getLastRow() === 0) {
-    transaksiSheet.appendRow(['id', 'tanggal', 'no_ref', 'kode_bukti', 'keterangan', 'kategori', 'masuk', 'keluar', 'status_verifikasi', 'created_at']);
-  }
-  if (jurnalSheet.getLastRow() === 0) {
-    jurnalSheet.appendRow(['id', 'transaksi_id', 'tanggal', 'akun_kode', 'akun_nama', 'debit', 'kredit', 'keterangan', 'created_at']);
-  }
-  
-  // Generate ID
-  const transaksiId = 'TRX-' + new Date().getTime();
-  const jurnalId = 'JRN-' + new Date().getTime();
-  
-  // Generate jurnal double-entry
-  const jurnalEntries = generateJurnalDoubleEntry(data);
-  
-  // Simpan transaksi
-  transaksiSheet.appendRow([
-    transaksiId,
-    data.tanggal,
-    data.no_ref || transaksiId,
-    data.kode_bukti || '',
-    data.keterangan,
-    data.kategori || 'Operasional',
-    data.masuk || 0,
-    data.keluar || 0,
-    data.status_verifikasi || 'LENGKAP',
-    new Date().toISOString()
-  ]);
-  
-  // Simpan jurnal entries
-  jurnalEntries.forEach(entry => {
-    jurnalSheet.appendRow([
-      jurnalId + '-' + Math.random().toString(36).substr(2, 9),
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const ss = getErpSpreadsheet_();
+    const transaksiSheet = ss.getSheetByName('BUKU_KAS') || ss.insertSheet('BUKU_KAS');
+    const jurnalSheet = ss.getSheetByName('JURNAL') || ss.insertSheet('JURNAL');
+
+    const cashHeaders = ensureSheetHeaders_(transaksiSheet, [
+      'id', 'tanggal', 'no_ref', 'kode_bukti', 'keterangan', 'kategori',
+      'masuk', 'keluar', 'status_verifikasi', 'created_at', 'jenis', 'idempotency_key'
+    ]);
+    ensureSheetHeaders_(jurnalSheet, [
+      'id', 'transaksi_id', 'tanggal', 'akun_kode', 'akun_nama',
+      'debit', 'kredit', 'keterangan', 'created_at'
+    ]);
+
+    const idempotencyKey = String(data.idempotency_key || data.request_id || '').trim();
+    if (idempotencyKey) {
+      const existing = readSheetRecords('BUKU_KAS').find(record =>
+        String(record.idempotency_key || '') === idempotencyKey
+      );
+      if (existing) {
+        return { success: true, duplicate: true, transaksi_id: existing.id, message: 'Permintaan duplikat diabaikan.' };
+      }
+    }
+
+    const transactionDate = String(data.tanggal || '');
+    const description = String(data.keterangan || '').trim();
+    const amount = Number(data.jumlah);
+    const vat = data.ppn === undefined || data.ppn === null || data.ppn === '' ? 0 : Number(data.ppn);
+    const type = String(data.jenis || data.tipe || '').trim().toLowerCase().replace(/[ -]+/g, '_');
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(transactionDate) || isNaN(Date.parse(transactionDate))) {
+      throw new Error('Tanggal harus berformat YYYY-MM-DD.');
+    }
+    if (!description) throw new Error('Keterangan transaksi wajib diisi.');
+
+    const accountSheet = ss.getSheetByName('AKUN');
+    if (!accountSheet || accountSheet.getLastRow() < 2) {
+      throw new Error('Daftar akun kosong. Jalankan setupDatabase() terlebih dahulu.');
+    }
+    const accountRows = accountSheet.getDataRange().getValues();
+    const accountNames = {};
+    for (let i = 1; i < accountRows.length; i++) accountNames[String(accountRows[i][0])] = String(accountRows[i][1]);
+
+    const journalEntries = generateJurnalDoubleEntry({
+      ...data,
+      tanggal: transactionDate,
+      keterangan: description,
+      jenis: type,
+      jumlah: amount,
+      ppn: vat
+    });
+    if (!journalEntries.length || journalEntries.length < 2) throw new Error('Transaksi tidak menghasilkan jurnal yang lengkap.');
+
+    let totalDebit = 0;
+    let totalKredit = 0;
+    journalEntries.forEach(entry => {
+      if (!accountNames[entry.akun_kode]) throw new Error('Akun tidak ditemukan: ' + entry.akun_kode + '. Jalankan setupDatabase().');
+      if (!isFinite(entry.debit) || !isFinite(entry.kredit) || entry.debit < 0 || entry.kredit < 0 ||
+          (entry.debit > 0 && entry.kredit > 0)) {
+        throw new Error('Baris jurnal tidak valid untuk akun ' + entry.akun_kode);
+      }
+      totalDebit += entry.debit;
+      totalKredit += entry.kredit;
+      entry.akun_nama = accountNames[entry.akun_kode];
+    });
+    if (Math.abs(totalDebit - totalKredit) > 0.005 || totalDebit <= 0) {
+      throw new Error('Jurnal tidak balance. Debit=' + totalDebit + ', Kredit=' + totalKredit);
+    }
+
+    const transaksiId = 'TRX-' + Utilities.getUuid();
+    const jurnalId = 'JRN-' + Utilities.getUuid();
+    const gross = (Number(data.jumlah) || 0) + vat;
+    let cashIn = 0;
+    let cashOut = 0;
+    if (type === 'penjualan_tunai' || type === 'terima_pembayaran_piutang' || type === 'pembayaran_piutang' || type === 'penerimaan_kas') {
+      cashIn = type === 'penjualan_tunai' ? gross : amount;
+    } else if (type === 'pembelian_tunai') {
+      cashOut = gross;
+    } else if (type === 'bayar_utang' || type === 'pembayaran_utang' || type === 'beban_operasional' || type === 'catat_beban' || type === 'pengeluaran_kas') {
+      cashOut = amount;
+    } else if (!type && Number(data.masuk || 0) > 0) {
+      cashIn = Number(data.masuk);
+    } else if (!type && Number(data.keluar || 0) > 0) {
+      cashOut = Number(data.keluar);
+    }
+
+    const cashRow = new Array(cashHeaders.length).fill('');
+    const cashRecord = {
+      id: transaksiId,
+      tanggal: transactionDate,
+      no_ref: String(data.referensi || data.no_ref || transaksiId),
+      kode_bukti: String(data.kode_bukti || ''),
+      keterangan: description,
+      kategori: String(data.kategori || type || 'Operasional'),
+      masuk: cashIn,
+      keluar: cashOut,
+      status_verifikasi: String(data.status_verifikasi || 'MENUNGGU_VERIFIKASI'),
+      created_at: new Date().toISOString(),
+      jenis: type || 'legacy',
+      idempotency_key: idempotencyKey
+    };
+    cashHeaders.forEach((header, index) => cashRow[index] = cashRecord[header] === undefined ? '' : cashRecord[header]);
+
+    const timestamp = new Date().toISOString();
+    const journalRows = journalEntries.map((entry, index) => [
+      jurnalId + '-' + String(index + 1).padStart(3, '0'),
       transaksiId,
-      data.tanggal,
+      transactionDate,
       entry.akun_kode,
       entry.akun_nama,
       entry.debit,
       entry.kredit,
-      entry.keterangan || data.keterangan,
-      new Date().toISOString()
+      entry.keterangan || description,
+      timestamp
     ]);
-  });
-  
-  // Log ke audit trail
-  logAudit('CREATE', 'BUKU_KAS', transaksiId, '-', `Transaksi: ${data.keterangan} - ${data.masuk || data.keluar}`);
-  
-  return {
-    success: true,
-    transaksi_id: transaksiId,
-    jurnal_id: jurnalId,
-    jurnal_entries: jurnalEntries.length,
-    message: 'Transaksi dan jurnal berhasil disimpan'
-  };
+
+    const startTransactionRow = transaksiSheet.getLastRow() + 1;
+    const startJournalRow = jurnalSheet.getLastRow() + 1;
+    try {
+      transaksiSheet.getRange(startTransactionRow, 1, 1, cashRow.length).setValues([cashRow]);
+      jurnalSheet.getRange(startJournalRow, 1, journalRows.length, journalRows[0].length).setValues(journalRows);
+    } catch (writeError) {
+      if (transaksiSheet.getLastRow() >= startTransactionRow &&
+          transaksiSheet.getRange(startTransactionRow, 1).getValue() === transaksiId) {
+        transaksiSheet.deleteRow(startTransactionRow);
+      }
+      if (jurnalSheet.getLastRow() >= startJournalRow &&
+          jurnalSheet.getRange(startJournalRow, 2).getValue() === transaksiId) {
+        jurnalSheet.deleteRows(startJournalRow, jurnalSheet.getLastRow() - startJournalRow + 1);
+      }
+      throw writeError;
+    }
+
+    logAudit('CREATE', 'BUKU_KAS', transaksiId, '-', JSON.stringify({
+      jenis: type, keterangan: description, jumlah: amount, ppn: vat,
+      total_debit: totalDebit, total_kredit: totalKredit
+    }));
+
+    return {
+      success: true,
+      transaksi_id: transaksiId,
+      jurnal_id: jurnalId,
+      jurnal_entries: journalEntries.length,
+      total_debit: totalDebit,
+      total_kredit: totalKredit,
+      message: 'Transaksi dan jurnal berhasil disimpan'
+    };
+  } finally {
+    lock.releaseLock();
+  }
 }
+
+
 
 /**
  * Generate jurnal double-entry dari transaksi
  */
 function generateJurnalDoubleEntry(transaksi) {
-  const entries = [];
-  const masuk = transaksi.masuk || 0;
-  const keluar = transaksi.keluar || 0;
-  
-  if (masuk > 0) {
-    // Penerimaan kas
-    entries.push({
-      akun_kode: '1-1001',
-      akun_nama: 'Kas',
-      debit: masuk,
-      kredit: 0,
-      keterangan: transaksi.keterangan
-    });
-    
-    // Sumber penerimaan
-    entries.push({
-      akun_kode: transaksi.sumber_akun || '4-1001',
-      akun_nama: transaksi.sumber_nama || 'Pendapatan',
-      debit: 0,
-      kredit: masuk,
-      keterangan: transaksi.keterangan
-    });
+  const amount = Number(transaksi.jumlah);
+  const ppn = transaksi.ppn === undefined || transaksi.ppn === null || transaksi.ppn === '' ? 0 : Number(transaksi.ppn);
+  const type = String(transaksi.jenis || transaksi.tipe || '').trim().toLowerCase().replace(/[ -]+/g, '_');
+  const description = String(transaksi.keterangan || '').trim();
+
+  const add = (kode, debit, kredit, keterangan) => ({
+    akun_kode: kode, akun_nama: '', debit, kredit, keterangan: keterangan || description
+  });
+
+  // Support legacy cashbook payloads as well as the seven guided transaction types.
+  if (!type) {
+    const cashIn = Number(transaksi.masuk || 0);
+    const cashOut = Number(transaksi.keluar || 0);
+    if ((cashIn > 0) === (cashOut > 0)) throw new Error('Isi tepat satu nilai positif: masuk atau keluar.');
+    if (cashIn > 0) return [
+      add('1-1001', cashIn, 0),
+      add(String(transaksi.sumber_akun || '4-1001'), 0, cashIn)
+    ];
+    return [
+      add(String(transaksi.beban_akun || '5-2008'), cashOut, 0),
+      add('1-1001', 0, cashOut)
+    ];
   }
-  
-  if (keluar > 0) {
-    // Pengeluaran kas
-    entries.push({
-      akun_kode: transaksi.beban_akun || '5-2008',
-      akun_nama: transaksi.beban_nama || 'Beban',
-      debit: keluar,
-      kredit: 0,
-      keterangan: transaksi.keterangan
-    });
-    
-    entries.push({
-      akun_kode: '1-1001',
-      akun_nama: 'Kas',
-      debit: 0,
-      kredit: keluar,
-      keterangan: transaksi.keterangan
-    });
+
+  if (!isFinite(amount) || amount <= 0) throw new Error('Jumlah transaksi harus lebih besar dari nol.');
+  if (!isFinite(ppn) || ppn < 0) throw new Error('PPN harus bernilai nol atau lebih.');
+  if (ppn > 0 && !['penjualan_tunai','penjualan_kredit','pembelian_tunai','pembelian_kredit'].includes(type)) {
+    throw new Error('PPN hanya dapat diisi pada penjualan/pembelian.');
   }
-  
-  return entries;
+
+  switch (type) {
+    case 'penjualan_tunai':
+      return [
+        add('1-1001', amount + ppn, 0),
+        add('4-1001', 0, amount),
+        ...(ppn > 0 ? [add('2-1003', 0, ppn)] : [])
+      ];
+    case 'penjualan_kredit':
+      if (!String(transaksi.pihak || '').trim()) throw new Error('Nama pelanggan wajib diisi untuk penjualan kredit.');
+      return [
+        add('1-1003', amount + ppn, 0),
+        add('4-1001', 0, amount),
+        ...(ppn > 0 ? [add('2-1003', 0, ppn)] : [])
+      ];
+    case 'pembelian_tunai':
+      return [
+        add('1-1004', amount, 0),
+        ...(ppn > 0 ? [add('1-1006', ppn, 0)] : []),
+        add('1-1001', 0, amount + ppn)
+      ];
+    case 'pembelian_kredit':
+      if (!String(transaksi.pihak || '').trim()) throw new Error('Nama supplier wajib diisi untuk pembelian kredit.');
+      return [
+        add('1-1004', amount, 0),
+        ...(ppn > 0 ? [add('1-1006', ppn, 0)] : []),
+        add('2-1001', 0, amount + ppn)
+      ];
+    case 'terima_pembayaran_piutang':
+    case 'pembayaran_piutang':
+      if (!String(transaksi.pihak || '').trim()) throw new Error('Nama pelanggan wajib diisi untuk penerimaan piutang.');
+      return [add('1-1001', amount, 0), add('1-1003', 0, amount)];
+    case 'bayar_utang':
+    case 'pembayaran_utang':
+      if (!String(transaksi.pihak || '').trim()) throw new Error('Nama supplier wajib diisi untuk pembayaran utang.');
+      return [add('2-1001', amount, 0), add('1-1001', 0, amount)];
+    case 'beban_operasional':
+    case 'catat_beban':
+      return [
+        add(String(transaksi.akunBeban || transaksi.akun_beban || transaksi.beban_akun || '5-2008'), amount, 0),
+        add('1-1001', 0, amount)
+      ];
+    default:
+      throw new Error('Jenis transaksi belum didukung: ' + type);
+  }
 }
+
+
 
 // ============ REVERSAL FUNCTIONS ============
 
@@ -508,7 +713,7 @@ function handleReversal(data) {
   const transaksiId = data.transaksi_id;
   const alasan = data.alasan || 'Reversal';
   
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getErpSpreadsheet_();
   const jurnalSheet = ss.getSheetByName('JURNAL');
   
   if (!jurnalSheet) {
@@ -518,6 +723,9 @@ function handleReversal(data) {
   // Cari jurnal original
   const jurnalData = jurnalSheet.getDataRange().getValues();
   const originalEntries = jurnalData.filter(row => row[1] === transaksiId);
+  if (jurnalData.some(row => row[1] === transaksiId + '-REVERSAL')) {
+    throw new Error('Transaksi ini sudah dibalik. Reversal kedua ditolak untuk mencegah saldo ganda.');
+  }
   
   if (originalEntries.length === 0) {
     throw new Error('Transaksi tidak ditemukan');
@@ -570,7 +778,7 @@ function handleReversal(data) {
  * Generate laporan Laba Rugi
  */
 function generateLabaRugi() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getErpSpreadsheet_();
   const jurnalSheet = ss.getSheetByName('JURNAL');
   
   if (!jurnalSheet || jurnalSheet.getLastRow() === 0) {
@@ -608,7 +816,7 @@ function generateLabaRugi() {
  * Generate laporan Neraca
  */
 function generateNeraca() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getErpSpreadsheet_();
   const jurnalSheet = ss.getSheetByName('JURNAL');
   
   if (!jurnalSheet || jurnalSheet.getLastRow() === 0) {
@@ -654,7 +862,7 @@ function generateNeraca() {
  * Get saldo kas
  */
 function getSaldoKas() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getErpSpreadsheet_();
   const jurnalSheet = ss.getSheetByName('JURNAL');
   
   if (!jurnalSheet || jurnalSheet.getLastRow() === 0) {
@@ -683,7 +891,7 @@ function getSaldoKas() {
  * Log aktivitas ke audit trail
  */
 function logAudit(aksi, tabel, recordId, nilaiLama, nilaiBaru) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getErpSpreadsheet_();
   let sheet = ss.getSheetByName('AUDIT_LOG');
   
   if (!sheet) {
@@ -712,62 +920,80 @@ function logAudit(aksi, tabel, recordId, nilaiLama, nilaiBaru) {
  * Setup database sheets (jalankan sekali)
  */
 function setupDatabase() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getErpSpreadsheet_();
   
-  // Sheet BUKU_KAS
-  let sheet = ss.getSheetByName('BUKU_KAS');
-  if (!sheet) {
-    sheet = ss.insertSheet('BUKU_KAS');
-    sheet.appendRow(['id', 'tanggal', 'no_ref', 'kode_bukti', 'keterangan', 'kategori', 'masuk', 'keluar', 'status_verifikasi', 'created_at']);
+  // Sheets use stable headers; append new columns to existing databases without overwriting rows.
+  let sheet = ss.getSheetByName('BUKU_KAS') || ss.insertSheet('BUKU_KAS');
+  ensureSheetHeaders_(sheet, [
+    'id', 'tanggal', 'no_ref', 'kode_bukti', 'keterangan', 'kategori',
+    'masuk', 'keluar', 'status_verifikasi', 'created_at', 'jenis', 'idempotency_key'
+  ]);
+
+  sheet = ss.getSheetByName('JURNAL') || ss.insertSheet('JURNAL');
+  ensureSheetHeaders_(sheet, [
+    'id', 'transaksi_id', 'tanggal', 'akun_kode', 'akun_nama',
+    'debit', 'kredit', 'keterangan', 'created_at', 'status'
+  ]);
+
+  sheet = ss.getSheetByName('ARSIP_BUKTI') || ss.insertSheet('ARSIP_BUKTI');
+  ensureSheetHeaders_(sheet, [
+    'id', 'kode_bukti', 'jenis', 'link_drive', 'tgl_upload',
+    'terverifikasi', 'catatan_audit', 'penerima', 'nominal',
+    'keterangan', 'confidence', 'created_at'
+  ]);
+
+  sheet = ss.getSheetByName('AUDIT_LOG') || ss.insertSheet('AUDIT_LOG');
+  ensureSheetHeaders_(sheet, [
+    'id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id',
+    'nilai_lama', 'nilai_baru', 'alasan'
+  ]);
+
+  const accountSheet = ss.getSheetByName('AKUN') || ss.insertSheet('AKUN');
+  ensureSheetHeaders_(accountSheet, ['kode', 'nama', 'tipe', 'kategori', 'saldo_normal']);
+  const defaultAkun = [
+    ['1-1001', 'Kas', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1002', 'Bank', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1003', 'Piutang Usaha', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1004', 'Persediaan Barang', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1005', 'Biaya Dibayar Dimuka', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1006', 'PPN Masukan', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1007', 'Persediaan Tanah & Properti untuk Dijual', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-1008', 'Proyek dalam Pengerjaan (WIP)', 'Aset', 'Aset Lancar', 'Debit'],
+    ['1-2001', 'Peralatan', 'Aset', 'Aset Tetap', 'Debit'],
+    ['1-2002', 'Kendaraan', 'Aset', 'Aset Tetap', 'Debit'],
+    ['1-2003', 'Bangunan', 'Aset', 'Aset Tetap', 'Debit'],
+    ['1-2004', 'Akumulasi Penyusutan', 'Aset', 'Aset Tetap', 'Kredit'],
+    ['2-1001', 'Utang Usaha', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
+    ['2-1002', 'Utang Bank', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
+    ['2-1003', 'Utang Pajak', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
+    ['2-1004', 'Pendapatan Diterima Dimuka', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
+    ['2-2001', 'Utang Jangka Panjang', 'Kewajiban', 'Kewajiban Jangka Panjang', 'Kredit'],
+    ['3-1001', 'Modal Pemilik', 'Ekuitas', 'Ekuitas', 'Kredit'],
+    ['3-1002', 'Laba Ditahan', 'Ekuitas', 'Ekuitas', 'Kredit'],
+    ['3-1003', 'Prive', 'Ekuitas', 'Ekuitas', 'Debit'],
+    ['4-1001', 'Pendapatan Penjualan', 'Pendapatan', 'Pendapatan Usaha', 'Kredit'],
+    ['4-1002', 'Pendapatan Jasa', 'Pendapatan', 'Pendapatan Usaha', 'Kredit'],
+    ['4-1003', 'Pendapatan Lain-lain', 'Pendapatan', 'Pendapatan Non-Usaha', 'Kredit'],
+    ['5-1001', 'Harga Pokok Penjualan', 'Beban', 'Beban Langsung', 'Debit'],
+    ['5-2001', 'Beban Gaji', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2002', 'Beban Sewa', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2003', 'Beban Listrik & Air', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2004', 'Beban Telepon & Internet', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2005', 'Beban Transportasi', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2006', 'Beban Perlengkapan', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2007', 'Beban Penyusutan', 'Beban', 'Beban Operasional', 'Debit'],
+    ['5-2008', 'Beban Lain-lain', 'Beban', 'Beban Operasional', 'Debit']
+  ];
+  const existingAccountCodes = new Set(
+    accountSheet.getLastRow() > 1
+      ? accountSheet.getRange(2, 1, accountSheet.getLastRow() - 1, 1).getValues().flat().map(String)
+      : []
+  );
+  const missingAccounts = defaultAkun.filter(account => !existingAccountCodes.has(account[0]));
+  if (missingAccounts.length) {
+    accountSheet.getRange(accountSheet.getLastRow() + 1, 1, missingAccounts.length, defaultAkun[0].length).setValues(missingAccounts);
   }
-  
-  // Sheet JURNAL
-  sheet = ss.getSheetByName('JURNAL');
-  if (!sheet) {
-    sheet = ss.insertSheet('JURNAL');
-    sheet.appendRow(['id', 'transaksi_id', 'tanggal', 'akun_kode', 'akun_nama', 'debit', 'kredit', 'keterangan', 'created_at']);
-  }
-  
-  // Sheet ARSIP_BUKTI
-  sheet = ss.getSheetByName('ARSIP_BUKTI');
-  if (!sheet) {
-    sheet = ss.insertSheet('ARSIP_BUKTI');
-    sheet.appendRow(['id', 'kode_bukti', 'jenis', 'link_drive', 'tgl_upload', 'terverifikasi', 'catatan_audit', 'penerima', 'nominal', 'keterangan', 'confidence', 'created_at']);
-  }
-  
-  // Sheet AUDIT_LOG
-  sheet = ss.getSheetByName('AUDIT_LOG');
-  if (!sheet) {
-    sheet = ss.insertSheet('AUDIT_LOG');
-    sheet.appendRow(['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan']);
-  }
-  
-  // Sheet AKUN (Chart of Accounts)
-  sheet = ss.getSheetByName('AKUN');
-  if (!sheet) {
-    sheet = ss.insertSheet('AKUN');
-    sheet.appendRow(['kode', 'nama', 'tipe', 'kategori', 'saldo_normal']);
-    
-    // Insert default accounts
-    const defaultAkun = [
-      ['1-1001', 'Kas', 'Aset', 'Aset Lancar', 'Debit'],
-      ['1-1002', 'Bank', 'Aset', 'Aset Lancar', 'Debit'],
-      ['1-1003', 'Piutang Usaha', 'Aset', 'Aset Lancar', 'Debit'],
-      ['2-1001', 'Utang Usaha', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
-      ['2-1003', 'Utang Pajak', 'Kewajiban', 'Kewajiban Jangka Pendek', 'Kredit'],
-      ['3-1001', 'Modal Pemilik', 'Ekuitas', 'Ekuitas', 'Kredit'],
-      ['3-1002', 'Laba Ditahan', 'Ekuitas', 'Ekuitas', 'Kredit'],
-      ['4-1001', 'Pendapatan Penjualan', 'Pendapatan', 'Pendapatan Usaha', 'Kredit'],
-      ['4-1002', 'Pendapatan Jasa', 'Pendapatan', 'Pendapatan Usaha', 'Kredit'],
-      ['5-1001', 'Harga Pokok Penjualan', 'Beban', 'Beban Langsung', 'Debit'],
-      ['5-2001', 'Beban Gaji', 'Beban', 'Beban Operasional', 'Debit'],
-      ['5-2002', 'Beban Sewa', 'Beban', 'Beban Operasional', 'Debit'],
-      ['5-2008', 'Beban Lain-lain', 'Beban', 'Beban Operasional', 'Debit'],
-    ];
-    
-    defaultAkun.forEach(akun => sheet.appendRow(akun));
-  }
-  
+
   return 'Database setup complete!';
 }
 

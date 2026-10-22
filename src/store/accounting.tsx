@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useReducer, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, ReactNode } from 'react';
 import { Akun, JurnalUmum, Invoice, PurchaseOrder, RAB, Schedule } from '../types/accounting';
-import { initialAkun, initialJurnal, initialInvoice, initialPO, initialRAB, initialSchedule } from '../data/accounting';
+import { initialAkun } from '../data/accounting';
 
 interface AccountingState {
   akun: Akun[];
@@ -56,14 +56,49 @@ function accountingReducer(state: AccountingState, action: Action): AccountingSt
   }
 }
 
-const initialState: AccountingState = {
-  akun: initialAkun,
-  jurnal: initialJurnal,
-  invoice: initialInvoice,
-  purchaseOrder: initialPO,
-  rab: initialRAB,
-  schedule: initialSchedule,
-};
+const STORAGE_KEY = 'abiedien.erp.accounting.v1';
+
+function loadInitialState(): AccountingState {
+  const emptyState: AccountingState = {
+    akun: initialAkun,
+    jurnal: [],
+    invoice: [],
+    purchaseOrder: [],
+    rab: [],
+    schedule: [],
+  };
+
+  if (typeof window === 'undefined') return emptyState;
+
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return emptyState;
+    const saved = JSON.parse(raw) as Partial<AccountingState>;
+    const accountsAreValid = Array.isArray(saved.akun) &&
+      saved.akun.every((account) => account && typeof account.kode === 'string' && typeof account.tipe === 'string');
+
+    return {
+      akun: accountsAreValid && saved.akun!.length > 0 ? saved.akun! : initialAkun,
+      jurnal: Array.isArray(saved.jurnal) ? saved.jurnal : [],
+      invoice: Array.isArray(saved.invoice) ? saved.invoice : [],
+      purchaseOrder: Array.isArray(saved.purchaseOrder) ? saved.purchaseOrder : [],
+      rab: Array.isArray(saved.rab) ? saved.rab.filter((record: RAB) => !(
+        record.id === 'RAB-001' &&
+        record.nama_proyek === 'Pembangunan Gudang' &&
+        record.tanggal === '2026-01-01' &&
+        record.total_biaya === 23000000 &&
+        record.items?.length === 5 &&
+        record.items[0]?.deskripsi === 'Semen'
+      )) : [],
+      schedule: Array.isArray(saved.schedule) ? saved.schedule : [],
+    };
+  } catch (error) {
+    console.error('Tidak dapat membaca data akuntansi tersimpan; menggunakan data kosong.', error);
+    return emptyState;
+  }
+}
+
+
 
 const AccountingContext = createContext<{
   state: AccountingState;
@@ -71,7 +106,15 @@ const AccountingContext = createContext<{
 } | null>(null);
 
 export function AccountingProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(accountingReducer, initialState);
+  const [state, dispatch] = useReducer(accountingReducer, undefined, loadInitialState);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (error) {
+      console.error('Gagal menyimpan data akuntansi ke browser. Export backup data sesegera mungkin.', error);
+    }
+  }, [state]);
   return (
     <AccountingContext.Provider value={{ state, dispatch }}>
       {children}

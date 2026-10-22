@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAccounting } from '../store/accounting';
-import { formatRupiah, generateId } from '../data/accounting';
+import { formatRupiah, generateId, getLocalDateISO } from '../data/accounting';
+import { parseRupiah, isValidRupiah } from '../utils/numberParser';
 import { 
   generateJurnalPenjualanTunai, 
   generateJurnalPenjualanKredit,
@@ -29,38 +30,64 @@ export default function InputTransaksiPage() {
   const [previewJurnal, setPreviewJurnal] = useState<JurnalUmum | null>(null);
 
   // Form state
-  const [tanggal, setTanggal] = useState(new Date().toISOString().split('T')[0]);
+  const [tanggal, setTanggal] = useState(getLocalDateISO());
   const [keterangan, setKeterangan] = useState('');
-  const [jumlah, setJumlah] = useState(0);
-  const [ppn, setPpn] = useState(0);
+  const [jumlahInput, setJumlahInput] = useState('');
+  const jumlah = parseRupiah(jumlahInput);
+  const [ppnInput, setPpnInput] = useState('');
+  const ppn = parseRupiah(ppnInput);
   const [pihak, setPihak] = useState('');
   const [akunBeban, setAkunBeban] = useState('5-2008');
 
   const handleGeneratePreview = () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tanggal)) {
+      alert('Tanggal transaksi wajib diisi dengan benar.');
+      return;
+    }
+    if (!keterangan.trim()) {
+      alert('Keterangan transaksi wajib diisi.');
+      return;
+    }
+    if (!jumlahInput.trim() || !isValidRupiah(jumlahInput) || !Number.isFinite(jumlah) || jumlah <= 0) {
+      alert('Jumlah harus berupa nominal rupiah yang valid dan lebih besar dari nol. Contoh: 750.000.');
+      return;
+    }
+    if (ppnInput.trim() && (!isValidRupiah(ppnInput) || !Number.isFinite(ppn) || ppn < 0)) {
+      alert('PPN tidak valid. Gunakan format seperti 125.000 atau kosongkan jika tidak ada.');
+      return;
+    }
+    if (['penjualan_kredit', 'pembelian_kredit', 'pembayaran_piutang', 'pembayaran_utang'].includes(jenisTransaksi) && !pihak.trim()) {
+      alert('Nama pelanggan atau supplier wajib diisi untuk transaksi kredit/pembayaran.');
+      return;
+    }
+
+    const keteranganTransaksi = pihak.trim()
+      ? `${keterangan.trim()} - ${pihak.trim()}`
+      : keterangan.trim();
     let jurnalData;
 
     switch (jenisTransaksi) {
       case 'penjualan_tunai':
-        jurnalData = generateJurnalPenjualanTunai(tanggal, keterangan, jumlah, ppn);
+        jurnalData = generateJurnalPenjualanTunai(tanggal, keteranganTransaksi, jumlah, ppn);
         break;
       case 'penjualan_kredit':
-        jurnalData = generateJurnalPenjualanKredit(tanggal, keterangan, jumlah, ppn);
+        jurnalData = generateJurnalPenjualanKredit(tanggal, keteranganTransaksi, jumlah, ppn);
         break;
       case 'pembelian_tunai':
-        jurnalData = generateJurnalPembelianTunai(tanggal, keterangan, jumlah, ppn);
+        jurnalData = generateJurnalPembelianTunai(tanggal, keteranganTransaksi, jumlah, ppn);
         break;
       case 'pembelian_kredit':
-        jurnalData = generateJurnalPembelianKredit(tanggal, keterangan, jumlah, ppn);
+        jurnalData = generateJurnalPembelianKredit(tanggal, keteranganTransaksi, jumlah, ppn);
         break;
       case 'pembayaran_piutang':
-        jurnalData = generateJurnalPembayaranPiutang(tanggal, keterangan, jumlah);
+        jurnalData = generateJurnalPembayaranPiutang(tanggal, keteranganTransaksi, jumlah);
         break;
       case 'pembayaran_utang':
-        jurnalData = generateJurnalPembayaranUtang(tanggal, keterangan, jumlah);
+        jurnalData = generateJurnalPembayaranUtang(tanggal, keteranganTransaksi, jumlah);
         break;
       case 'beban_operasional':
         const akun = state.akun.find(a => a.kode === akunBeban);
-        jurnalData = generateJurnalBeban(tanggal, keterangan, akunBeban, akun?.nama || '', jumlah);
+        jurnalData = generateJurnalBeban(tanggal, keteranganTransaksi, akunBeban, akun?.nama || '', jumlah);
         break;
       default:
         return;
@@ -81,12 +108,28 @@ export default function InputTransaksiPage() {
 
   const handleSave = () => {
     if (previewJurnal) {
-      dispatch({ type: 'ADD_JURNAL', payload: { ...previewJurnal, status: 'Posted' } });
+      const totalDebit = previewJurnal.entries.reduce((sum, entry) => sum + entry.debit, 0);
+      const totalKredit = previewJurnal.entries.reduce((sum, entry) => sum + entry.kredit, 0);
+      const validEntries = previewJurnal.entries.length >= 2 && previewJurnal.entries.every(entry =>
+        state.akun.some(account => account.kode === entry.akun_kode) &&
+        Number.isFinite(entry.debit) && Number.isFinite(entry.kredit) &&
+        entry.debit >= 0 && entry.kredit >= 0 &&
+        !(entry.debit > 0 && entry.kredit > 0)
+      );
+      if (!validEntries || Math.abs(totalDebit - totalKredit) > 0.005 || totalDebit <= 0) {
+        alert('Jurnal tidak valid atau tidak balance. Transaksi tidak disimpan.');
+        return;
+      }
+      if (state.jurnal.some(jurnal => jurnal.id === previewJurnal.id)) {
+        alert('ID jurnal duplikat. Buat preview ulang sebelum menyimpan.');
+        return;
+      }
+      dispatch({ type: 'ADD_JURNAL', payload: { ...previewJurnal, total_debit: totalDebit, total_kredit: totalKredit, status: 'Posted' } });
       alert('Transaksi berhasil disimpan!');
       // Reset form
       setKeterangan('');
-      setJumlah(0);
-      setPpn(0);
+      setJumlahInput('');
+      setPpnInput('');
       setPihak('');
       setShowPreview(false);
       setPreviewJurnal(null);
@@ -194,9 +237,10 @@ export default function InputTransaksiPage() {
           <div>
             <label className="text-sm font-medium text-gray-700">Jumlah (Rp) *</label>
             <input
-              type="number"
-              value={jumlah || ''}
-              onChange={e => setJumlah(Number(e.target.value))}
+              type="text"
+              inputMode="decimal"
+              value={jumlahInput}
+              onChange={e => setJumlahInput(e.target.value)}
               placeholder="0"
               className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
             />
@@ -207,9 +251,10 @@ export default function InputTransaksiPage() {
             <div>
               <label className="text-sm font-medium text-gray-700">PPN (Rp)</label>
               <input
-                type="number"
-                value={ppn || ''}
-                onChange={e => setPpn(Number(e.target.value))}
+                type="text"
+                inputMode="decimal"
+                value={ppnInput}
+                onChange={e => setPpnInput(e.target.value)}
                 placeholder="0"
                 className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
               />

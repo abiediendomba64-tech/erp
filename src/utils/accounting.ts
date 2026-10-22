@@ -103,15 +103,15 @@ export function generateJurnalPembelianTunai(
     entries: [
       {
         id: `E-${Date.now()}-1`,
-        akun_kode: '5-1001',
-        akun_nama: 'Harga Pokok Penjualan',
+        akun_kode: '1-1004',
+        akun_nama: 'Persediaan Barang',
         debit: jumlah,
         kredit: 0,
       },
       ...(ppn > 0 ? [{
         id: `E-${Date.now()}-2`,
-        akun_kode: '1-1005',
-        akun_nama: 'Biaya Dibayar Dimuka',
+        akun_kode: '1-1006',
+        akun_nama: 'PPN Masukan',
         debit: ppn,
         kredit: 0,
       }] : []),
@@ -145,15 +145,15 @@ export function generateJurnalPembelianKredit(
     entries: [
       {
         id: `E-${Date.now()}-1`,
-        akun_kode: '5-1001',
-        akun_nama: 'Harga Pokok Penjualan',
+        akun_kode: '1-1004',
+        akun_nama: 'Persediaan Barang',
         debit: jumlah,
         kredit: 0,
       },
       ...(ppn > 0 ? [{
         id: `E-${Date.now()}-2`,
-        akun_kode: '1-1005',
-        akun_nama: 'Biaya Dibayar Dimuka',
+        akun_kode: '1-1006',
+        akun_nama: 'PPN Masukan',
         debit: ppn,
         kredit: 0,
       }] : []),
@@ -314,164 +314,186 @@ export function generateBukuBesar(akun: Akun, journals: JurnalUmum[]): BukuBesar
 
 // ============ GENERATE LAPORAN KEUANGAN ============
 
+function isValidPeriod(period: string): boolean {
+  return /^\d{4}-\d{2}$/.test(period) || /^\d{4}$/.test(period);
+}
+
+function journalMatchesPeriod(journalDate: string, period: string): boolean {
+  const date = String(journalDate || '').slice(0, 10);
+  if (/^\d{4}-\d{2}$/.test(period)) return date.slice(0, 7) === period;
+  if (/^\d{4}$/.test(period)) return date.slice(0, 4) === period;
+  return false;
+}
+
+function postedJournals(journals: JurnalUmum[]): JurnalUmum[] {
+  return journals.filter(journal => journal.status === 'Posted');
+}
+
+function journalBeforeDate(journal: JurnalUmum, date: string): boolean {
+  const journalDate = String(journal.tanggal || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(journalDate) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(date) && journalDate <= date;
+}
+
+function accountNormalMovement(account: Akun, entry: JurnalEntry): number {
+  return account.saldo_normal === 'Debit'
+    ? entry.debit - entry.kredit
+    : entry.kredit - entry.debit;
+}
+
+// Converts a normal-side balance to the sign used on financial statements.
+// Contra-assets and debit-balance equity items (for example Prive) reduce totals.
+function statementSign(account: Akun): number {
+  const debitNormalStatementTypes = account.tipe === 'Aset' || account.tipe === 'Beban';
+  const normalSideIncreasesStatement = debitNormalStatementTypes
+    ? account.saldo_normal === 'Debit'
+    : account.saldo_normal === 'Kredit';
+  return normalSideIncreasesStatement ? 1 : -1;
+}
+
+function statementBalance(account: Akun, normalBalance: number): number {
+  return normalBalance * statementSign(account);
+}
+
+function calculateProfitLoss(akunList: Akun[], journals: JurnalUmum[]) {
+  const accountsByCode = new Map(akunList.map(account => [account.kode, account]));
+  const normalBalances = new Map<string, number>();
+
+  postedJournals(journals).forEach(journal => {
+    journal.entries.forEach(entry => {
+      const account = accountsByCode.get(entry.akun_kode);
+      if (!account) return;
+      normalBalances.set(
+        account.kode,
+        (normalBalances.get(account.kode) || 0) + accountNormalMovement(account, entry)
+      );
+    });
+  });
+
+  const pendapatan = akunList
+    .filter(account => account.tipe === 'Pendapatan')
+    .map(account => ({
+      akun: account.nama,
+      jumlah: statementBalance(account, normalBalances.get(account.kode) || 0),
+    }))
+    .filter(item => item.jumlah !== 0);
+
+  const beban = akunList
+    .filter(account => account.tipe === 'Beban')
+    .map(account => ({
+      akun: account.nama,
+      jumlah: statementBalance(account, normalBalances.get(account.kode) || 0),
+    }))
+    .filter(item => item.jumlah !== 0);
+
+  const total_pendapatan = pendapatan.reduce((sum, item) => sum + item.jumlah, 0);
+  const total_beban = beban.reduce((sum, item) => sum + item.jumlah, 0);
+
+  return {
+    pendapatan,
+    total_pendapatan,
+    beban,
+    total_beban,
+    laba_bersih: total_pendapatan - total_beban,
+  };
+}
+
 /**
- * Generate Laporan Laba Rugi
+ * Laporan laba rugi hanya memakai jurnal Posted pada periode yang dipilih.
+ * Period menerima format YYYY-MM (bulanan) atau YYYY (tahunan).
  */
 export function generateLabaRugi(
   akunList: Akun[],
   journals: JurnalUmum[],
   periode: string
 ): LabaRugi {
-  // Hitung saldo setiap akun dari jurnal
-  const saldoAkun = new Map<string, number>();
-  
-  journals
-    .filter(j => j.status === 'Posted')
-    .forEach(j => {
-      j.entries.forEach(e => {
-        const current = saldoAkun.get(e.akun_kode) || 0;
-        const akun = akunList.find(a => a.kode === e.akun_kode);
-        if (akun) {
-          if (akun.saldo_normal === 'Debit') {
-            saldoAkun.set(e.akun_kode, current + e.debit - e.kredit);
-          } else {
-            saldoAkun.set(e.akun_kode, current - e.debit + e.kredit);
-          }
-        }
-      });
-    });
+  const selected = isValidPeriod(periode)
+    ? postedJournals(journals).filter(journal => journalMatchesPeriod(journal.tanggal, periode))
+    : [];
+  const result = calculateProfitLoss(akunList, selected);
 
-  // Pendapatan
-  const pendapatan = akunList
-    .filter(a => a.tipe === 'Pendapatan')
-    .map(a => ({
-      akun: a.nama,
-      jumlah: saldoAkun.get(a.kode) || 0,
-    }))
-    .filter(p => p.jumlah !== 0);
-
-  const totalPendapatan = pendapatan.reduce((sum, p) => sum + p.jumlah, 0);
-
-  // Beban
-  const beban = akunList
-    .filter(a => a.tipe === 'Beban')
-    .map(a => ({
-      akun: a.nama,
-      jumlah: saldoAkun.get(a.kode) || 0,
-    }))
-    .filter(b => b.jumlah !== 0);
-
-  const totalBeban = beban.reduce((sum, b) => sum + b.jumlah, 0);
-
-  return {
-    periode,
-    pendapatan,
-    total_pendapatan: totalPendapatan,
-    beban,
-    total_beban: totalBeban,
-    laba_bersih: totalPendapatan - totalBeban,
-  };
+  return { periode, ...result };
 }
 
 /**
- * Generate Neraca (Balance Sheet)
+ * Neraca adalah posisi saldo kumulatif sampai tanggal yang dipilih, bukan hanya
+ * transaksi pada bulan yang sedang dibuka.
  */
 export function generateNeraca(
   akunList: Akun[],
   journals: JurnalUmum[],
   tanggal: string
 ): Neraca {
-  // Hitung saldo setiap akun dari jurnal
-  const saldoAkun = new Map<string, number>();
-  
-  // Mulai dengan saldo awal
-  akunList.forEach(a => {
-    saldoAkun.set(a.kode, a.saldo);
-  });
-  
-  // Tambahkan dari jurnal
-  journals
-    .filter(j => j.status === 'Posted')
-    .forEach(j => {
-      j.entries.forEach(e => {
-        const current = saldoAkun.get(e.akun_kode) || 0;
-        const akun = akunList.find(a => a.kode === e.akun_kode);
-        if (akun) {
-          if (akun.saldo_normal === 'Debit') {
-            saldoAkun.set(e.akun_kode, current + e.debit - e.kredit);
-          } else {
-            saldoAkun.set(e.akun_kode, current - e.debit + e.kredit);
-          }
-        }
+  const asOfDate = String(tanggal || '').slice(0, 10);
+  const balances = new Map<string, number>();
+  const accountsByCode = new Map(akunList.map(account => [account.kode, account]));
+
+  akunList.forEach(account => balances.set(account.kode, account.saldo || 0));
+
+  postedJournals(journals)
+    .filter(journal => journalBeforeDate(journal, asOfDate))
+    .forEach(journal => {
+      journal.entries.forEach(entry => {
+        const account = accountsByCode.get(entry.akun_kode);
+        if (!account) return;
+        balances.set(
+          account.kode,
+          (balances.get(account.kode) || 0) + accountNormalMovement(account, entry)
+        );
       });
     });
 
-  // Aset Lancar
+  const amountFor = (account: Akun) => statementBalance(account, balances.get(account.kode) || 0);
+
   const asetLancar = akunList
-    .filter(a => a.tipe === 'Aset' && a.kategori === 'Aset Lancar')
-    .map(a => ({
-      akun: a.nama,
-      jumlah: saldoAkun.get(a.kode) || 0,
-    }))
-    .filter(a => a.jumlah !== 0);
+    .filter(account => account.tipe === 'Aset' && account.kategori === 'Aset Lancar')
+    .map(account => ({ akun: account.nama, jumlah: amountFor(account) }))
+    .filter(item => item.jumlah !== 0);
 
-  // Aset Tetap
   const asetTetap = akunList
-    .filter(a => a.tipe === 'Aset' && a.kategori === 'Aset Tetap')
-    .map(a => ({
-      akun: a.nama,
-      jumlah: saldoAkun.get(a.kode) || 0,
-    }))
-    .filter(a => a.jumlah !== 0);
+    .filter(account => account.tipe === 'Aset' && account.kategori === 'Aset Tetap')
+    .map(account => ({ akun: account.nama, jumlah: amountFor(account) }))
+    .filter(item => item.jumlah !== 0);
 
-  const totalAsetLancar = asetLancar.reduce((sum, a) => sum + a.jumlah, 0);
-  const totalAsetTetap = asetTetap.reduce((sum, a) => sum + a.jumlah, 0);
+  const totalAsetLancar = asetLancar.reduce((sum, item) => sum + item.jumlah, 0);
+  const totalAsetTetap = asetTetap.reduce((sum, item) => sum + item.jumlah, 0);
   const totalAset = totalAsetLancar + totalAsetTetap;
 
-  // Kewajiban Jangka Pendek
   const kewajibanJP = akunList
-    .filter(a => a.tipe === 'Kewajiban' && a.kategori === 'Kewajiban Jangka Pendek')
-    .map(a => ({
-      akun: a.nama,
-      jumlah: saldoAkun.get(a.kode) || 0,
-    }))
-    .filter(k => k.jumlah !== 0);
+    .filter(account => account.tipe === 'Kewajiban' && account.kategori === 'Kewajiban Jangka Pendek')
+    .map(account => ({ akun: account.nama, jumlah: amountFor(account) }))
+    .filter(item => item.jumlah !== 0);
 
-  // Kewajiban Jangka Panjang
   const kewajibanJPanjang = akunList
-    .filter(a => a.tipe === 'Kewajiban' && a.kategori === 'Kewajiban Jangka Panjang')
-    .map(a => ({
-      akun: a.nama,
-      jumlah: saldoAkun.get(a.kode) || 0,
-    }))
-    .filter(k => k.jumlah !== 0);
+    .filter(account => account.tipe === 'Kewajiban' && account.kategori === 'Kewajiban Jangka Panjang')
+    .map(account => ({ akun: account.nama, jumlah: amountFor(account) }))
+    .filter(item => item.jumlah !== 0);
 
-  const totalKewajibanJP = kewajibanJP.reduce((sum, k) => sum + k.jumlah, 0);
-  const totalKewajibanJPanjang = kewajibanJPanjang.reduce((sum, k) => sum + k.jumlah, 0);
+  const totalKewajibanJP = kewajibanJP.reduce((sum, item) => sum + item.jumlah, 0);
+  const totalKewajibanJPanjang = kewajibanJPanjang.reduce((sum, item) => sum + item.jumlah, 0);
   const totalKewajiban = totalKewajibanJP + totalKewajibanJPanjang;
 
-  // Ekuitas
   const ekuitas = akunList
-    .filter(a => a.tipe === 'Ekuitas')
-    .map(a => ({
-      akun: a.nama,
-      jumlah: saldoAkun.get(a.kode) || 0,
-    }))
-    .filter(e => e.jumlah !== 0);
+    .filter(account => account.tipe === 'Ekuitas')
+    .map(account => ({ akun: account.nama, jumlah: amountFor(account) }))
+    .filter(item => item.jumlah !== 0);
 
-  // Tambahkan laba bersih ke laba ditahan
-  const labaRugi = generateLabaRugi(akunList, journals, tanggal);
-  const labaDitahanIndex = ekuitas.findIndex(e => e.akun === 'Laba Ditahan');
+  // P&L on the balance sheet is cumulative up to the as-of date, not the
+  // selected reporting month. It is shown until closing entries transfer it.
+  const journalsAsOf = postedJournals(journals)
+    .filter(journal => journalBeforeDate(journal, asOfDate));
+  const labaAkumulatif = calculateProfitLoss(akunList, journalsAsOf).laba_bersih;
+  const labaDitahanIndex = ekuitas.findIndex(item => item.akun === 'Laba Ditahan');
   if (labaDitahanIndex >= 0) {
-    ekuitas[labaDitahanIndex].jumlah += labaRugi.laba_bersih;
-  } else {
-    ekuitas.push({ akun: 'Laba Bersih Periode Berjalan', jumlah: labaRugi.laba_bersih });
+    ekuitas[labaDitahanIndex].jumlah += labaAkumulatif;
+  } else if (labaAkumulatif !== 0) {
+    ekuitas.push({ akun: 'Laba Bersih Periode Berjalan', jumlah: labaAkumulatif });
   }
 
-  const totalEkuitas = ekuitas.reduce((sum, e) => sum + e.jumlah, 0);
+  const totalEkuitas = ekuitas.reduce((sum, item) => sum + item.jumlah, 0);
 
   return {
-    tanggal,
+    tanggal: asOfDate,
     aset: {
       aset_lancar: asetLancar,
       aset_tetap: asetTetap,
@@ -493,104 +515,89 @@ export function generateNeraca(
 }
 
 /**
- * Generate Laporan Arus Kas (simplified - direct method)
+ * Arus kas diturunkan dari perubahan nyata akun Kas/Bank pada jurnal Posted.
+ * Arus kas awal dihitung dari saldo awal COA dan pergerakan sebelum periode.
  */
 export function generateArusKas(
   akunList: Akun[],
   journals: JurnalUmum[],
   periode: string,
-  kasAwalPeriode: number = 0
+  kasAwalPeriode?: number
 ): ArusKas {
-  // Arus Kas Operasi
-  const arusKasOperasi: { keterangan: string; jumlah: number }[] = [];
-  
-  // Penerimaan dari pelanggan
-  const penerimaanPelanggan = journals
-    .filter(j => j.status === 'Posted')
-    .filter(j => j.entries.some(e => e.akun_kode === '1-1003' && e.kredit > 0))
-    .reduce((sum, j) => {
-      const kasEntry = j.entries.find(e => e.akun_kode === '1-1001' && e.debit > 0);
-      return sum + (kasEntry?.debit || 0);
-    }, 0);
-  
-  if (penerimaanPelanggan > 0) {
-    arusKasOperasi.push({ keterangan: 'Penerimaan dari Pelanggan', jumlah: penerimaanPelanggan });
-  }
+  const accountsByCode = new Map(akunList.map(account => [account.kode, account]));
+  const cashAccounts = akunList.filter(account =>
+    account.tipe === 'Aset' &&
+    (/^1-100[12]$/.test(account.kode) || /^(kas|bank)(\s|$)/i.test(account.nama.trim()))
+  );
+  const cashCodes = new Set(cashAccounts.map(account => account.kode));
+  const cashDelta = (journal: JurnalUmum) => journal.entries
+    .filter(entry => cashCodes.has(entry.akun_kode))
+    .reduce((sum, entry) => sum + entry.debit - entry.kredit, 0);
 
-  // Pembayaran ke supplier
-  const pembayaranSupplier = journals
-    .filter(j => j.status === 'Posted')
-    .filter(j => j.entries.some(e => e.akun_kode === '2-1001' && e.debit > 0))
-    .reduce((sum, j) => {
-      const kasEntry = j.entries.find(e => e.akun_kode === '1-1001' && e.kredit > 0);
-      return sum + (kasEntry?.kredit || 0);
-    }, 0);
-  
-  if (pembayaranSupplier > 0) {
-    arusKasOperasi.push({ keterangan: 'Pembayaran ke Supplier', jumlah: -pembayaranSupplier });
-  }
+  const firstDay = /^\d{4}-\d{2}$/.test(periode)
+    ? `${periode}-01`
+    : /^\d{4}$/.test(periode)
+      ? `${periode}-01-01`
+      : '';
+  const periodJournals = isValidPeriod(periode)
+    ? postedJournals(journals).filter(journal => journalMatchesPeriod(journal.tanggal, periode))
+    : [];
+  const beforePeriod = firstDay
+    ? postedJournals(journals).filter(journal => {
+        const date = String(journal.tanggal || '').slice(0, 10);
+        return /^\d{4}-\d{2}-\d{2}$/.test(date) && date < firstDay;
+      })
+    : [];
 
-  // Pembayaran beban operasional
-  const bebanOperasional = journals
-    .filter(j => j.status === 'Posted')
-    .filter(j => j.entries.some(e => e.akun_kode.startsWith('5-2') && e.debit > 0))
-    .reduce((sum, j) => {
-      const kasEntry = j.entries.find(e => e.akun_kode === '1-1001' && e.kredit > 0);
-      return sum + (kasEntry?.kredit || 0);
-    }, 0);
-  
-  if (bebanOperasional > 0) {
-    arusKasOperasi.push({ keterangan: 'Pembayaran Beban Operasional', jumlah: -bebanOperasional });
-  }
+  const cashOpeningFromAccounts = cashAccounts.reduce((sum, account) =>
+    sum + (account.saldo_normal === 'Debit' ? account.saldo : -account.saldo), 0);
+  const computedOpening = cashOpeningFromAccounts + beforePeriod.reduce((sum, journal) => sum + cashDelta(journal), 0);
+  const kasAwal = Number.isFinite(kasAwalPeriode) ? kasAwalPeriode as number : computedOpening;
 
-  const totalArusKasOperasi = arusKasOperasi.reduce((sum, a) => sum + a.jumlah, 0);
+  const arus_kas_operasi: { keterangan: string; jumlah: number }[] = [];
+  const arus_kas_investasi: { keterangan: string; jumlah: number }[] = [];
+  const arus_kas_pendanaan: { keterangan: string; jumlah: number }[] = [];
 
-  // Arus Kas Investasi
-  const arusKasInvestasi: { keterangan: string; jumlah: number }[] = [];
-  
-  const pembelianAsetTetap = journals
-    .filter(j => j.status === 'Posted')
-    .filter(j => j.entries.some(e => e.akun_kode.startsWith('1-2') && e.debit > 0))
-    .reduce((sum, j) => {
-      const kasEntry = j.entries.find(e => e.akun_kode === '1-1001' && e.kredit > 0);
-      return sum + (kasEntry?.kredit || 0);
-    }, 0);
-  
-  if (pembelianAsetTetap > 0) {
-    arusKasInvestasi.push({ keterangan: 'Pembelian Aset Tetap', jumlah: -pembelianAsetTetap });
-  }
+  periodJournals.forEach(journal => {
+    const change = cashDelta(journal);
+    if (Math.abs(change) < 0.000001) return;
 
-  const totalArusKasInvestasi = arusKasInvestasi.reduce((sum, a) => sum + a.jumlah, 0);
+    const counterpartyAccounts = journal.entries
+      .filter(entry => !cashCodes.has(entry.akun_kode))
+      .map(entry => accountsByCode.get(entry.akun_kode))
+      .filter((account): account is Akun => Boolean(account));
 
-  // Arus Kas Pendanaan
-  const arusKasPendanaan: { keterangan: string; jumlah: number }[] = [];
-  
-  const setoranModal = journals
-    .filter(j => j.status === 'Posted')
-    .filter(j => j.entries.some(e => e.akun_kode === '3-1001' && e.kredit > 0))
-    .reduce((sum, j) => {
-      const kasEntry = j.entries.find(e => e.akun_kode === '1-1001' && e.debit > 0);
-      return sum + (kasEntry?.debit || 0);
-    }, 0);
-  
-  if (setoranModal > 0) {
-    arusKasPendanaan.push({ keterangan: 'Setoran Modal', jumlah: setoranModal });
-  }
+    const investment = counterpartyAccounts.some(account =>
+      account.tipe === 'Aset' && account.kategori === 'Aset Tetap'
+    );
+    const financing = counterpartyAccounts.some(account =>
+      account.tipe === 'Ekuitas' ||
+      (account.tipe === 'Kewajiban' &&
+        (account.kategori === 'Kewajiban Jangka Panjang' || /utang bank|pinjaman/i.test(account.nama))) ||
+      /prive|dividen/i.test(account.nama)
+    );
+    const line = { keterangan: journal.keterangan || journal.no_jurnal, jumlah: change };
 
-  const totalArusKasPendanaan = arusKasPendanaan.reduce((sum, a) => sum + a.jumlah, 0);
+    if (investment) arus_kas_investasi.push(line);
+    else if (financing) arus_kas_pendanaan.push(line);
+    else arus_kas_operasi.push(line);
+  });
 
-  const kenaikanPenurunanKas = totalArusKasOperasi + totalArusKasInvestasi + totalArusKasPendanaan;
+  const total_arus_kas_operasi = arus_kas_operasi.reduce((sum, item) => sum + item.jumlah, 0);
+  const total_arus_kas_investasi = arus_kas_investasi.reduce((sum, item) => sum + item.jumlah, 0);
+  const total_arus_kas_pendanaan = arus_kas_pendanaan.reduce((sum, item) => sum + item.jumlah, 0);
+  const kenaikan_penurunan_kas = total_arus_kas_operasi + total_arus_kas_investasi + total_arus_kas_pendanaan;
 
   return {
     periode,
-    arus_kas_operasi: arusKasOperasi,
-    total_arus_kas_operasi: totalArusKasOperasi,
-    arus_kas_investasi: arusKasInvestasi,
-    total_arus_kas_investasi: totalArusKasInvestasi,
-    arus_kas_pendanaan: arusKasPendanaan,
-    total_arus_kas_pendanaan: totalArusKasPendanaan,
-    kenaikan_penurunan_kas: kenaikanPenurunanKas,
-    kas_awal_periode: kasAwalPeriode,
-    kas_akhir_periode: kasAwalPeriode + kenaikanPenurunanKas,
+    arus_kas_operasi,
+    total_arus_kas_operasi,
+    arus_kas_investasi,
+    total_arus_kas_investasi,
+    arus_kas_pendanaan,
+    total_arus_kas_pendanaan,
+    kenaikan_penurunan_kas,
+    kas_awal_periode: kasAwal,
+    kas_akhir_periode: kasAwal + kenaikan_penurunan_kas,
   };
 }

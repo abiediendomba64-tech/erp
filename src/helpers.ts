@@ -3,31 +3,39 @@ import { Tanah, Beko, PosKewajiban, StokBarang, Produksi, Penjualan, Pembelian, 
 // ============ COMPUTED VALUES ============
 // Semua perhitungan dilakukan di sini — TIDAK disimpan di database — ANTI DRIFT
 
-// Handle edge case: tanah tanpa luas tapi ada nominal langsung (T-10, T-12)
+// Nilai kontrak tidak boleh disimpulkan otomatis dari jumlah yang sudah dibayar.
+// Untuk bidang tanpa luas/harga, simpan nilai kesepakatan pada nilai_total_manual.
+export const hasKnownLandContractValue = (t: Tanah): boolean =>
+  (Number.isFinite(t.nilai_total_manual) && Number(t.nilai_total_manual) > 0) ||
+  (Number(t.luas_bt) > 0 && Number(t.harga_per_bt) > 0);
+
 export const getTanahNilaiTotal = (t: Tanah): number => {
-  // Jika luas_bt = 0 tapi dp > 0, gunakan dp sebagai nilai total (kasus nominal langsung)
-  if (t.luas_bt === 0 && t.dp > 0) {
-    return t.dp;
+  if (Number.isFinite(t.nilai_total_manual) && Number(t.nilai_total_manual) > 0) {
+    return Number(t.nilai_total_manual);
   }
-  return t.luas_bt * t.harga_per_bt;
+  return Math.max(0, Number(t.luas_bt) || 0) * Math.max(0, Number(t.harga_per_bt) || 0);
 };
 
-export const getTanahSisa = (t: Tanah): number => {
-  const nilaiTotal = getTanahNilaiTotal(t);
-  return nilaiTotal - t.dp;
-};
+export const getTanahSisa = (t: Tanah): number => hasKnownLandContractValue(t) ? Math.max(0, getTanahNilaiTotal(t) - Math.max(0, t.dp)) : 0;
+export const getTanahKelebihanBayar = (t: Tanah): number => hasKnownLandContractValue(t) ? Math.max(0, Math.max(0, t.dp) - getTanahNilaiTotal(t)) : 0;
 
 // Handle edge case: BK-01 mobilisasi tanpa dimensi tapi ada nilai tetap
+export const getBekoVolume = (b: Beko): number => {
+  if (b.satuan_volume === 'ls') return 1;
+  if (b.satuan_volume === 'unit') return Math.max(0, Number(b.panjang) || 0);
+  if (b.panjang === 0 && b.lebar === 0 && b.tinggi === 0) return 1;
+  return Math.max(0, b.panjang) * Math.max(0, b.lebar) * Math.max(0, b.tinggi);
+};
+
+// Tidak ada nilai rupiah yang disisipkan berdasarkan ID/catatan.
+// Untuk pekerjaan volume: P × L × T × tarif. Untuk LS/unit: 1 × tarif.
 export const getBekoNilai = (b: Beko): number => {
-  // Jika semua dimensi 0 tapi ada catatan "mobilisasi", gunakan nilai tetap
-  if (b.panjang === 0 && b.lebar === 0 && b.tinggi === 0 && b.tarif === 0) {
-    // Cek berdasarkan ID atau catatan untuk mobilisasi
-    if (b.id === 'BK-01' || b.catatan.toLowerCase().includes('mobilisasi')) {
-      return 4500000; // Nilai tetap mobilisasi
-    }
-    return 0;
-  }
-  return b.panjang * b.lebar * b.tinggi * b.tarif;
+  const tariff = Math.max(0, Number(b.tarif) || 0);
+  const dimensionsAreEmpty = b.panjang === 0 && b.lebar === 0 && b.tinggi === 0;
+  if (b.satuan_volume === 'ls') return tariff;
+  if (b.satuan_volume === 'unit') return Math.max(0, Number(b.panjang) || 0) * tariff;
+  if (dimensionsAreEmpty) return tariff;
+  return getBekoVolume(b) * tariff;
 };
 
 // Hitung sisa utang yang belum dibayar
@@ -60,6 +68,58 @@ export const getPenggajianGajiBersih = (g: Penggajian): number => g.gaji_pokok +
 
 export const getAnggaranSisa = (a: Anggaran): number => a.anggaran - a.realisasi;
 export const getAnggaranPersentase = (a: Anggaran): number => a.anggaran > 0 ? (a.realisasi / a.anggaran) * 100 : 0;
+
+export const hasDocumentEvidence = (document: { link_drive?: string; local_file_key?: string; mime_type?: string; nama_file?: string }): boolean => {
+  const externalLink = Boolean(document.link_drive && /^https?:\/\//i.test(document.link_drive));
+  if (externalLink) return true;
+  const draftHtml = String(document.mime_type || '').toLowerCase().startsWith('text/html') ||
+    String(document.nama_file || '').toLowerCase().endsWith('.html');
+  return Boolean(document.local_file_key && !draftHtml);
+};
+
+export const getRelatedDocuments = <T extends { modul_terkait?: string; id_terkait?: string; kode_bukti?: string }>(
+  documents: T[],
+  module: string,
+  recordId: string,
+  proofCode?: string
+): T[] => documents.filter(document => {
+  const sameModule = document.modul_terkait === module;
+  const legacyModuleMissing = !document.modul_terkait;
+  const matchesRelatedId = sameModule && Boolean(recordId) && document.id_terkait === recordId;
+  const matchesProofCode = Boolean(proofCode) &&
+    document.kode_bukti === proofCode &&
+    (sameModule || legacyModuleMissing);
+  return matchesRelatedId || matchesProofCode;
+});
+
+export const hasVerifiedRelatedDocument = <T extends { terverifikasi?: string; link_drive?: string; local_file_key?: string; modul_terkait?: string; id_terkait?: string; kode_bukti?: string }>(
+  documents: T[],
+  module: string,
+  recordId: string,
+  proofCode?: string
+): boolean => getRelatedDocuments(documents, module, recordId, proofCode).some(document =>
+  document.terverifikasi === 'Ya' && hasDocumentEvidence(document)
+);
+
+export const getBukuKasVerificationStatus = <T extends { terverifikasi?: string; link_drive?: string; local_file_key?: string; mime_type?: string; nama_file?: string; modul_terkait?: string; id_terkait?: string; kode_bukti?: string; jenis?: string; nominal?: number }>(
+  record: { id: string; kode_bukti: string; masuk?: number; keluar?: number },
+  documents: T[]
+): 'LENGKAP' | 'TANPA_BUKTI' | 'PERLU_KONFIRMASI' => {
+  const linked = getRelatedDocuments(documents, 'Buku Kas', record.id, record.kode_bukti);
+  const transactionAmount = Math.max(0, Number(record.masuk) || 0) + Math.max(0, Number(record.keluar) || 0);
+  const approvedPaymentKinds = new Set(['Kwitansi_Foto', 'Transfer_Bank', 'Nota_Foto']);
+  const matchingVerifiedEvidence = linked.some(document =>
+    document.terverifikasi === 'Ya' &&
+    hasDocumentEvidence(document) &&
+    approvedPaymentKinds.has(String(document.jenis || '')) &&
+    Number.isFinite(Number(document.nominal)) &&
+    transactionAmount > 0 &&
+    Math.abs(Number(document.nominal) - transactionAmount) <= 0.005
+  );
+  if (matchingVerifiedEvidence) return 'LENGKAP';
+  if (linked.length > 0 || record.kode_bukti.trim()) return 'PERLU_KONFIRMASI';
+  return 'TANPA_BUKTI';
+};
 
 export const getArusKasSaldo = (allKas: ArusKas[], upToIndex: number): number => {
   let saldo = 0;

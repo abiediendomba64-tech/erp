@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAccounting } from '../store/accounting';
-import { formatRupiah, generateId } from '../data/accounting';
+import { formatRupiah, generateId, getLocalDateISO } from '../data/accounting';
 import { generateJurnalPenjualanKredit, generateJurnalPembelianKredit } from '../utils/accounting';
 import { Invoice, InvoiceItem, PurchaseOrder, POItem } from '../types/accounting';
 import { FileText, Plus, Eye, CheckCircle } from 'lucide-react';
@@ -14,7 +14,7 @@ export default function InvoicePOPage() {
   // Invoice form
   const [invoiceForm, setInvoiceForm] = useState({
     pelanggan: '',
-    tanggal: new Date().toISOString().split('T')[0],
+    tanggal: getLocalDateISO(),
     jatuh_tempo: '',
     items: [{ deskripsi: '', qty: 1, harga: 0, subtotal: 0 }] as InvoiceItem[],
     diskon: 0,
@@ -76,8 +76,28 @@ export default function InvoicePOPage() {
   };
 
   const handleSaveInvoice = () => {
+    if (!invoiceForm.pelanggan.trim() || !invoiceForm.tanggal || !invoiceForm.jatuh_tempo) {
+      alert('Pelanggan, tanggal invoice, dan jatuh tempo wajib diisi.');
+      return;
+    }
+    if (invoiceForm.items.length === 0 || invoiceForm.items.some(item =>
+      !item.deskripsi.trim() || !Number.isFinite(item.qty) || item.qty <= 0 ||
+      !Number.isFinite(item.harga) || item.harga < 0
+    )) {
+      alert('Invoice wajib memiliki item dengan deskripsi, kuantitas positif, dan harga valid.');
+      return;
+    }
     const subtotal = invoiceForm.items.reduce((sum, item) => sum + item.subtotal, 0);
+    if (!Number.isFinite(invoiceForm.diskon) || invoiceForm.diskon < 0 || invoiceForm.diskon > subtotal ||
+        !Number.isFinite(invoiceForm.ppn) || invoiceForm.ppn < 0) {
+      alert('Diskon atau PPN tidak valid. Diskon tidak boleh melebihi subtotal.');
+      return;
+    }
     const total = subtotal - invoiceForm.diskon + invoiceForm.ppn;
+    if (total <= 0) {
+      alert('Total invoice harus lebih besar dari nol.');
+      return;
+    }
 
     const newInvoice: Invoice = {
       id: generateId('INV', state.invoice),
@@ -99,7 +119,7 @@ export default function InvoicePOPage() {
     const jurnalData = generateJurnalPenjualanKredit(
       invoiceForm.tanggal,
       `Penjualan kredit - ${invoiceForm.pelanggan}`,
-      subtotal,
+      subtotal - invoiceForm.diskon,
       invoiceForm.ppn
     );
 
@@ -145,27 +165,10 @@ export default function InvoicePOPage() {
 
     dispatch({ type: 'ADD_PO', payload: newPO });
 
-    // Auto-generate jurnal
-    const jurnalData = generateJurnalPembelianKredit(
-      poForm.tanggal,
-      `Pembelian kredit - ${poForm.supplier}`,
-      subtotal,
-      poForm.ppn
-    );
+    // Purchase Order hanya komitmen pembelian; jangan membukukan persediaan/utang
+    // sebelum barang diterima dan tagihan supplier diakui.
+    alert('Purchase Order disimpan. Jurnal belum dibuat karena PO belum membuktikan barang diterima atau tagihan terutang.');
 
-    const newJurnal = {
-      id: generateId('J', state.jurnal),
-      no_jurnal: `JU-${new Date().getFullYear()}-${String(state.jurnal.length + 1).padStart(3, '0')}`,
-      status: 'Posted' as const,
-      createdBy: 'Admin',
-      createdAt: new Date().toISOString(),
-      referensi: newPO.no_po,
-      ...jurnalData,
-    };
-
-    dispatch({ type: 'ADD_JURNAL', payload: newJurnal });
-
-    alert('Purchase Order berhasil dibuat! Jurnal otomatis tergenerate.');
     setShowForm(false);
     setPOForm({
       supplier: '',

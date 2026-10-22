@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAccounting } from '../store/accounting';
-import { formatRupiah } from '../data/accounting';
+import { formatRupiah, getLocalDateISO } from '../data/accounting';
 import { generateLabaRugi, generateNeraca, generateArusKas } from '../utils/accounting';
 import { FileText, Download, Printer } from 'lucide-react';
 
@@ -9,20 +9,61 @@ type LaporanType = 'laba_rugi' | 'neraca' | 'arus_kas';
 export default function LaporanKeuanganPage() {
   const { state } = useAccounting();
   const [jenisLaporan, setJenisLaporan] = useState<LaporanType>('laba_rugi');
-  const [periode, setPeriode] = useState('2026-01');
+  const [periode, setPeriode] = useState(() => getLocalDateISO().slice(0, 7));
 
-  // Generate laporan
-  const labaRugi = generateLabaRugi(state.akun, state.jurnal, periode);
-  const neraca = generateNeraca(state.akun, state.jurnal, `${periode}-31`);
-  const arusKas = generateArusKas(state.akun, state.jurnal, periode, 0);
+  // Periode laba rugi/arus kas mengikuti bulan terpilih; neraca memakai tanggal akhir bulan yang valid.
+  const periodeValid = /^\d{4}-\d{2}$/.test(periode) ? periode : getLocalDateISO().slice(0, 7);
+  const [tahunLaporan, bulanLaporan] = periodeValid.split('-').map(Number);
+  const tanggalNeraca = getLocalDateISO(new Date(tahunLaporan, bulanLaporan, 0));
+  const labaRugi = generateLabaRugi(state.akun, state.jurnal, periodeValid);
+  const neraca = generateNeraca(state.akun, state.jurnal, tanggalNeraca);
+  const arusKas = generateArusKas(state.akun, state.jurnal, periodeValid);
 
   const handlePrint = () => {
     window.print();
   };
 
   const handleExport = () => {
-    // Simulasi export
-    alert(`Export ${jenisLaporan} ke PDF/Excel akan dimulai...`);
+    const rows: (string | number)[][] = [['Laporan Keuangan', jenisLaporan], ['Periode', periodeValid], []];
+    const addLines = (title: string, items: { akun?: string; keterangan?: string; jumlah: number }[]) => {
+      rows.push([title, 'Keterangan', 'Nominal']);
+      items.forEach(item => rows.push([title, item.akun || item.keterangan || '', item.jumlah]));
+    };
+
+    if (jenisLaporan === 'laba_rugi') {
+      addLines('Pendapatan', labaRugi.pendapatan);
+      rows.push(['Total Pendapatan', '', labaRugi.total_pendapatan], []);
+      addLines('Beban', labaRugi.beban);
+      rows.push(['Total Beban', '', labaRugi.total_beban], ['Laba/Rugi Bersih', '', labaRugi.laba_bersih]);
+    } else if (jenisLaporan === 'neraca') {
+      rows.push(['Tanggal Neraca', tanggalNeraca], []);
+      addLines('Aset Lancar', neraca.aset.aset_lancar);
+      addLines('Aset Tetap', neraca.aset.aset_tetap);
+      rows.push(['Total Aset', '', neraca.aset.total_aset], []);
+      addLines('Kewajiban Jangka Pendek', neraca.kewajiban.kewajiban_jangka_pendek);
+      addLines('Kewajiban Jangka Panjang', neraca.kewajiban.kewajiban_jangka_panjang);
+      addLines('Ekuitas', neraca.ekuitas);
+      rows.push(['Total Kewajiban + Ekuitas', '', neraca.total_kewajiban_ekuitas]);
+    } else {
+      addLines('Arus Kas Operasi', arusKas.arus_kas_operasi);
+      addLines('Arus Kas Investasi', arusKas.arus_kas_investasi);
+      addLines('Arus Kas Pendanaan', arusKas.arus_kas_pendanaan);
+      rows.push(['Kas Awal Periode', '', arusKas.kas_awal_periode],
+        ['Kenaikan/Penurunan Kas', '', arusKas.kenaikan_penurunan_kas],
+        ['Kas Akhir Periode', '', arusKas.kas_akhir_periode]);
+    }
+
+    const escapeCell = (value: string | number) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const csv = '\uFEFF' + rows.map(row => row.map(escapeCell).join(';')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `laporan-${jenisLaporan}-${periodeValid}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -85,7 +126,7 @@ export default function LaporanKeuanganPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <div className="text-center mb-6">
             <h2 className="text-xl font-bold text-gray-900">LAPORAN LABA RUGI</h2>
-            <p className="text-sm text-gray-500">Periode: {labaRugi.periode}</p>
+            <p className="text-sm text-gray-500">Periode: {periodeValid}</p>
           </div>
 
           <div className="space-y-4">
@@ -282,7 +323,7 @@ export default function LaporanKeuanganPage() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
           <div className="text-center mb-6">
             <h2 className="text-xl font-bold text-gray-900">LAPORAN ARUS KAS</h2>
-            <p className="text-sm text-gray-500">Periode: {arusKas.periode}</p>
+            <p className="text-sm text-gray-500">Periode: {periodeValid}</p>
           </div>
 
           <div className="space-y-4">
