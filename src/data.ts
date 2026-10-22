@@ -112,6 +112,20 @@ export const initialMenuConfig: MenuItem[] = [
   { id: 'M-09', label: 'Alokasi Dana Detail', icon: 'DollarSign', page: 'alokasi', order: 9, visible: true, role_access: ['ADMIN', 'KEUANGAN'] },
 ];
 
+// Generate collision-resistant record IDs and check the current collection before returning.
+// This is an identifier helper only; it does not imply that a record is persisted remotely.
+export const generateId = <T extends { id: string }>(prefix: string, records: T[] = []): string => {
+  const existingIds = new Set(records.map(record => record.id));
+  let candidate = '';
+  do {
+    const randomPart = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+    candidate = prefix + '-' + randomPart;
+  } while (existingIds.has(candidate));
+  return candidate;
+};
+
 // ============ UTILITY ============
 export const getLocalDateISO = (date = new Date()): string => {
   const year = date.getFullYear();
