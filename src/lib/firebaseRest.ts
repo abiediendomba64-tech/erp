@@ -262,7 +262,9 @@ async function firestoreRequest(
   query?: Record<string, string>,
 ) {
   const session = await getValidSession();
-  const url = new URL(`${FIRESTORE_BASE}/${path}`);
+  const url = new URL(path.startsWith(':')
+    ? `${FIRESTORE_BASE}${path}`
+    : `${FIRESTORE_BASE}/${path}`);
   for (const [key, value] of Object.entries(query || {})) url.searchParams.set(key, value);
   const response = await fetch(url, {
     method,
@@ -357,8 +359,15 @@ function objectFromDocument(document: FirestoreDoc) {
   return decodeFields(document.fields);
 }
 
-function stableStringify(value: unknown) {
-  return JSON.stringify(value);
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, item: unknown) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(item as Record<string, unknown>).sort()) {
+      sorted[key] = (item as Record<string, unknown>)[key];
+    }
+    return sorted;
+  });
 }
 
 async function rollbackTransaction(transaction: string) {
