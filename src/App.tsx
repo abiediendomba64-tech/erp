@@ -31,9 +31,10 @@ import QCPage from './pages/QCPage';
 import AssetsPage from './pages/AssetsPage';
 import TaxesPage from './pages/TaxesPage';
 import SuratPage from './pages/SuratPage';
+import HousingUnitsPage from './pages/HousingUnitsPage';
 import { AccountingProvider } from './store/accounting';
 
-export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat';
+export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat' | 'unit';
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
@@ -72,6 +73,7 @@ function AppContent() {
       case 'aset': return <AssetsPage />;
       case 'pajak': return <TaxesPage />;
       case 'surat': return <SuratPage />;
+      case 'unit': return <HousingUnitsPage />;
       default: return <Dashboard />;
     }
   };
