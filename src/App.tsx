@@ -36,7 +36,7 @@ import { AccountingProvider } from './store/accounting';
 
 export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat' | 'unit';
 
-function AppContent({ workspaceRole }: { workspaceRole: 'owner' | 'admin' | 'editor' | 'viewer' }) {
+function AppContent({ workspaceRole, workspaceId, workspaceName }: { workspaceRole: 'owner' | 'admin' | 'editor' | 'viewer'; workspaceId: string; workspaceName: string }) {
   useEffect(() => {
     // Remove legacy browser-stored integration secrets as early as possible.
     // Integrations require a server-side secret store, which is not configured in this build.
@@ -81,7 +81,7 @@ function AppContent({ workspaceRole }: { workspaceRole: 'owner' | 'admin' | 'edi
       case 'ocr': return <OCRPage />;
       case 'whatsapp': return <WhatsAppPage />;
       case 'menuconfig': return <MenuConfigPage />;
-      case 'users': return <UserManagementPage />;
+      case 'users': return <UserManagementPage workspaceId={workspaceId} workspaceName={workspaceName} canManageUsers={workspaceRole === 'owner'} />;
       case 'settings': return <SettingsPage />;
       case 'accounting': return <AccountingDashboard />;
       case 'inputtransaksi': return <InputTransaksiPage />;
@@ -121,6 +121,6 @@ function AppContent({ workspaceRole }: { workspaceRole: 'owner' | 'admin' | 'edi
   );
 }
 
-export default function App({ workspaceRole = 'owner' }: { workspaceRole?: 'owner' | 'admin' | 'editor' | 'viewer' }) {
-  return <AppContent workspaceRole={workspaceRole} />;
+export default function App({ workspaceRole = 'owner', workspaceId = '', workspaceName = 'ERP' }: { workspaceRole?: 'owner' | 'admin' | 'editor' | 'viewer'; workspaceId?: string; workspaceName?: string }) {
+  return <AppContent workspaceRole={workspaceRole} workspaceId={workspaceId} workspaceName={workspaceName} />;
 }
