@@ -393,6 +393,10 @@ export interface HousingUnit {
   status_slf: PermitStatus;
   rab_ref: string;
   dokumen_tanah_ref: string;
+  dokumen_pbg_ref: string;
+  dokumen_slf_ref: string;
+  kontrak_penjualan_ref: string;
+  dokumen_serah_terima_ref: string;
   catatan: string;
   created_at: string;
   updated_at: string;
