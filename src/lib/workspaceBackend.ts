@@ -1,5 +1,6 @@
 export {
   addWorkspaceMember,
+  getCurrentSessionInfo,
   clearWorkspaceSession,
   getCurrentSessionInfo,
   configureWorkspaceSession,
@@ -8,6 +9,7 @@ export {
   hasActiveWorkspaceSession,
   listUserWorkspaces,
   listWorkspaceMembers,
+  updateWorkspaceMemberRole,
   loadWorkspace,
   persistWorkspaceSnapshot,
   subscribeCloudStatus,
