@@ -160,6 +160,10 @@ export default function RABPage() {
       setError('Kode unit belum ada di Register Unit Perumahan. Buat unit terlebih dahulu atau kosongkan Unit untuk RAB proyek/paket.');
       return;
     }
+    if (linkedUnit && linkedUnit.proyek.trim().toLowerCase() !== draft.nama_proyek.trim().toLowerCase()) {
+      setError('Nama proyek pada RAB harus cocok dengan proyek pada master unit. Gunakan nama proyek master agar laporan per unit tidak terpecah.');
+      return;
+    }
     const sharedPool = draft.biaya_bersama_total.trim() ? Number(draft.biaya_bersama_total) : 0;
     const unitCount = draft.jumlah_unit_alokasi.trim() ? Number(draft.jumlah_unit_alokasi) : 0;
     const areas = [draft.luas_tanah_m2, draft.luas_bangunan_m2].filter(value => value.trim()).map(Number);
@@ -168,8 +172,8 @@ export default function RABPage() {
       setError('Biaya bersama, jumlah unit alokasi, dan luas harus berupa angka nol atau lebih.');
       return;
     }
-    if (sharedPool > 0 && unitCount <= 0) {
-      setError('Biaya bersama harus memiliki jumlah unit penerima alokasi agar biaya per unit tidak menyesatkan.');
+    if (sharedPool > 0 && (!Number.isInteger(unitCount) || unitCount <= 0)) {
+      setError('Jumlah unit penerima alokasi biaya bersama harus berupa bilangan bulat lebih dari nol.');
       return;
     }
     if ((draft.luas_tanah_m2.trim() && Number(draft.luas_tanah_m2) <= 0) ||
