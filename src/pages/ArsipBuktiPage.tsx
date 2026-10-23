@@ -189,15 +189,15 @@ export default function ArsipBuktiPage() {
       }
     }
 
-    const matchingCashRows = (moduleName: string, relatedId: string, proofCode: string) => {
+    const matchingCashRows = (moduleName: string, relatedId: string) => {
       if (moduleName !== 'Buku Kas') return [];
       // Finance posting must use one explicit cash-row ID; proof-code-only links can hit several rows.
       if (!relatedId.trim()) return [];
       return state.bukuKas.filter(row => row.id === relatedId.trim());
     };
-    const newMatchRows = matchingCashRows(form.modul_terkait, form.id_terkait, form.kode_bukti);
+    const newMatchRows = matchingCashRows(form.modul_terkait, form.id_terkait);
     const oldMatchRows = existing
-      ? matchingCashRows(existing.modul_terkait || '', existing.id_terkait || '', existing.kode_bukti || '')
+      ? matchingCashRows(existing.modul_terkait || '', existing.id_terkait || '')
       : [];
     // Legacy proof-code-only rows may have been used by an older version to post a journal.
     // They are never allowed to post another row, but matching Posted cash entries are protected
