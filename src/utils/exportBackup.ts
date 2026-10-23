@@ -128,7 +128,7 @@ export function exportToExcel<T extends Record<string, any>>(
   // Header
   html += '<thead><tr>';
   cols.forEach(col => {
-    html += `<th>${String(col)}</th>`;
+    html += `<th>${escapeHtml(String(col))}</th>`;
   });
   html += '</tr></thead>';
   
