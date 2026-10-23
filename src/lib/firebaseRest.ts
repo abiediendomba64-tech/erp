@@ -664,13 +664,34 @@ export async function createWorkspace(
   name: string,
   snapshot: WorkspaceSnapshot,
 ) {
-  if (name.trim().length < 2 || name.trim().length > 100) throw new Error('Nama workspace harus 2-100 karakter.');
+  const cleanName = name.trim();
+  if (cleanName.length < 2 || cleanName.length > 100) throw new Error('Nama workspace harus 2-100 karakter.');
+
+  // Validate all module data before creating a workspace, so duplicate/invalid imports
+  // cannot leave an orphaned provisioning workspace.
+  const allModules = { ...snapshot.operational, ...snapshot.accounting };
+  const prepared: Array<{ moduleName: string; writes: Record<string, unknown>[] }> = [];
+  for (const [moduleName, rawRows] of Object.entries(allModules)) {
+    if (!Array.isArray(rawRows)) throw new Error(`Data modul ${moduleName} bukan array.`);
+    const unique = new Set<string>();
+    const writes: Record<string, unknown>[] = [];
+    for (const row of rawRows as unknown[]) {
+      const identity = recordIdentity(row);
+      if (unique.has(identity)) throw new Error(`ID duplikat "${identity}" pada modul ${moduleName}; impor dibatalkan.`);
+      unique.add(identity);
+      const rowString = stableStringify(row);
+      if (rowString.length > 700_000) throw new Error(`Satu record pada modul ${moduleName} terlalu besar untuk satu dokumen cloud.`);
+      writes.push(updateWrite('', row as Record<string, unknown>));
+    }
+    prepared.push({ moduleName, writes });
+  }
+
   const workspaceId = crypto.randomUUID().replaceAll('-', '');
   const createdAt = new Date().toISOString();
   await commitWrites([
     updateWrite(`workspaces/${workspaceId}`, {
       ownerUid: uid,
-      name: name.trim(),
+      name: cleanName,
       status: 'provisioning',
       schemaVersion: 1,
       createdAt,
@@ -683,26 +704,21 @@ export async function createWorkspace(
     }),
     updateWrite(`users/${uid}/workspaces/${workspaceId}`, {
       workspaceId,
-      name: name.trim(),
+      name: cleanName,
       role: 'owner',
       createdAt,
     }),
   ]);
 
-  const allModules = { ...snapshot.operational, ...snapshot.accounting };
-  for (const [moduleName, rawRows] of Object.entries(allModules)) {
-    if (!Array.isArray(rawRows)) throw new Error(`Data modul ${moduleName} bukan array.`);
-    const unique = new Set<string>();
-    const rows = rawRows as unknown[];
-    const writes: Record<string, unknown>[] = [];
-    for (const row of rows) {
-      const identity = recordIdentity(row);
-      if (unique.has(identity)) throw new Error(`ID duplikat "${identity}" pada modul ${moduleName}; impor dibatalkan.`);
-      unique.add(identity);
-      writes.push(updateWrite(recordPath(workspaceId, moduleName, identity), row as Record<string, unknown>));
-    }
-    for (let offset = 0; offset < writes.length; offset += 350) {
-      await commitWrites(writes.slice(offset, offset + 350));
+  for (const group of prepared) {
+    const moduleName = group.moduleName;
+    const allWrites = group.writes.map((write, index) => {
+      const rawRows = allModules[moduleName] as unknown[];
+      const identity = recordIdentity(rawRows[index]);
+      return updateWrite(recordPath(workspaceId, moduleName, identity), rawRows[index] as Record<string, unknown>);
+    });
+    for (let offset = 0; offset < allWrites.length; offset += 350) {
+      await commitWrites(allWrites.slice(offset, offset + 350));
     }
     await commitWrites([updateWrite(metaPath(workspaceId, moduleName), {
       version: 1,
@@ -713,12 +729,11 @@ export async function createWorkspace(
   await commitWrites([updateWrite(`workspaces/${workspaceId}`, { status: 'active' }, ['status'])]);
   return {
     id: workspaceId,
-    name: name.trim(),
+    name: cleanName,
     role: 'owner' as const,
     status: 'active' as const,
   };
 }
-
 export async function switchToWorkspace(workspace: UserWorkspace, moduleNames: readonly string[]) {
   const loaded = await loadWorkspace(workspace, moduleNames);
   window.localStorage.setItem('abiedien.erp.app.v1', JSON.stringify(loaded.snapshot.operational));
