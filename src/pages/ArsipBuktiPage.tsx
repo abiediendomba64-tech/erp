@@ -199,7 +199,15 @@ export default function ArsipBuktiPage() {
     const oldMatchRows = existing
       ? matchingCashRows(existing.modul_terkait || '', existing.id_terkait || '', existing.kode_bukti || '')
       : [];
-    const postedRowsProtected = oldMatchRows.filter(row =>
+    // Legacy proof-code-only rows may have been used by an older version to post a journal.
+    // They are never allowed to post another row, but matching Posted cash entries are protected
+    // from evidence edits until each legacy relation has been reconciled manually.
+    const legacyPostedCandidates = existing?.modul_terkait === 'Buku Kas' && existing.kode_bukti
+      ? state.bukuKas.filter(row => row.kode_bukti === existing.kode_bukti)
+      : [];
+    const oldRowsForProtection = [...oldMatchRows, ...legacyPostedCandidates]
+      .filter((row, index, array) => array.findIndex(candidate => candidate.id === row.id) === index);
+    const postedRowsProtected = oldRowsForProtection.filter(row =>
       row.posting_status === 'POSTED' &&
       Boolean(row.jurnal_id) &&
       accountingState.jurnal.some(journal => journal.id === row.jurnal_id && journal.status === 'Posted')
