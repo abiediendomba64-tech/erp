@@ -228,14 +228,14 @@ export function printReceipt(content: string, title?: string): void {
     </html>
   `;
   
-  printWindow.document.write(html);
-  printWindow.document.close();
-  
-  // Auto print after load
+  // Attach the print handler before closing the document so fast loads do not miss the event.
   printWindow.onload = () => {
     printWindow.focus();
     printWindow.print();
   };
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
 }
 
 // ============ GENERATE RECEIPT HTML ============
