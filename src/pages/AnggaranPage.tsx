@@ -144,14 +144,15 @@ export default function AnggaranPage() {
       setError('Nama proyek atau catatan terlalu panjang.');
       return;
     }
-    const duplicate = state.anggaran.find(budget =>
-      budget.id !== editingId &&
-      budget.kategori === form.kategori &&
-      budget.periode === form.periode &&
-      (budget.proyek || '').trim().toLowerCase() === form.proyek.trim().toLowerCase()
-    );
-    if (duplicate) {
-      setError('Anggaran untuk kategori, periode, dan proyek yang sama sudah ada. Edit baris itu, jangan membuat anggaran ganda.');
+    const overlappingScope = state.anggaran.find(budget => {
+      if (budget.id === editingId || budget.kategori !== form.kategori || budget.periode !== form.periode) return false;
+      const existingProject = (budget.proyek || '').trim().toLowerCase();
+      const newProject = form.proyek.trim().toLowerCase();
+      // Blank project means "all projects"; it overlaps every named project in the same category/month.
+      return !existingProject || !newProject || existingProject === newProject;
+    });
+    if (overlappingScope) {
+      setError('Anggaran kategori/periode ini bertumpang tindih dengan lingkup anggaran yang sudah ada. Anggaran proyek kosong berarti semua proyek; gunakan anggaran khusus per proyek atau satu anggaran semua proyek, jangan keduanya.');
       return;
     }
 
