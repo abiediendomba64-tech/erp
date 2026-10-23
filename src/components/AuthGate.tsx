@@ -318,7 +318,7 @@ export default function AuthGate() {
   }
   if (!session) return <AuthForm onAuthenticated={afterAuth} />;
   if (activeWorkspace) {
-    return <><App /><CloudStatusBadge status={cloudStatus} onReload={reloadCloud} /></>;
+    return <><App workspaceRole={activeWorkspace.role} /><CloudStatusBadge status={cloudStatus} onReload={reloadCloud} /></>;
   }
   if (workspaces.some(item => item.status === 'active')) {
     return <WorkspaceChooser workspaces={workspaces} busy={workspaceBusy} error={workspaceError} onOpen={openWorkspace} onLogout={handleLogout} />;
