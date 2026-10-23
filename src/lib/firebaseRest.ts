@@ -74,7 +74,7 @@ async function responseJson(response: Response) {
       PERMISSION_DENIED: 'Akses database ditolak oleh Firestore Security Rules.',
       ABORTED: 'Transaksi berubah bersamaan. Muat ulang data cloud sebelum mencoba lagi.',
     };
-    throw new FirebaseHttpError(messages[code] || code.replaceAll('_', ' '), response.status);
+    throw new FirebaseHttpError(messages[code] || code.replace(/_/g, ' '), response.status);
   }
   return payload as Record<string, unknown>;
 }
@@ -344,7 +344,7 @@ function firestoreRecordId(key: string) {
   const bytes = new TextEncoder().encode(key);
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return 'r_' + btoa(binary).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+  return 'r_' + btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
 function recordPath(workspaceId: string, moduleName: string, key: string) {
@@ -686,7 +686,7 @@ export async function createWorkspace(
     prepared.push({ moduleName, identities });
   }
 
-  const workspaceId = crypto.randomUUID().replaceAll('-', '');
+  const workspaceId = crypto.randomUUID().replace(/-/g, '');
   const createdAt = new Date().toISOString();
   await commitWrites([
     updateWrite(`workspaces/${workspaceId}`, {
