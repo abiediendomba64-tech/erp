@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Building2, Plus, Save, Pencil, X, AlertTriangle, Wrench } from 'lucide-react';
+import { Building2, Plus, Save, Pencil, X, AlertTriangle } from 'lucide-react';
 import { useAppContext } from '../store';
 import { formatRupiah, generateId, getLocalDateISO } from '../data';
 import type { AssetCategory, AssetRecord, AssetStatus } from '../types';
