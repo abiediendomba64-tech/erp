@@ -36,7 +36,7 @@ import { AccountingProvider } from './store/accounting';
 
 export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat' | 'unit';
 
-function AppContent({ workspaceRole, workspaceId, workspaceName }: { workspaceRole: 'owner' | 'admin' | 'editor' | 'viewer'; workspaceId: string; workspaceName: string }) {
+function AppContent({ workspaceRole, workspaceId, workspaceName, onSignOut, onSwitchWorkspace }: { workspaceRole: 'owner' | 'admin' | 'editor' | 'viewer'; workspaceId: string; workspaceName: string; onSignOut: () => void; onSwitchWorkspace: () => void }) {
   useEffect(() => {
     // Remove legacy browser-stored integration secrets as early as possible.
     // Integrations require a server-side secret store, which is not configured in this build.
@@ -101,6 +101,12 @@ function AppContent({ workspaceRole, workspaceId, workspaceName }: { workspaceRo
     <AppProvider>
       <AccountingProvider>
       <div className="flex h-screen bg-gray-50 overflow-hidden">
+        <div className="fixed right-3 top-3 z-30 flex max-w-[calc(100vw-5rem)] items-center gap-2 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm">
+          <span className="max-w-40 truncate font-semibold">{workspaceName}</span>
+          <span className="rounded bg-indigo-50 px-1.5 py-1 text-indigo-800">{workspaceRole}</span>
+          <button onClick={onSwitchWorkspace} className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50">Workspace</button>
+          <button onClick={onSignOut} className="rounded bg-slate-800 px-2 py-1 text-white hover:bg-slate-700">Keluar</button>
+        </div>
         <Sidebar
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
@@ -121,6 +127,6 @@ function AppContent({ workspaceRole, workspaceId, workspaceName }: { workspaceRo
   );
 }
 
-export default function App({ workspaceRole = 'owner', workspaceId = '', workspaceName = 'ERP' }: { workspaceRole?: 'owner' | 'admin' | 'editor' | 'viewer'; workspaceId?: string; workspaceName?: string }) {
-  return <AppContent workspaceRole={workspaceRole} workspaceId={workspaceId} workspaceName={workspaceName} />;
+export default function App({ workspaceRole = 'owner', workspaceId = '', workspaceName = 'ERP', onSignOut = () => undefined, onSwitchWorkspace = () => undefined }: { workspaceRole?: 'owner' | 'admin' | 'editor' | 'viewer'; workspaceId?: string; workspaceName?: string; onSignOut?: () => void; onSwitchWorkspace?: () => void }) {
+  return <AppContent workspaceRole={workspaceRole} workspaceId={workspaceId} workspaceName={workspaceName} onSignOut={onSignOut} onSwitchWorkspace={onSwitchWorkspace} />;
 }
