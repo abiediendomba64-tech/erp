@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useReducer, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useEffect, useRef, ReactNode } from 'react';
+import { persistWorkspaceSnapshot } from '../lib/workspaceBackend';
 import { Akun, JurnalUmum, Invoice, PurchaseOrder, RAB, Schedule } from '../types/accounting';
 import { initialAkun } from '../data/accounting';
 
@@ -108,12 +109,28 @@ const AccountingContext = createContext<{
 export function AccountingProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(accountingReducer, undefined, loadInitialState);
 
+  const previousSerialized = useRef<string | null>(null);
+
   useEffect(() => {
+    const serialized = JSON.stringify(state);
+    let previousCache: string | null = null;
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      previousCache = window.localStorage.getItem(STORAGE_KEY);
+      window.localStorage.setItem(STORAGE_KEY, serialized);
     } catch (error) {
-      console.error('Gagal menyimpan data akuntansi ke browser. Export backup data sesegera mungkin.', error);
+      console.error('Cache browser akuntansi tidak dapat ditulis. Data cloud tetap menjadi sumber utama.', error);
     }
+
+    if (previousSerialized.current === null) {
+      previousSerialized.current = serialized;
+      if (previousCache !== serialized) {
+        void persistWorkspaceSnapshot('accounting', state).catch(() => undefined);
+      }
+      return;
+    }
+    if (previousSerialized.current === serialized) return;
+    previousSerialized.current = serialized;
+    void persistWorkspaceSnapshot('accounting', state).catch(() => undefined);
   }, [state]);
   return (
     <AccountingContext.Provider value={{ state, dispatch }}>
