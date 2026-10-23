@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useAccounting } from '../store/accounting';
+import { useAppContext } from '../store';
 import { formatRupiah, getLocalDateISO, generateId } from '../data/accounting';
 import type { RAB, RABItem } from '../types/accounting';
 import { calculateRABItem, calculateRABTotal } from '../utils/operationalFormulas';
@@ -65,6 +66,7 @@ function draftTotal(draft: RABDraft): number {
 
 export default function RABPage() {
   const { state, dispatch } = useAccounting();
+  const { state: operationalState } = useAppContext();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<RABDraft>(emptyDraft());
@@ -149,6 +151,11 @@ export default function RABPage() {
       setError('RAB harus memiliki minimal satu item biaya.');
       return;
     }
+    const linkedUnit = draft.unit.trim() ? operationalState.housingUnits.find(unit => unit.kode_unit.trim().toLowerCase() === draft.unit.trim().toLowerCase()) : undefined;
+    if (draft.unit.trim() && !linkedUnit) {
+      setError('Kode unit belum ada di Register Unit Perumahan. Buat unit terlebih dahulu atau kosongkan Unit untuk RAB proyek/paket.');
+      return;
+    }
     const sharedPool = draft.biaya_bersama_total.trim() ? Number(draft.biaya_bersama_total) : 0;
     const unitCount = draft.jumlah_unit_alokasi.trim() ? Number(draft.jumlah_unit_alokasi) : 0;
     const areas = [draft.luas_tanah_m2, draft.luas_bangunan_m2].filter(value => value.trim()).map(Number);
@@ -203,9 +210,9 @@ export default function RABPage() {
       nama_proyek: draft.nama_proyek.trim(),
       tanggal: draft.tanggal,
       unit: draft.unit.trim(),
-      tipe_rumah: draft.tipe_rumah.trim(),
-      luas_tanah_m2: draft.luas_tanah_m2.trim() ? Number(draft.luas_tanah_m2) : undefined,
-      luas_bangunan_m2: draft.luas_bangunan_m2.trim() ? Number(draft.luas_bangunan_m2) : undefined,
+      tipe_rumah: linkedUnit?.tipe_rumah || draft.tipe_rumah.trim(),
+      luas_tanah_m2: linkedUnit?.luas_tanah_m2 || (draft.luas_tanah_m2.trim() ? Number(draft.luas_tanah_m2) : undefined),
+      luas_bangunan_m2: linkedUnit?.luas_bangunan_m2 || (draft.luas_bangunan_m2.trim() ? Number(draft.luas_bangunan_m2) : undefined),
       sumber_harga: draft.sumber_harga.trim(),
       disetujui_oleh: draft.disetujui_oleh.trim(),
       biaya_bersama_total: sharedPool,
@@ -273,7 +280,9 @@ export default function RABPage() {
             <input type="date" value={draft.tanggal} onChange={e => updateDraft('tanggal', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" />
           </label>
           <label className="text-sm font-medium text-gray-700">Unit / kavling (opsional)
-            <input value={draft.unit} onChange={e => updateDraft('unit', e.target.value)} placeholder="Contoh: A-01; kosong = RAB proyek" className="mt-1 w-full rounded-lg border px-3 py-2" />
+            <input list="erp-rab-unit-codes" value={draft.unit} onChange={e => updateDraft('unit', e.target.value)} placeholder="Pilih kode yang terdaftar; kosong = RAB proyek" className="mt-1 w-full rounded-lg border px-3 py-2" />
+            <datalist id="erp-rab-unit-codes">{operationalState.housingUnits.map(unit => <option key={unit.id} value={unit.kode_unit}>{unit.proyek} · {unit.blok} · {unit.tipe_rumah}</option>)}</datalist>
+            <span className="mt-1 block text-xs text-gray-500">Jika diisi, unit harus terdaftar di Register Unit; luas/tipe mengikuti data master unit.</span>
           </label>
           <label className="text-sm font-medium text-gray-700">Tipe rumah
             <input value={draft.tipe_rumah} onChange={e => updateDraft('tipe_rumah', e.target.value)} placeholder="Misal: subsidi 30/60 atau komersial 36/72" className="mt-1 w-full rounded-lg border px-3 py-2" />
