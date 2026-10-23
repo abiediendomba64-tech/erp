@@ -135,7 +135,9 @@ export default function SettingsPage() {
         return;
       }
       const rows = cashRows.map(row => `<tr><td>${escapeHtml(row.tgl)}</td><td>${escapeHtml(row.id)}</td><td>${escapeHtml(row.keterangan)}</td><td>${escapeHtml(row.proyek)}</td><td style="text-align:right">${escapeHtml(formatRupiah(row.masuk))}</td><td style="text-align:right">${escapeHtml(formatRupiah(row.keluar))}</td><td>${escapeHtml(row.status_verifikasi)}</td></tr>`).join('');
-      const auditTable = settings.exportIncludeAuditLog ? `<h2>Audit log</h2><p>Jumlah catatan: ${auditRows.length}. Audit log dilampirkan sebagai ringkasan, bukan file foto.</p>` : '';
+      const auditTable = settings.exportIncludeAuditLog
+        ? `<h2>Audit log</h2><p>Jumlah catatan: ${auditRows.length}</p><table><thead><tr><th>Waktu</th><th>Pengguna</th><th>Aksi</th><th>Tabel</th><th>ID</th><th>Alasan</th><th>Sumber bukti</th></tr></thead><tbody>${auditRows.map(row => `<tr><td>${escapeHtml(row.timestamp)}</td><td>${escapeHtml(row.user)}</td><td>${escapeHtml(row.aksi)}</td><td>${escapeHtml(row.tabel)}</td><td>${escapeHtml(row.record_id)}</td><td>${escapeHtml(row.alasan)}</td><td>${escapeHtml(row.sumber_bukti)}</td></tr>`).join('')}</tbody></table>`
+        : '';
       printReceipt(`<h1>Laporan Buku Kas ERP</h1><p>Tanggal ekspor: ${escapeHtml(stamp)}</p><p>Saldo berdasarkan catatan (belum tentu saldo kas fisik): ${escapeHtml(formatRupiah(cashRows.reduce((sum, row) => sum + row.masuk - row.keluar, 0)))}</p><table><thead><tr><th>Tanggal</th><th>ID</th><th>Keterangan</th><th>Proyek</th><th>Masuk</th><th>Keluar</th><th>Verifikasi</th></tr></thead><tbody>${rows}</tbody></table>${auditTable}`, 'Laporan Buku Kas ERP');
       setIntegrationMessage('Jendela cetak dibuka. Pilih “Save as PDF” pada dialog printer untuk menyimpan PDF; tidak ada file PDF yang dibuat otomatis.');
     } catch (error) {
