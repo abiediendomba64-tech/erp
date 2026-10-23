@@ -1,25 +1,23 @@
 export {
   addWorkspaceMember,
-  getCurrentSessionInfo,
   clearWorkspaceSession,
-  getCurrentSessionInfo,
   configureWorkspaceSession,
   createWorkspace,
   getCloudStatus,
+  getCurrentSessionInfo,
   hasActiveWorkspaceSession,
   listUserWorkspaces,
   listWorkspaceMembers,
-  updateWorkspaceMemberRole,
   loadWorkspace,
   persistWorkspaceSnapshot,
   subscribeCloudStatus,
-  updateWorkspaceMemberRole,
   switchToWorkspace,
+  updateWorkspaceMemberRole,
 } from './firebaseRest';
 export type {
   CloudSaveStatus,
   CloudStatus,
   LoadedWorkspace,
-  WorkspaceMember,
   UserWorkspace,
+  WorkspaceMember,
 } from './firebaseRest';
