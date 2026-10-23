@@ -185,6 +185,7 @@ export interface RAB {
   luas_tanah_m2?: number;
   luas_bangunan_m2?: number;
   sumber_harga?: string;
+  disetujui_oleh?: string;
   biaya_bersama_total?: number;
   jumlah_unit_alokasi?: number;
 }
