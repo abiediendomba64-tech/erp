@@ -79,7 +79,7 @@ export default function HousingUnitsPage() {
     if (['Terjual','Serah_Terima','Dihuni'].includes(draft.status_penjualan) && !draft.kontrak_penjualan_ref.trim()) {
       setError('Status unit Terjual/Serah Terima/Dihuni wajib memiliki referensi kontrak/penjualan.'); return;
     }
-    if (draft.status_penjualan === 'Serah_Terima' && !draft.dokumen_serah_terima_ref.trim()) {
+    if (['Serah_Terima','Dihuni'].includes(draft.status_penjualan) && !draft.dokumen_serah_terima_ref.trim()) {
       setError('Status Serah Terima wajib memiliki referensi dokumen BAST/serah terima.'); return;
     }
     const refs = [draft.rab_ref,draft.dokumen_tanah_ref,draft.dokumen_pbg_ref,draft.dokumen_slf_ref,draft.kontrak_penjualan_ref,draft.dokumen_serah_terima_ref];
