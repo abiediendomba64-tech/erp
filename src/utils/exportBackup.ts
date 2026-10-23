@@ -193,7 +193,7 @@ export function printReceipt(content: string, title?: string): void {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>${title || 'Receipt'}</title>
+      <title>${escapeHtml(title || 'Receipt')}</title>
       <style>
         @page { margin: 1cm; }
         body { font-family: Arial, sans-serif; font-size: 12px; }
@@ -272,9 +272,9 @@ export function generateReceiptHTML(params: {
   
   return `
     <div class="header">
-      <h1>${company}</h1>
-      ${address ? `<p>${address}</p>` : ''}
-      ${phone ? `<p>Telp: ${phone}</p>` : ''}
+      <h1>${escapeHtml(company)}</h1>
+      ${address ? `<p>${escapeHtml(address)}</p>` : ''}
+      ${phone ? `<p>Telp: ${escapeHtml(phone)}</p>` : ''}
     </div>
     
     <div class="content">
@@ -282,28 +282,28 @@ export function generateReceiptHTML(params: {
       <table style="border: none;">
         <tr style="border: none;">
           <td style="border: none; width: 150px;">No. Kwitansi</td>
-          <td style="border: none;">: ${receiptNumber}</td>
+          <td style="border: none;">: ${escapeHtml(receiptNumber)}</td>
         </tr>
         <tr style="border: none;">
           <td style="border: none;">Tanggal</td>
-          <td style="border: none;">: ${date}</td>
+          <td style="border: none;">: ${escapeHtml(date)}</td>
         </tr>
         <tr style="border: none;">
           <td style="border: none;">Sudah Terima Dari</td>
-          <td style="border: none;">: ${receivedFrom}</td>
+          <td style="border: none;">: ${escapeHtml(receivedFrom)}</td>
         </tr>
         <tr style="border: none;">
           <td style="border: none;">Uang Sejumlah</td>
-          <td style="border: none;">: ${amountInWords || '...'}</td>
+          <td style="border: none;">: ${escapeHtml(amountInWords || '...')}</td>
         </tr>
         <tr style="border: none;">
           <td style="border: none;">Untuk Pembayaran</td>
-          <td style="border: none;">: ${purpose}</td>
+          <td style="border: none;">: ${escapeHtml(purpose)}</td>
         </tr>
         ${paymentMethod ? `
         <tr style="border: none;">
           <td style="border: none;">Metode Pembayaran</td>
-          <td style="border: none;">: ${paymentMethod}</td>
+          <td style="border: none;">: ${escapeHtml(paymentMethod)}</td>
         </tr>
         ` : ''}
         <tr style="border: none;">
@@ -315,7 +315,7 @@ export function generateReceiptHTML(params: {
       ${notes ? `
       <div style="margin-top: 20px; padding: 10px; background-color: #f9f9f9; border-left: 3px solid #4472C4;">
         <strong>Catatan:</strong><br>
-        ${notes}
+        ${escapeHtml(notes)}
       </div>
       ` : ''}
       
@@ -323,12 +323,12 @@ export function generateReceiptHTML(params: {
         <div style="text-align: center;">
           <p>Yang Menyerahkan,</p>
           <div class="signature-line"></div>
-          <p>${receivedFrom}</p>
+          <p>${escapeHtml(receivedFrom)}</p>
         </div>
         <div style="text-align: center;">
           <p>Yang Menerima,</p>
           <div class="signature-line"></div>
-          <p>${company}</p>
+          <p>${escapeHtml(company)}</p>
         </div>
       </div>
     </div>
