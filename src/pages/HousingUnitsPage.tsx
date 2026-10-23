@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { House, Plus, Save, Pencil, X, AlertTriangle } from 'lucide-react';
+import { Home, Plus, Save, Pencil, X, AlertTriangle } from 'lucide-react';
 import { useAppContext } from '../store';
 import { generateId } from '../data';
 import type { HousingUnit, PermitStatus, UnitConstructionStatus, UnitSalesStatus } from '../types';
@@ -125,7 +125,7 @@ export default function HousingUnitsPage() {
   const refCell = (ref: string) => ref ? /^https?:\/\//i.test(ref) ? <a href={ref} target="_blank" rel="noreferrer" className="text-blue-700 underline">Buka</a> : <span className="font-mono text-xs">{ref}</span> : '—';
 
   return <div className="space-y-6">
-    <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900"><House className="text-emerald-700" />Register Proyek & Unit Perumahan</h1><p className="mt-1 text-sm text-gray-500">Master unit/kavling, tipe rumah, status konstruksi, QC, penjualan, perizinan dan dokumen serah terima.</p></div><button onClick={startNew} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800"><Plus size={17} />Tambah unit</button></header>
+    <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900"><Home className="text-emerald-700" />Register Proyek & Unit Perumahan</h1><p className="mt-1 text-sm text-gray-500">Master unit/kavling, tipe rumah, status konstruksi, QC, penjualan, perizinan dan dokumen serah terima.</p></div><button onClick={startNew} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800"><Plus size={17} />Tambah unit</button></header>
 
     <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"><p className="flex items-center gap-2 font-semibold"><AlertTriangle size={17} />Kontrol status unit</p><p className="mt-1">Status berikut berdasarkan input dan bukti referensi, bukan verifikasi eksternal. PBG/SLF/penjualan tidak dianggap resmi hanya karena status diubah. Data ini belum cloud-sync; ID unit perlu dipakai konsisten sebagai referensi pada RAB dan dokumen.</p></div>
     {message && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>}
