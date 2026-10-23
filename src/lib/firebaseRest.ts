@@ -577,6 +577,87 @@ export function persistWorkspaceSnapshot(
   return task;
 }
 
+export interface WorkspaceMember {
+  uid: string;
+  email: string;
+  role: 'owner' | 'admin' | 'editor' | 'viewer';
+  createdAt: string;
+}
+
+export async function getCurrentSessionInfo() {
+  const session = await getValidSession();
+  return { uid: session.localId, email: session.email };
+}
+
+export async function listWorkspaceMembers(workspaceId: string): Promise<WorkspaceMember[]> {
+  const docs = await listDocuments(`workspaces/${workspaceId}/members`);
+  return docs.map(doc => {
+    const data = objectFromDocument(doc);
+    const uid = String(data.userId || doc.name.split('/').pop() || '');
+    const role = ['owner', 'admin', 'editor', 'viewer'].includes(String(data.role))
+      ? data.role as WorkspaceMember['role'] : 'viewer';
+    return {
+      uid,
+      email: typeof data.email === 'string' ? data.email : '',
+      role,
+      createdAt: typeof data.createdAt === 'string' ? data.createdAt : '',
+    };
+  }).sort((a, b) => a.email.localeCompare(b.email) || a.uid.localeCompare(b.uid));
+}
+
+export async function addWorkspaceMember(
+  workspaceId: string,
+  workspaceName: string,
+  uidInput: string,
+  emailInput: string,
+  role: 'admin' | 'editor' | 'viewer',
+) {
+  const uid = uidInput.trim();
+  const email = emailInput.trim().toLowerCase();
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(uid)) {
+    throw new Error('Firebase UID harus 8-128 karakter dan hanya huruf, angka, garis bawah, atau tanda hubung.');
+  }
+  if (!email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
+    throw new Error('Masukkan email anggota yang benar.');
+  }
+  if (!['admin', 'editor', 'viewer'].includes(role)) throw new Error('Role anggota tidak valid.');
+  if (await readDocument(`workspaces/${workspaceId}/members/${uid}`)) {
+    throw new Error('UID tersebut sudah terdaftar sebagai anggota workspace.');
+  }
+  const createdAt = new Date().toISOString();
+  await commitWrites([
+    updateWrite(`workspaces/${workspaceId}/members/${uid}`, { userId: uid, email, role, createdAt }),
+    updateWrite(`users/${uid}/workspaces/${workspaceId}`, {
+      workspaceId, name: workspaceName, role, createdAt,
+    }),
+  ]);
+}
+
+export async function updateWorkspaceMemberRole(
+  workspaceId: string,
+  workspaceName: string,
+  uid: string,
+  role: 'admin' | 'editor' | 'viewer',
+) {
+  if (!['admin', 'editor', 'viewer'].includes(role)) throw new Error('Role anggota tidak valid.');
+  const path = `workspaces/${workspaceId}/members/${uid}`;
+  const document = await readDocument(path);
+  if (!document) throw new Error('Anggota tidak ditemukan.');
+  const current = objectFromDocument(document);
+  if (current.role === 'owner') throw new Error('Role owner tidak dapat diubah dari daftar anggota.');
+  const next = { ...current, userId: uid, role };
+  const indexPath = `users/${uid}/workspaces/${workspaceId}`;
+  const indexDocument = await readDocument(indexPath);
+  const index = indexDocument ? objectFromDocument(indexDocument) : {};
+  await commitWrites([
+    updateWrite(path, next),
+    updateWrite(indexPath, {
+      ...index, workspaceId, name: workspaceName, role,
+      createdAt: typeof current.createdAt === 'string' ? current.createdAt : new Date().toISOString(),
+    }),
+  ]);
+}
+
 export async function createWorkspace(
   uid: string,
   email: string,
