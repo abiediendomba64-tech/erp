@@ -96,6 +96,7 @@ export default function SettingsPage() {
       // Never store bearer tokens/bot tokens in browser storage. A backend secret store is not configured.
       const safe = { ...settings, waApiToken: '', tgBotToken: '', autoBackup: false, backupLocation: 'local' as const };
       localStorage.setItem('app_settings', JSON.stringify(safe));
+      setSettings(safe);
       setSaved(true);
       setIntegrationMessage('Pengaturan nonrahasia tersimpan di browser. Token WhatsApp/Telegram tidak disimpan; integrasi server belum dikonfigurasi.');
       setTimeout(() => setSaved(false), 3000);
