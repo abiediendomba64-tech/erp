@@ -59,7 +59,10 @@ service cloud.firestore {
           (isOwner(workspaceId) &&
             getAfter(memberPath(workspaceId, userUid)).data.role == request.resource.data.role)
         );
-      allow update, delete: if false;
+      allow update: if signedIn() && isOwner(workspaceId) &&
+        request.resource.data.workspaceId == workspaceId &&
+        getAfter(memberPath(workspaceId, userUid)).data.role == request.resource.data.role;
+      allow delete: if false;
     }
 
     match /workspaces/{workspaceId} {
@@ -91,7 +94,11 @@ service cloud.firestore {
               request.resource.data.role in ['admin', 'editor', 'viewer'])
           );
 
-        allow update, delete: if isOwner(workspaceId) && memberUid != get(workspacePath(workspaceId)).data.ownerUid;
+        allow update: if isOwner(workspaceId) &&
+          memberUid != get(workspacePath(workspaceId)).data.ownerUid &&
+          request.resource.data.userId == resource.data.userId &&
+          request.resource.data.role in ['admin', 'editor', 'viewer'];
+        allow delete: if false;
       }
 
       match /modules/{moduleName}/meta/{metaId} {
