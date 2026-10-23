@@ -364,6 +364,7 @@ export interface TaxRecord {
   tarif_persen: number | null;
   nilai_pajak: number;
   sumber_aturan: string;
+  disetujui_oleh: string;
   jatuh_tempo: string;
   status: TaxStatus;
   bukti_pembayaran: string;
