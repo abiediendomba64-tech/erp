@@ -322,6 +322,10 @@ export interface QCRecord {
   tindakan_perbaikan: string;
   tenggat_perbaikan: string;
   tautan_bukti: string;
+  local_file_key?: string;
+  nama_file?: string;
+  mime_type?: string;
+  ukuran_bytes?: number;
   created_at: string;
   updated_at: string;
 }
