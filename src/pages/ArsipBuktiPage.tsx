@@ -191,10 +191,9 @@ export default function ArsipBuktiPage() {
 
     const matchingCashRows = (moduleName: string, relatedId: string, proofCode: string) => {
       if (moduleName !== 'Buku Kas') return [];
-      return state.bukuKas.filter(row =>
-        (Boolean(relatedId) && row.id === relatedId.trim()) ||
-        (Boolean(proofCode) && Boolean(row.kode_bukti) && row.kode_bukti === proofCode.trim())
-      );
+      // Finance posting must use one explicit cash-row ID; proof-code-only links can hit several rows.
+      if (!relatedId.trim()) return [];
+      return state.bukuKas.filter(row => row.id === relatedId.trim());
     };
     const newMatchRows = matchingCashRows(form.modul_terkait, form.id_terkait, form.kode_bukti);
     const oldMatchRows = existing
@@ -217,7 +216,11 @@ export default function ArsipBuktiPage() {
     const isPaymentEvidence = ['Kwitansi_Foto', 'Transfer_Bank', 'Nota_Foto'].includes(form.jenis);
     const verifiedPaymentLink = form.terverifikasi === 'Ya' && hasEvidence &&
       form.modul_terkait === 'Buku Kas' && isPaymentEvidence;
-    if (verifiedPaymentLink && form.id_terkait.trim() && newMatchRows.length === 0) {
+    if (verifiedPaymentLink && !form.id_terkait.trim()) {
+      setError('ID Buku Kas wajib dipilih. Kode bukti saja tidak cukup untuk memverifikasi atau memposting transaksi karena satu kode dapat muncul di beberapa baris.');
+      return;
+    }
+    if (verifiedPaymentLink && newMatchRows.length === 0) {
       setError('ID Buku Kas tidak ditemukan. Periksa ID record terkait atau pilih modul yang benar.');
       return;
     }
