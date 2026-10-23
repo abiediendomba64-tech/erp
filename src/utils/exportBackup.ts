@@ -5,6 +5,22 @@
 
 import { formatRupiah } from './numberParser';
 
+function safeCsvText(value: unknown): string {
+  let text = value === null || value === undefined ? '' : String(value);
+  // Prevent spreadsheet formula execution for untrusted text; numeric JS values remain numeric text.
+  if (typeof value === 'string' && text.length > 0 && ['=', '+', '-', '@'].includes(text[0])) text = "'" + text;
+  return text;
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ============ EXPORT TO CSV ============
 
 /**
@@ -32,7 +48,7 @@ export function exportToCSV<T extends Record<string, any>>(
     cols.map(col => {
       const value = row[col];
       // Escape quotes and wrap in quotes if contains comma
-      const strValue = value === null || value === undefined ? '' : String(value);
+      const strValue = safeCsvText(value);
       if (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n')) {
         return `"${strValue.replace(/"/g, '""')}"`;
       }
@@ -83,7 +99,7 @@ export function exportToExcel<T extends Record<string, any>>(
         <x:ExcelWorkbook>
           <x:ExcelWorksheets>
             <x:ExcelWorksheet>
-              <x:Name>${filename}</x:Name>
+              <x:Name>${escapeHtml(filename)}</x:Name>
               <x:WorksheetOptions>
                 <x:DisplayGridlines/>
               </x:WorksheetOptions>
@@ -104,7 +120,7 @@ export function exportToExcel<T extends Record<string, any>>(
   `;
   
   if (title) {
-    html += `<div class="title">${title}</div>`;
+    html += `<div class="title">${escapeHtml(title)}</div>`;
   }
   
   html += '<table>';
@@ -112,7 +128,7 @@ export function exportToExcel<T extends Record<string, any>>(
   // Header
   html += '<thead><tr>';
   cols.forEach(col => {
-    html += `<th>${String(col)}</th>`;
+    html += `<th>${escapeHtml(String(col))}</th>`;
   });
   html += '</tr></thead>';
   
@@ -123,7 +139,7 @@ export function exportToExcel<T extends Record<string, any>>(
     cols.forEach(col => {
       const value = row[col];
       const isNumber = typeof value === 'number';
-      html += `<td${isNumber ? ' class="number"' : ''}>${value ?? ''}</td>`;
+      html += `<td${isNumber ? ' class="number"' : ''}>${escapeHtml(value ?? '')}</td>`;
     });
     html += '</tr>';
   });
@@ -177,7 +193,7 @@ export function printReceipt(content: string, title?: string): void {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>${title || 'Receipt'}</title>
+      <title>${escapeHtml(title || 'Receipt')}</title>
       <style>
         @page { margin: 1cm; }
         body { font-family: Arial, sans-serif; font-size: 12px; }
@@ -212,14 +228,14 @@ export function printReceipt(content: string, title?: string): void {
     </html>
   `;
   
-  printWindow.document.write(html);
-  printWindow.document.close();
-  
-  // Auto print after load
+  // Attach the print handler before closing the document so fast loads do not miss the event.
   printWindow.onload = () => {
     printWindow.focus();
     printWindow.print();
   };
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
 }
 
 // ============ GENERATE RECEIPT HTML ============
@@ -256,9 +272,9 @@ export function generateReceiptHTML(params: {
   
   return `
     <div class="header">
-      <h1>${company}</h1>
-      ${address ? `<p>${address}</p>` : ''}
-      ${phone ? `<p>Telp: ${phone}</p>` : ''}
+      <h1>${escapeHtml(company)}</h1>
+      ${address ? `<p>${escapeHtml(address)}</p>` : ''}
+      ${phone ? `<p>Telp: ${escapeHtml(phone)}</p>` : ''}
     </div>
     
     <div class="content">
@@ -266,28 +282,28 @@ export function generateReceiptHTML(params: {
       <table style="border: none;">
         <tr style="border: none;">
           <td style="border: none; width: 150px;">No. Kwitansi</td>
-          <td style="border: none;">: ${receiptNumber}</td>
+          <td style="border: none;">: ${escapeHtml(receiptNumber)}</td>
         </tr>
         <tr style="border: none;">
           <td style="border: none;">Tanggal</td>
-          <td style="border: none;">: ${date}</td>
+          <td style="border: none;">: ${escapeHtml(date)}</td>
         </tr>
         <tr style="border: none;">
           <td style="border: none;">Sudah Terima Dari</td>
-          <td style="border: none;">: ${receivedFrom}</td>
+          <td style="border: none;">: ${escapeHtml(receivedFrom)}</td>
         </tr>
         <tr style="border: none;">
           <td style="border: none;">Uang Sejumlah</td>
-          <td style="border: none;">: ${amountInWords || '...'}</td>
+          <td style="border: none;">: ${escapeHtml(amountInWords || '...')}</td>
         </tr>
         <tr style="border: none;">
           <td style="border: none;">Untuk Pembayaran</td>
-          <td style="border: none;">: ${purpose}</td>
+          <td style="border: none;">: ${escapeHtml(purpose)}</td>
         </tr>
         ${paymentMethod ? `
         <tr style="border: none;">
           <td style="border: none;">Metode Pembayaran</td>
-          <td style="border: none;">: ${paymentMethod}</td>
+          <td style="border: none;">: ${escapeHtml(paymentMethod)}</td>
         </tr>
         ` : ''}
         <tr style="border: none;">
@@ -299,7 +315,7 @@ export function generateReceiptHTML(params: {
       ${notes ? `
       <div style="margin-top: 20px; padding: 10px; background-color: #f9f9f9; border-left: 3px solid #4472C4;">
         <strong>Catatan:</strong><br>
-        ${notes}
+        ${escapeHtml(notes)}
       </div>
       ` : ''}
       
@@ -307,12 +323,12 @@ export function generateReceiptHTML(params: {
         <div style="text-align: center;">
           <p>Yang Menyerahkan,</p>
           <div class="signature-line"></div>
-          <p>${receivedFrom}</p>
+          <p>${escapeHtml(receivedFrom)}</p>
         </div>
         <div style="text-align: center;">
           <p>Yang Menerima,</p>
           <div class="signature-line"></div>
-          <p>${company}</p>
+          <p>${escapeHtml(company)}</p>
         </div>
       </div>
     </div>

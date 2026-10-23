@@ -189,18 +189,25 @@ export default function ArsipBuktiPage() {
       }
     }
 
-    const matchingCashRows = (moduleName: string, relatedId: string, proofCode: string) => {
+    const matchingCashRows = (moduleName: string, relatedId: string) => {
       if (moduleName !== 'Buku Kas') return [];
-      return state.bukuKas.filter(row =>
-        (Boolean(relatedId) && row.id === relatedId.trim()) ||
-        (Boolean(proofCode) && Boolean(row.kode_bukti) && row.kode_bukti === proofCode.trim())
-      );
+      // Finance posting must use one explicit cash-row ID; proof-code-only links can hit several rows.
+      if (!relatedId.trim()) return [];
+      return state.bukuKas.filter(row => row.id === relatedId.trim());
     };
-    const newMatchRows = matchingCashRows(form.modul_terkait, form.id_terkait, form.kode_bukti);
+    const newMatchRows = matchingCashRows(form.modul_terkait, form.id_terkait);
     const oldMatchRows = existing
-      ? matchingCashRows(existing.modul_terkait || '', existing.id_terkait || '', existing.kode_bukti || '')
+      ? matchingCashRows(existing.modul_terkait || '', existing.id_terkait || '')
       : [];
-    const postedRowsProtected = oldMatchRows.filter(row =>
+    // Legacy proof-code-only rows may have been used by an older version to post a journal.
+    // They are never allowed to post another row, but matching Posted cash entries are protected
+    // from evidence edits until each legacy relation has been reconciled manually.
+    const legacyPostedCandidates = existing?.modul_terkait === 'Buku Kas' && existing.kode_bukti
+      ? state.bukuKas.filter(row => row.kode_bukti === existing.kode_bukti)
+      : [];
+    const oldRowsForProtection = [...oldMatchRows, ...legacyPostedCandidates]
+      .filter((row, index, array) => array.findIndex(candidate => candidate.id === row.id) === index);
+    const postedRowsProtected = oldRowsForProtection.filter(row =>
       row.posting_status === 'POSTED' &&
       Boolean(row.jurnal_id) &&
       accountingState.jurnal.some(journal => journal.id === row.jurnal_id && journal.status === 'Posted')
@@ -217,7 +224,11 @@ export default function ArsipBuktiPage() {
     const isPaymentEvidence = ['Kwitansi_Foto', 'Transfer_Bank', 'Nota_Foto'].includes(form.jenis);
     const verifiedPaymentLink = form.terverifikasi === 'Ya' && hasEvidence &&
       form.modul_terkait === 'Buku Kas' && isPaymentEvidence;
-    if (verifiedPaymentLink && form.id_terkait.trim() && newMatchRows.length === 0) {
+    if (verifiedPaymentLink && !form.id_terkait.trim()) {
+      setError('ID Buku Kas wajib dipilih. Kode bukti saja tidak cukup untuk memverifikasi atau memposting transaksi karena satu kode dapat muncul di beberapa baris.');
+      return;
+    }
+    if (verifiedPaymentLink && newMatchRows.length === 0) {
       setError('ID Buku Kas tidak ditemukan. Periksa ID record terkait atau pilih modul yang benar.');
       return;
     }

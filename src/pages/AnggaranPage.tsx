@@ -51,7 +51,8 @@ export default function AnggaranPage() {
         row.tgl.slice(0, 7) === budget.periode &&
         row.kategori === budget.kategori &&
         row.keluar > 0 &&
-        (!budget.proyek?.trim() || row.proyek.trim().toLowerCase() === budget.proyek.trim().toLowerCase())
+        (!budget.proyek?.trim() || row.proyek.trim().toLowerCase() === budget.proyek.trim().toLowerCase()) &&
+        getBukuKasVerificationStatus(row, state.arsipBukti) === 'LENGKAP'
       )
       .reduce((sum, row) => sum + Math.max(0, Number(row.keluar) || 0), 0);
 
@@ -88,7 +89,8 @@ export default function AnggaranPage() {
       (!budget.proyek?.trim() || budget.proyek.trim().toLowerCase() === cashRow.proyek.trim().toLowerCase())
     )
   );
-  const totalRealization = uniqueMatchingCashOutflows.reduce((sum, row) => sum + Math.max(0, Number(row.keluar) || 0), 0);
+  const verifiedMatchingCashOutflows = uniqueMatchingCashOutflows.filter(row => getBukuKasVerificationStatus(row, state.arsipBukti) === 'LENGKAP');
+  const totalRealization = verifiedMatchingCashOutflows.reduce((sum, row) => sum + Math.max(0, Number(row.keluar) || 0), 0);
   const overBudgetRows = budgetRows.filter(row => row.sisa < 0).length;
   const rowsWithoutEvidence = uniqueMatchingCashOutflows.filter(row => getBukuKasVerificationStatus(row, state.arsipBukti) !== 'LENGKAP').length;
   const unallocatedOutflow = state.bukuKas.filter(cashRow =>
@@ -142,14 +144,15 @@ export default function AnggaranPage() {
       setError('Nama proyek atau catatan terlalu panjang.');
       return;
     }
-    const duplicate = state.anggaran.find(budget =>
-      budget.id !== editingId &&
-      budget.kategori === form.kategori &&
-      budget.periode === form.periode &&
-      (budget.proyek || '').trim().toLowerCase() === form.proyek.trim().toLowerCase()
-    );
-    if (duplicate) {
-      setError('Anggaran untuk kategori, periode, dan proyek yang sama sudah ada. Edit baris itu, jangan membuat anggaran ganda.');
+    const overlappingScope = state.anggaran.find(budget => {
+      if (budget.id === editingId || budget.kategori !== form.kategori || budget.periode !== form.periode) return false;
+      const existingProject = (budget.proyek || '').trim().toLowerCase();
+      const newProject = form.proyek.trim().toLowerCase();
+      // Blank project means "all projects"; it overlaps every named project in the same category/month.
+      return !existingProject || !newProject || existingProject === newProject;
+    });
+    if (overlappingScope) {
+      setError('Anggaran kategori/periode ini bertumpang tindih dengan lingkup anggaran yang sudah ada. Anggaran proyek kosong berarti semua proyek; gunakan anggaran khusus per proyek atau satu anggaran semua proyek, jangan keduanya.');
       return;
     }
 
@@ -174,9 +177,9 @@ export default function AnggaranPage() {
     const rows: (string | number)[][] = [
       ['REKAP ANGGARAN VS REALISASI BUKU KAS'],
       ['Periode filter', periodFilter || 'Semua periode'],
-      ['Catatan', 'Realisasi merupakan pengeluaran tercatat di Buku Kas, bukan saldo bank yang direkonsiliasi.'],
+      ['Catatan', 'Realisasi hanya mencakup pengeluaran Buku Kas yang bukti pembayaran dan nominalnya terverifikasi; bukan rekonsiliasi saldo bank.'],
       [],
-      ['Kategori', 'Proyek', 'Periode', 'Anggaran', 'Realisasi dari Buku Kas', 'Sisa/(Lebih Anggaran)', 'Persentase', 'Transaksi Kas', 'Transaksi tanpa bukti'],
+      ['Kategori', 'Proyek', 'Periode', 'Anggaran', 'Realisasi dengan bukti lengkap', 'Sisa/(Lebih Anggaran) berdasar realisasi terverifikasi', 'Persentase terverifikasi', 'Transaksi kas cocok', 'Transaksi belum berbukti'],
       ...budgetRows.map(row => [
         row.budget.kategori, row.budget.proyek || 'Semua proyek',
         row.budget.periode, row.budget.anggaran, row.realisasi, row.sisa,
@@ -202,7 +205,7 @@ export default function AnggaranPage() {
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900"><Wallet size={24} className="text-emerald-600" />Anggaran Proyek</h1>
-          <p className="mt-1 text-gray-500">Rencana diinput satu kali; realisasi dihitung dari pengeluaran Buku Kas menurut kategori, proyek, dan bulan.</p>
+          <p className="mt-1 text-gray-500">Realisasi anggaran hanya dihitung dari pengeluaran Buku Kas yang memiliki bukti pembayaran terverifikasi dengan nominal cocok.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={exportCsv} className="inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm hover:bg-gray-50"><Download size={16} />Ekspor CSV</button>
@@ -212,7 +215,7 @@ export default function AnggaranPage() {
 
       <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
         <p className="flex items-center gap-2 font-semibold"><AlertTriangle size={17} />Perbedaan anggaran dan uang keluar</p>
-        <p className="mt-1">Anggaran adalah rencana; tidak mengurangi saldo kas dan tidak membuat jurnal. Realisasi hanya menjumlahkan baris pengeluaran pada Buku Kas yang cocok dengan periode, kategori dan proyek. Baris tanpa kuitansi/transfer terhubung tetap ditampilkan sebagai transaksi yang perlu konfirmasi.</p>
+        <p className="mt-1">Anggaran adalah rencana; tidak mengurangi saldo kas dan tidak membuat jurnal. Baris buku kas harus cocok periode, kategori dan proyek serta bukti pembayaran terverifikasi yang cocok nominalnya agar dihitung sebagai realisasi. Pengeluaran tanpa bukti lengkap tetap terlihat sebagai pengecualian dan tidak menaikkan realisasi terverifikasi.</p>
       </div>
 
       {message && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>}
@@ -220,9 +223,9 @@ export default function AnggaranPage() {
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Total anggaran terfilter</p><p className="mt-2 text-xl font-bold">{formatRupiah(totalBudget)}</p><p className="mt-1 text-xs text-gray-500">{budgetRows.length} rencana biaya</p></div>
-        <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Realisasi pengeluaran tercatat</p><p className="mt-2 text-xl font-bold text-red-700">{formatRupiah(totalRealization)}</p><p className="mt-1 text-xs text-gray-500">Baris Buku Kas yang cocok</p></div>
+        <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Realisasi dengan bukti lengkap</p><p className="mt-2 text-xl font-bold text-red-700">{formatRupiah(totalRealization)}</p><p className="mt-1 text-xs text-gray-500">Baris dengan bukti dan nominal yang cocok</p></div>
         <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Anggaran terlampaui</p><p className="mt-2 text-xl font-bold text-amber-700">{overBudgetRows}</p><p className="mt-1 text-xs text-gray-500">Baris dengan realisasi di atas rencana</p></div>
-        <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Pengeluaran tanpa anggaran cocok</p><p className="mt-2 text-xl font-bold text-amber-700">{formatRupiah(unallocatedOutflow)}</p><p className="mt-1 text-xs text-gray-500">{rowsWithoutEvidence} transaksi cocok yang belum didukung bukti</p></div>
+        <div className="rounded-xl border bg-white p-5"><p className="text-sm text-gray-500">Pengeluaran tanpa anggaran cocok</p><p className="mt-2 text-xl font-bold text-amber-700">{formatRupiah(unallocatedOutflow)}</p><p className="mt-1 text-xs text-gray-500">{rowsWithoutEvidence} baris cocok masih perlu konfirmasi bukti</p></div>
       </section>
 
       {showForm && <section className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm sm:p-6">

@@ -223,8 +223,13 @@ assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-3', kode_bukti
   id: 'DOC-PENDING', kode_bukti: 'KW-03', jenis: 'Kwitansi_Foto', nominal: 1000, terverifikasi: 'Perlu_Konfirmasi', link_drive: 'https://example.test/bukti.pdf'
 }]), 'PERLU_KONFIRMASI');
 assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-4', kode_bukti: 'KW-04', masuk: 1000, keluar: 0 }, [{
-  id: 'DOC-VERIFIED', kode_bukti: 'KW-04', jenis: 'Kwitansi_Foto', nominal: 1000, terverifikasi: 'Ya', link_drive: 'https://example.test/bukti.pdf'
-}]), 'LENGKAP');
+  id: 'DOC-VERIFIED', modul_terkait: 'Buku Kas', id_terkait: 'KAS-TEST-4',
+  kode_bukti: 'KW-04', jenis: 'Kwitansi_Foto', nominal: 1000, terverifikasi: 'Ya', link_drive: 'https://example.test/bukti.pdf'
+}]), 'LENGKAP', 'bukti harus terhubung dengan ID transaksi Buku Kas tertentu');
+assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-4B', kode_bukti: 'KW-04', masuk: 1000, keluar: 0 }, [{
+  id: 'DOC-SHARED-CODE-ONLY', modul_terkait: 'Buku Kas', id_terkait: 'KAS-OTHER',
+  kode_bukti: 'KW-04', jenis: 'Kwitansi_Foto', nominal: 1000, terverifikasi: 'Ya', link_drive: 'https://example.test/bukti.pdf'
+}]), 'PERLU_KONFIRMASI', 'kode bukti yang sama tidak boleh memverifikasi transaksi lain tanpa ID terkait yang sama');
 assert.equal(helpers.getBukuKasVerificationStatus({ id: 'KAS-TEST-5', kode_bukti: 'KW-05', masuk: 1000, keluar: 0 }, [{
   id: 'DOC-EMPTY', kode_bukti: 'KW-05', jenis: 'Kwitansi_Foto', nominal: 1000, terverifikasi: 'Ya', link_drive: ''
 }]), 'PERLU_KONFIRMASI');

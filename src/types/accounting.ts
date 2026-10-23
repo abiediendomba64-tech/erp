@@ -179,6 +179,15 @@ export interface RAB {
   items: RABItem[];
   total_biaya: number;
   status: 'Draft' | 'Approved' | 'In Progress' | 'Completed';
+  // Optional metadata keeps historical project-level RAB records backward-compatible.
+  unit?: string;
+  tipe_rumah?: string;
+  luas_tanah_m2?: number;
+  luas_bangunan_m2?: number;
+  sumber_harga?: string;
+  disetujui_oleh?: string;
+  biaya_bersama_total?: number;
+  jumlah_unit_alokasi?: number;
 }
 
 export interface RABItem {

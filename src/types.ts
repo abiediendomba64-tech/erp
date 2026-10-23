@@ -305,6 +305,107 @@ export interface MenuItem {
   role_access: UserRole[];
 }
 
+// ============ QUALITY CONTROL / QC ============
+// Field inspections are persisted in the operational store. Evidence URLs are references,
+// not uploaded files; local persistence is not a server-side audit trail.
+export type QCOutcome = 'Draft' | 'Lulus' | 'Perlu_Perbaikan' | 'Ditolak';
+export interface QCRecord {
+  id: string;
+  proyek: string;
+  lokasi_unit: string;
+  tahap_pekerjaan: string;
+  item_inspeksi: string;
+  tanggal_inspeksi: string;
+  pemeriksa: string;
+  hasil: QCOutcome;
+  temuan: string;
+  tindakan_perbaikan: string;
+  tenggat_perbaikan: string;
+  tautan_bukti: string;
+  local_file_key?: string;
+  nama_file?: string;
+  mime_type?: string;
+  ukuran_bytes?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============ FIXED ASSET REGISTER ============
+// Depreciation in the UI is an indicative straight-line estimate, not an accounting posting.
+export type AssetCategory = 'Tanah' | 'Bangunan' | 'Alat_Berat' | 'Kendaraan' | 'Peralatan' | 'Infrastruktur' | 'Lainnya';
+export type AssetStatus = 'Aktif' | 'Pemeliharaan' | 'Nonaktif' | 'Dilepas';
+export interface AssetRecord {
+  id: string;
+  kode_aset: string;
+  nama_aset: string;
+  kategori: AssetCategory;
+  proyek: string;
+  tanggal_perolehan: string;
+  nilai_perolehan: number;
+  nilai_residu: number;
+  umur_manfaat_tahun: number;
+  lokasi: string;
+  penanggung_jawab: string;
+  status: AssetStatus;
+  referensi_dokumen: string;
+  catatan: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============ TAX OBLIGATION REGISTER ============
+// Rates are never presumed by the application. The user/accountant must enter and cite the applicable rule.
+export type TaxType = 'PPN' | 'PPh_21' | 'PPh_23' | 'PPh_Final' | 'BPHTB' | 'PBB' | 'Lainnya';
+export type TaxStatus = 'Draft' | 'Perlu_Verifikasi' | 'Disetujui' | 'Dibayar' | 'Dilaporkan';
+export interface TaxRecord {
+  id: string;
+  jenis_pajak: TaxType;
+  proyek: string;
+  unit: string;
+  periode: string;
+  referensi_transaksi: string;
+  dasar_pengenaan: number;
+  tarif_persen: number | null;
+  nilai_pajak: number;
+  sumber_aturan: string;
+  disetujui_oleh: string;
+  jatuh_tempo: string;
+  status: TaxStatus;
+  bukti_pembayaran: string;
+  nomor_pelaporan: string;
+  catatan: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============ PERUMAHAN / UNIT REGISTER ============
+// Unit master record. This local register does not claim title, permit, or construction status is externally verified.
+export type UnitConstructionStatus = 'Belum_Mulai' | 'Berjalan' | 'QC' | 'Perlu_Perbaikan' | 'Siap_Serah_Terima' | 'Selesai';
+export type UnitSalesStatus = 'Belum_Dipasarkan' | 'Dipasarkan' | 'Dipesan' | 'Terjual' | 'Serah_Terima' | 'Dihuni' | 'Dibatalkan';
+export type PermitStatus = 'Belum_Diajukan' | 'Dalam_Proses' | 'Terbit' | 'Tidak_Berlaku' | 'Perlu_Verifikasi';
+export interface HousingUnit {
+  id: string;
+  kode_unit: string;
+  proyek: string;
+  blok: string;
+  tipe_rumah: string;
+  luas_tanah_m2: number;
+  luas_bangunan_m2: number;
+  status_konstruksi: UnitConstructionStatus;
+  status_penjualan: UnitSalesStatus;
+  status_pbg: PermitStatus;
+  status_slf: PermitStatus;
+  rab_ref: string;
+  dokumen_tanah_ref: string;
+  dokumen_pbg_ref: string;
+  dokumen_slf_ref: string;
+  kontrak_penjualan_ref: string;
+  dokumen_serah_terima_ref: string;
+  catatan: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // ============ DASHBOARD SUMMARY ============
 export interface DashboardSummary {
   total_kas_masuk: number;

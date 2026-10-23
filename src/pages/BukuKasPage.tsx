@@ -158,8 +158,7 @@ export default function BukuKasPage() {
           document.terverifikasi === 'Ya' &&
           hasDocumentEvidence(document) &&
           ['Kwitansi_Foto', 'Transfer_Bank', 'Nota_Foto'].includes(document.jenis) &&
-          ((document.id_terkait && document.id_terkait === existingRecord.id) ||
-            (document.kode_bukti && existingRecord.kode_bukti && document.kode_bukti === existingRecord.kode_bukti)) &&
+          document.id_terkait === existingRecord.id &&
           Number.isFinite(Number(document.nominal)) &&
           Math.abs(Number(document.nominal) - nominal) <= 0.005
         );
@@ -186,8 +185,7 @@ export default function BukuKasPage() {
             .filter(document =>
               document.modul_terkait === 'Buku Kas' &&
               document.terverifikasi === 'Ya' &&
-              ((document.id_terkait && document.id_terkait === existingRecord.id) ||
-                (document.kode_bukti && existingRecord.kode_bukti && document.kode_bukti === existingRecord.kode_bukti))
+              document.id_terkait === existingRecord.id
             )
             .forEach(document => dispatch({
               type: 'UPDATE_ARSIP_BUKTI',

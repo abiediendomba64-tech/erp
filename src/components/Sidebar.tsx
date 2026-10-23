@@ -3,7 +3,7 @@ import {
   LandPlot, Truck, History, FileBarChart, Menu, X,
   Package, Factory, ShoppingCart, Users, PieChart,
   Scan, MessageCircle, Settings, DollarSign, Shield,
-  UserCog, Plus, ClipboardList
+  UserCog, Plus, ClipboardList, ClipboardCheck, Building2, Calculator, Home
 } from 'lucide-react';
 import { Page } from '../App';
 
@@ -44,6 +44,11 @@ const adminMenu: { id: Page; label: string; icon: React.ReactNode; section: stri
   { id: 'laporankeuangan', label: 'Laporan Keuangan', icon: <FileBarChart size={20} />, section: 'Akuntansi' },
   { id: 'invoicepo', label: 'Invoice & PO', icon: <FileBarChart size={20} />, section: 'Akuntansi' },
   { id: 'rab', label: 'RAB / BOQ Proyek', icon: <ClipboardList size={20} />, section: 'Akuntansi' },
+  { id: 'qc', label: 'Quality Control (QC)', icon: <ClipboardCheck size={20} />, section: 'Konstruksi' },
+  { id: 'aset', label: 'Register Aset', icon: <Building2 size={20} />, section: 'Aset & Pajak' },
+  { id: 'pajak', label: 'Register Pajak', icon: <Calculator size={20} />, section: 'Aset & Pajak' },
+  { id: 'surat', label: 'Surat & Dokumen', icon: <FolderArchive size={20} />, section: 'Dokumen' },
+  { id: 'unit', label: 'Register Unit Perumahan', icon: <Home size={20} />, section: 'Konstruksi' },
 ];
 
 // Menu untuk CLIENT/VIEWER (read-only, tidak ada data sensitif)
@@ -76,7 +81,7 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
             {isOpen && (
               <div className="overflow-hidden">
                 <h1 className="font-bold text-sm whitespace-nowrap">Audit System</h1>
-                <p className="text-xs text-slate-400 whitespace-nowrap">Real-time • Anti-drift</p>
+                <p className="text-xs text-slate-400 whitespace-nowrap">Data lokal • Belum cloud sync</p>
               </div>
             )}
           </div>
@@ -85,7 +90,7 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
         {/* Role Switcher */}
         {isOpen && (
           <div className="px-4 py-3 border-b border-slate-700">
-            <p className="text-xs text-slate-500 mb-2">Mode Akses:</p>
+            <p className="text-xs text-amber-300 mb-2">Mode tampilan (bukan autentikasi):</p>
             <div className="flex gap-1">
               <button
                 onClick={() => { setCurrentRole('ADMIN'); setCurrentPage('dashboard'); }}
@@ -100,6 +105,7 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
                 👁 Client
               </button>
             </div>
+            <p className="mt-2 text-[10px] leading-4 text-amber-300">Pergantian Admin/Client hanya memfilter menu browser. Ini belum mengamankan data atau API.</p>
           </div>
         )}
 
@@ -143,7 +149,7 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
               </div>
               <div>
                 <p className="text-xs font-medium">{currentRole === 'ADMIN' ? 'Administrator' : 'Client / Viewer'}</p>
-                <p className="text-xs text-slate-400">{currentRole === 'ADMIN' ? 'Full access' : 'Read-only'}</p>
+                <p className="text-xs text-slate-400">Mode tampilan saja; izin server belum aktif</p>
               </div>
             </div>
           </div>
