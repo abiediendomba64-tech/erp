@@ -14,6 +14,7 @@ type RABDraft = {
   luas_tanah_m2: string;
   luas_bangunan_m2: string;
   sumber_harga: string;
+  disetujui_oleh: string;
   biaya_bersama_total: string;
   jumlah_unit_alokasi: string;
   items: RABItem[];
@@ -33,7 +34,7 @@ const emptyDraft = (): RABDraft => ({
   tanggal: getLocalDateISO(),
   status: 'Draft',
   unit: '', tipe_rumah: '', luas_tanah_m2: '', luas_bangunan_m2: '',
-  sumber_harga: '', biaya_bersama_total: '', jumlah_unit_alokasi: '',
+  sumber_harga: '', disetujui_oleh: '', biaya_bersama_total: '', jumlah_unit_alokasi: '',
   items: [emptyItem()],
 });
 
@@ -116,6 +117,7 @@ export default function RABPage() {
       luas_tanah_m2: record.luas_tanah_m2 === undefined ? '' : String(record.luas_tanah_m2),
       luas_bangunan_m2: record.luas_bangunan_m2 === undefined ? '' : String(record.luas_bangunan_m2),
       sumber_harga: record.sumber_harga || '',
+      disetujui_oleh: record.disetujui_oleh || '',
       biaya_bersama_total: record.biaya_bersama_total === undefined ? '' : String(record.biaya_bersama_total),
       jumlah_unit_alokasi: record.jumlah_unit_alokasi === undefined ? '' : String(record.jumlah_unit_alokasi),
       items: record.items.length ? record.items.map(calculateItem) : [emptyItem()],
@@ -131,8 +133,16 @@ export default function RABPage() {
       setError('Nama proyek wajib diisi.');
       return;
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.tanggal)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.tanggal) || Number.isNaN(new Date(draft.tanggal + 'T00:00:00').getTime())) {
       setError('Tanggal RAB harus valid.');
+      return;
+    }
+    if (draft.status !== 'Draft' && !draft.sumber_harga.trim()) {
+      setError('Status selain Draft wajib menyertakan sumber harga yang bisa ditelusuri (AHSP/quotation dan tanggal).');
+      return;
+    }
+    if (draft.status !== 'Draft' && !draft.disetujui_oleh.trim()) {
+      setError('Status selain Draft wajib mencatat nama pemberi persetujuan. Identitas ini belum diverifikasi server.');
       return;
     }
     if (draft.items.length === 0) {
@@ -170,8 +180,8 @@ export default function RABPage() {
         setError('Volume item baris ' + (index + 1) + ' harus lebih besar dari nol.');
         return;
       }
-      if (!Number.isFinite(Number(item.harga_satuan)) || item.harga_satuan < 0) {
-        setError('Harga satuan item baris ' + (index + 1) + ' tidak valid.');
+      if (!Number.isFinite(Number(item.harga_satuan)) || item.harga_satuan <= 0) {
+        setError('Harga satuan item baris ' + (index + 1) + ' harus lebih besar dari nol. Jangan menyimpan baris kosong sebagai biaya nol.');
         return;
       }
     }
@@ -197,6 +207,7 @@ export default function RABPage() {
       luas_tanah_m2: draft.luas_tanah_m2.trim() ? Number(draft.luas_tanah_m2) : undefined,
       luas_bangunan_m2: draft.luas_bangunan_m2.trim() ? Number(draft.luas_bangunan_m2) : undefined,
       sumber_harga: draft.sumber_harga.trim(),
+      disetujui_oleh: draft.disetujui_oleh.trim(),
       biaya_bersama_total: sharedPool,
       jumlah_unit_alokasi: sharedPool > 0 ? unitCount : undefined,
       items,
@@ -215,10 +226,10 @@ export default function RABPage() {
       ['RAB / BILL OF QUANTITIES'],
       ['Catatan', 'Ini adalah rencana biaya, bukan realisasi kas atau bukti pembayaran.'],
       [],
-      ['ID RAB', 'Proyek', 'Unit', 'Tipe rumah', 'Luas tanah m2', 'Luas bangunan m2', 'Tanggal', 'Status', 'Sumber harga', 'Pool biaya bersama', 'Jumlah unit alokasi', 'Alokasi biaya bersama pada RAB ini', 'Kategori', 'Item', 'Volume', 'Satuan', 'Harga satuan', 'Jumlah item formula'],
+      ['ID RAB', 'Proyek', 'Unit', 'Tipe rumah', 'Luas tanah m2', 'Luas bangunan m2', 'Tanggal', 'Status', 'Sumber harga', 'Pemberi persetujuan', 'Pool biaya bersama', 'Jumlah unit alokasi', 'Alokasi biaya bersama pada RAB ini', 'Kategori', 'Item', 'Volume', 'Satuan', 'Harga satuan', 'Jumlah item formula'],
       ...rows.flatMap(({ record, computedItems }) => computedItems.map(item => [
         record.id, record.nama_proyek, record.unit || '', record.tipe_rumah || '', record.luas_tanah_m2 ?? '', record.luas_bangunan_m2 ?? '',
-        record.tanggal, record.status, record.sumber_harga || '', record.biaya_bersama_total ?? 0, record.jumlah_unit_alokasi ?? '',
+        record.tanggal, record.status, record.sumber_harga || '', record.disetujui_oleh || '', record.biaya_bersama_total ?? 0, record.jumlah_unit_alokasi ?? '',
         sharedCostAllocation(record), item.kategori, item.deskripsi, item.volume, item.satuan, item.harga_satuan, item.jumlah
       ]))
     ];
@@ -276,6 +287,10 @@ export default function RABPage() {
           <label className="text-sm font-medium text-gray-700 md:col-span-2">Sumber harga / AHSP / quotation
             <input value={draft.sumber_harga} onChange={e => updateDraft('sumber_harga', e.target.value)} placeholder="Cantumkan sumber dan tanggal harga; tidak ada tarif harga otomatis" className="mt-1 w-full rounded-lg border px-3 py-2" />
           </label>
+          <label className="text-sm font-medium text-gray-700">Pemberi persetujuan
+            <input value={draft.disetujui_oleh} onChange={e => updateDraft('disetujui_oleh', e.target.value)} placeholder="Wajib untuk status selain Draft" className="mt-1 w-full rounded-lg border px-3 py-2" />
+            <span className="mt-1 block text-xs text-gray-500">Nama input, belum diverifikasi oleh autentikasi server.</span>
+          </label>
           <label className="text-sm font-medium text-gray-700">Pool biaya bersama seluruh unit (Rp)
             <input type="number" min="0" step="any" value={draft.biaya_bersama_total} onChange={e => updateDraft('biaya_bersama_total', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" placeholder="0" />
           </label>
@@ -324,7 +339,7 @@ export default function RABPage() {
         <div className="overflow-x-auto"><table className="w-full min-w-[950px] text-sm"><thead className="border-b bg-gray-50"><tr><th className="px-3 py-3 text-left">Proyek / tanggal</th><th className="px-3 py-3 text-left">Status</th><th className="px-3 py-3 text-right">Material</th><th className="px-3 py-3 text-right">Upah</th><th className="px-3 py-3 text-right">Alat</th><th className="px-3 py-3 text-right">Lainnya</th><th className="px-3 py-3 text-right">Total hasil formula</th><th className="px-3 py-3 text-right">Aksi</th></tr></thead>
           <tbody className="divide-y">{rows.map(({ record, computedItems, computedTotal }) => {
             const subtotalFor = (category: RABItem['kategori']) => computedItems.filter(item => item.kategori === category).reduce((sum, item) => sum + item.jumlah, 0);
-            return <tr key={record.id} className="hover:bg-gray-50"><td className="px-3 py-3"><p className="font-semibold">{record.nama_proyek}</p><p className="text-xs text-gray-600">{record.unit ? `Unit ${record.unit}` : 'RAB proyek/paket'}{record.tipe_rumah ? ` · ${record.tipe_rumah}` : ''}</p><p className="text-xs text-gray-500">{record.id} · {record.tanggal} · {computedItems.length} item</p></td><td className="px-3 py-3">{record.status}</td><td className="px-3 py-3 text-right">{formatRupiah(subtotalFor('Material'))}</td><td className="px-3 py-3 text-right">{formatRupiah(subtotalFor('Upah'))}</td><td className="px-3 py-3 text-right">{formatRupiah(subtotalFor('Alat'))}</td><td className="px-3 py-3 text-right">{formatRupiah(subtotalFor('Lainnya'))}</td><td className="px-3 py-3 text-right font-bold">{formatRupiah(computedTotal)}</td><td className="px-3 py-3 text-right"><button onClick={() => startEdit(record)} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-gray-100"><Pencil size={13} />Edit</button></td></tr>;
+            return <tr key={record.id} className="hover:bg-gray-50"><td className="px-3 py-3"><p className="font-semibold">{record.nama_proyek}</p><p className="text-xs text-gray-600">{record.unit ? `Unit ${record.unit}` : 'RAB proyek/paket'}{record.tipe_rumah ? ` · ${record.tipe_rumah}` : ''}</p><p className="text-xs text-gray-500">{record.id} · {record.tanggal} · {computedItems.length} item</p></td><td className="px-3 py-3">{record.status}{record.disetujui_oleh && <p className="mt-1 text-xs text-gray-500">Persetujuan: {record.disetujui_oleh}</p>}</td><td className="px-3 py-3 text-right">{formatRupiah(subtotalFor('Material'))}</td><td className="px-3 py-3 text-right">{formatRupiah(subtotalFor('Upah'))}</td><td className="px-3 py-3 text-right">{formatRupiah(subtotalFor('Alat'))}</td><td className="px-3 py-3 text-right">{formatRupiah(subtotalFor('Lainnya'))}</td><td className="px-3 py-3 text-right font-bold">{formatRupiah(computedTotal)}</td><td className="px-3 py-3 text-right"><button onClick={() => startEdit(record)} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-gray-100"><Pencil size={13} />Edit</button></td></tr>;
           })}{rows.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-gray-500">Belum ada RAB yang cocok. Buat RAB dengan input biaya yang telah disusun atau disetujui.</td></tr>}</tbody>
         </table></div>
       </section>
