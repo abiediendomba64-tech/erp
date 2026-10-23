@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AppProvider } from './store';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -37,6 +37,24 @@ import { AccountingProvider } from './store/accounting';
 export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat' | 'unit';
 
 function AppContent() {
+  useEffect(() => {
+    // Remove legacy browser-stored integration secrets as early as possible.
+    // Integrations require a server-side secret store, which is not configured in this build.
+    try {
+      const raw = window.localStorage.getItem('app_settings');
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          window.localStorage.setItem('app_settings', JSON.stringify({
+            ...parsed, waApiToken: '', tgBotToken: '', autoBackup: false, backupLocation: 'local'
+          }));
+        }
+      }
+    } catch (error) {
+      console.error('Pengaturan lama tidak dapat dibersihkan otomatis; periksa storage browser.', error);
+    }
+  }, []);
+
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [currentRole, setCurrentRole] = useState<'ADMIN' | 'VIEWER'>('ADMIN');
