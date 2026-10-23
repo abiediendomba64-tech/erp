@@ -305,6 +305,74 @@ export interface MenuItem {
   role_access: UserRole[];
 }
 
+// ============ QUALITY CONTROL / QC ============
+// Field inspections are persisted in the operational store. Evidence URLs are references,
+// not uploaded files; local persistence is not a server-side audit trail.
+export type QCOutcome = 'Draft' | 'Lulus' | 'Perlu_Perbaikan' | 'Ditolak';
+export interface QCRecord {
+  id: string;
+  proyek: string;
+  lokasi_unit: string;
+  tahap_pekerjaan: string;
+  item_inspeksi: string;
+  tanggal_inspeksi: string;
+  pemeriksa: string;
+  hasil: QCOutcome;
+  temuan: string;
+  tindakan_perbaikan: string;
+  tenggat_perbaikan: string;
+  tautan_bukti: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============ FIXED ASSET REGISTER ============
+// Depreciation in the UI is an indicative straight-line estimate, not an accounting posting.
+export type AssetCategory = 'Tanah' | 'Bangunan' | 'Alat_Berat' | 'Kendaraan' | 'Peralatan' | 'Infrastruktur' | 'Lainnya';
+export type AssetStatus = 'Aktif' | 'Pemeliharaan' | 'Nonaktif' | 'Dilepas';
+export interface AssetRecord {
+  id: string;
+  kode_aset: string;
+  nama_aset: string;
+  kategori: AssetCategory;
+  proyek: string;
+  tanggal_perolehan: string;
+  nilai_perolehan: number;
+  nilai_residu: number;
+  umur_manfaat_tahun: number;
+  lokasi: string;
+  penanggung_jawab: string;
+  status: AssetStatus;
+  referensi_dokumen: string;
+  catatan: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// ============ TAX OBLIGATION REGISTER ============
+// Rates are never presumed by the application. The user/accountant must enter and cite the applicable rule.
+export type TaxType = 'PPN' | 'PPh_21' | 'PPh_23' | 'PPh_Final' | 'BPHTB' | 'PBB' | 'Lainnya';
+export type TaxStatus = 'Draft' | 'Perlu_Verifikasi' | 'Disetujui' | 'Dibayar' | 'Dilaporkan';
+export interface TaxRecord {
+  id: string;
+  jenis_pajak: TaxType;
+  proyek: string;
+  unit: string;
+  periode: string;
+  referensi_transaksi: string;
+  dasar_pengenaan: number;
+  tarif_persen: number | null;
+  nilai_pajak: number;
+  sumber_aturan: string;
+  jatuh_tempo: string;
+  status: TaxStatus;
+  bukti_pembayaran: string;
+  nomor_pelaporan: string;
+  catatan: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // ============ DASHBOARD SUMMARY ============
 export interface DashboardSummary {
   total_kas_masuk: number;
