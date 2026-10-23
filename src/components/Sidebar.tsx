@@ -3,7 +3,7 @@ import {
   LandPlot, Truck, History, FileBarChart, Menu, X,
   Package, Factory, ShoppingCart, Users, PieChart,
   Scan, MessageCircle, Settings, DollarSign, Shield,
-  UserCog, Plus, ClipboardList, ClipboardCheck, Building2, Calculator
+  UserCog, Plus, ClipboardList, ClipboardCheck, Building2, Calculator, House
 } from 'lucide-react';
 import { Page } from '../App';
 
@@ -48,6 +48,7 @@ const adminMenu: { id: Page; label: string; icon: React.ReactNode; section: stri
   { id: 'aset', label: 'Register Aset', icon: <Building2 size={20} />, section: 'Aset & Pajak' },
   { id: 'pajak', label: 'Register Pajak', icon: <Calculator size={20} />, section: 'Aset & Pajak' },
   { id: 'surat', label: 'Surat & Dokumen', icon: <FolderArchive size={20} />, section: 'Dokumen' },
+  { id: 'unit', label: 'Register Unit Perumahan', icon: <House size={20} />, section: 'Konstruksi' },
 ];
 
 // Menu untuk CLIENT/VIEWER (read-only, tidak ada data sensitif)
