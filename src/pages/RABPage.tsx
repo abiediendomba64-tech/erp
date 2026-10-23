@@ -66,7 +66,7 @@ function draftTotal(draft: RABDraft): number {
 
 export default function RABPage() {
   const { state, dispatch } = useAccounting();
-  const { state: operationalState } = useAppContext();
+  const { state: operationalState, dispatch: dispatchOperational } = useAppContext();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<RABDraft>(emptyDraft());
@@ -211,8 +211,8 @@ export default function RABPage() {
       tanggal: draft.tanggal,
       unit: draft.unit.trim(),
       tipe_rumah: linkedUnit?.tipe_rumah || draft.tipe_rumah.trim(),
-      luas_tanah_m2: linkedUnit?.luas_tanah_m2 || (draft.luas_tanah_m2.trim() ? Number(draft.luas_tanah_m2) : undefined),
-      luas_bangunan_m2: linkedUnit?.luas_bangunan_m2 || (draft.luas_bangunan_m2.trim() ? Number(draft.luas_bangunan_m2) : undefined),
+      luas_tanah_m2: linkedUnit ? linkedUnit.luas_tanah_m2 : (draft.luas_tanah_m2.trim() ? Number(draft.luas_tanah_m2) : undefined),
+      luas_bangunan_m2: linkedUnit ? linkedUnit.luas_bangunan_m2 : (draft.luas_bangunan_m2.trim() ? Number(draft.luas_bangunan_m2) : undefined),
       sumber_harga: draft.sumber_harga.trim(),
       disetujui_oleh: draft.disetujui_oleh.trim(),
       biaya_bersama_total: sharedPool,
@@ -221,11 +221,20 @@ export default function RABPage() {
       total_biaya: calculateTotal(items) + (sharedPool > 0 ? (draft.unit.trim() ? sharedPool / unitCount : sharedPool) : 0),
       status: draft.status,
     };
+    const previous = editingId ? state.rab.find(item => item.id === editingId) : undefined;
     if (editingId) dispatch({ type: 'UPDATE_RAB', payload: record });
     else dispatch({ type: 'ADD_RAB', payload: record });
+    dispatchOperational({ type: 'ADD_AUDIT_LOG', payload: {
+      id: generateId('LOG', operationalState.auditLog), timestamp: new Date().toISOString(),
+      user: 'Pengguna lokal (belum terautentikasi)', aksi: editingId ? 'UPDATE' : 'CREATE',
+      tabel: 'RAB', record_id: record.id,
+      nilai_lama: previous ? JSON.stringify(previous) : '', nilai_baru: JSON.stringify(record),
+      alasan: 'Pencatatan/perubahan RAB; ini rencana biaya, bukan realisasi kas',
+      sumber_bukti: record.sumber_harga || ''
+    } });
     setShowForm(false);
     setEditingId(null);
-    setMessage('RAB tersimpan. Volume × harga satuan dan total dihitung ulang dari item. RAB tidak menciptakan pengeluaran kas/jurnal.');
+    setMessage('RAB tersimpan. Volume × harga satuan dan alokasi biaya bersama dihitung ulang. Data dan audit log masih tersimpan lokal; RAB tidak membuat pengeluaran kas/jurnal.');
   };
 
   const exportCsv = () => {
