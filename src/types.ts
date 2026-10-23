@@ -374,6 +374,30 @@ export interface TaxRecord {
   updated_at: string;
 }
 
+// ============ PERUMAHAN / UNIT REGISTER ============
+// Unit master record. This local register does not claim title, permit, or construction status is externally verified.
+export type UnitConstructionStatus = 'Belum_Mulai' | 'Berjalan' | 'QC' | 'Perlu_Perbaikan' | 'Siap_Serah_Terima' | 'Selesai';
+export type UnitSalesStatus = 'Belum_Dipasarkan' | 'Dipasarkan' | 'Dipesan' | 'Terjual' | 'Serah_Terima' | 'Dihuni' | 'Dibatalkan';
+export type PermitStatus = 'Belum_Diajukan' | 'Dalam_Proses' | 'Terbit' | 'Tidak_Berlaku' | 'Perlu_Verifikasi';
+export interface HousingUnit {
+  id: string;
+  kode_unit: string;
+  proyek: string;
+  blok: string;
+  tipe_rumah: string;
+  luas_tanah_m2: number;
+  luas_bangunan_m2: number;
+  status_konstruksi: UnitConstructionStatus;
+  status_penjualan: UnitSalesStatus;
+  status_pbg: PermitStatus;
+  status_slf: PermitStatus;
+  rab_ref: string;
+  dokumen_tanah_ref: string;
+  catatan: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // ============ DASHBOARD SUMMARY ============
 export interface DashboardSummary {
   total_kas_masuk: number;
