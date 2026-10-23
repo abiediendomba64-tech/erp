@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { BukuKas, ArsipBukti, PosKewajiban, AuditLog, Tanah, Beko, NotaMaterial, StokBarang, Produksi, Penjualan, Pembelian, Penggajian, Anggaran, ArusKas, OCRResult, WhatsAppLog, MenuItem } from './types';
+import { BukuKas, ArsipBukti, PosKewajiban, AuditLog, Tanah, Beko, NotaMaterial, StokBarang, Produksi, Penjualan, Pembelian, Penggajian, Anggaran, ArusKas, OCRResult, WhatsAppLog, MenuItem, QCRecord, AssetRecord, TaxRecord } from './types';
 import {
   initialBukuKas, initialArsipBukti, initialPosKewajiban,
   initialAuditLog, initialTanah, initialBeko, initialNotaMaterial,
@@ -26,6 +26,9 @@ interface AppState {
   ocr: OCRResult[];
   whatsapp: WhatsAppLog[];
   menuConfig: MenuItem[];
+  qcRecords: QCRecord[];
+  assets: AssetRecord[];
+  taxRecords: TaxRecord[];
 }
 
 type Action =
@@ -58,7 +61,13 @@ type Action =
   | { type: 'UPDATE_OCR'; payload: OCRResult }
   | { type: 'ADD_WHATSAPP'; payload: WhatsAppLog }
   | { type: 'UPDATE_MENU'; payload: MenuItem }
-  | { type: 'ADD_AUDIT_LOG'; payload: AuditLog };
+  | { type: 'ADD_AUDIT_LOG'; payload: AuditLog }
+  | { type: 'ADD_QC_RECORD'; payload: QCRecord }
+  | { type: 'UPDATE_QC_RECORD'; payload: QCRecord }
+  | { type: 'ADD_ASSET'; payload: AssetRecord }
+  | { type: 'UPDATE_ASSET'; payload: AssetRecord }
+  | { type: 'ADD_TAX_RECORD'; payload: TaxRecord }
+  | { type: 'UPDATE_TAX_RECORD'; payload: TaxRecord };
 
 function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -92,6 +101,12 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'ADD_WHATSAPP': return { ...state, whatsapp: [...state.whatsapp, action.payload] };
     case 'UPDATE_MENU': return { ...state, menuConfig: state.menuConfig.map(i => i.id === action.payload.id ? action.payload : i) };
     case 'ADD_AUDIT_LOG': return { ...state, auditLog: [...state.auditLog, action.payload] };
+    case 'ADD_QC_RECORD': return { ...state, qcRecords: [...state.qcRecords, action.payload] };
+    case 'UPDATE_QC_RECORD': return { ...state, qcRecords: state.qcRecords.map(item => item.id === action.payload.id ? action.payload : item) };
+    case 'ADD_ASSET': return { ...state, assets: [...state.assets, action.payload] };
+    case 'UPDATE_ASSET': return { ...state, assets: state.assets.map(item => item.id === action.payload.id ? action.payload : item) };
+    case 'ADD_TAX_RECORD': return { ...state, taxRecords: [...state.taxRecords, action.payload] };
+    case 'UPDATE_TAX_RECORD': return { ...state, taxRecords: state.taxRecords.map(item => item.id === action.payload.id ? action.payload : item) };
     default: return state;
   }
 }
@@ -114,6 +129,9 @@ const seedState: AppState = {
   ocr: initialOCR,
   whatsapp: initialWhatsApp,
   menuConfig: initialMenuConfig,
+  qcRecords: [],
+  assets: [],
+  taxRecords: [],
 };
 
 const APP_STORAGE_KEY = 'abiedien.erp.app.v1';
@@ -134,7 +152,7 @@ function loadAppState(): AppState {
     const arrays = [
       'bukuKas', 'arsipBukti', 'posKewajiban', 'auditLog', 'tanah', 'beko',
       'notaMaterial', 'stok', 'produksi', 'penjualan', 'pembelian', 'penggajian',
-      'anggaran', 'arusKas', 'ocr', 'whatsapp', 'menuConfig'
+      'anggaran', 'arusKas', 'ocr', 'whatsapp', 'menuConfig', 'qcRecords', 'assets', 'taxRecords'
     ] as const;
 
     const result = { ...seedState } as AppState;
