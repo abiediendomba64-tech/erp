@@ -27,9 +27,13 @@ import InputTransaksiPage from './pages/InputTransaksiPage';
 import LaporanKeuanganPage from './pages/LaporanKeuanganPage';
 import InvoicePOPage from './pages/InvoicePOPage';
 import RABPage from './pages/RABPage';
+import QCPage from './pages/QCPage';
+import AssetsPage from './pages/AssetsPage';
+import TaxesPage from './pages/TaxesPage';
+import SuratPage from './pages/SuratPage';
 import { AccountingProvider } from './store/accounting';
 
-export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab';
+export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat';
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
@@ -64,6 +68,10 @@ function AppContent() {
       case 'laporankeuangan': return <LaporanKeuanganPage />;
       case 'invoicepo': return <InvoicePOPage />;
       case 'rab': return <RABPage />;
+      case 'qc': return <QCPage />;
+      case 'aset': return <AssetsPage />;
+      case 'pajak': return <TaxesPage />;
+      case 'surat': return <SuratPage />;
       default: return <Dashboard />;
     }
   };
