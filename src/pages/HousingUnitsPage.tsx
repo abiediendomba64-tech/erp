@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { House, Plus, Save, Pencil, X, AlertTriangle, ExternalLink } from 'lucide-react';
+import { House, Plus, Save, Pencil, X, AlertTriangle } from 'lucide-react';
 import { useAppContext } from '../store';
-import { generateId, getLocalDateISO } from '../data';
+import { generateId } from '../data';
 import type { HousingUnit, PermitStatus, UnitConstructionStatus, UnitSalesStatus } from '../types';
 
 type UnitDraft = {
