@@ -1,0 +1,135 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function workspacePath(workspaceId) {
+      return /databases/$(database)/documents/workspaces/$(workspaceId);
+    }
+
+    function memberPath(workspaceId, memberUid) {
+      return /databases/$(database)/documents/workspaces/$(workspaceId)/members/$(memberUid);
+    }
+
+    function isMember(workspaceId) {
+      return signedIn() && exists(memberPath(workspaceId, request.auth.uid));
+    }
+
+    function role(workspaceId) {
+      return get(memberPath(workspaceId, request.auth.uid)).data.role;
+    }
+
+    function canWrite(workspaceId) {
+      return isMember(workspaceId) && role(workspaceId) in ['owner', 'admin', 'editor'];
+    }
+
+    function isOwner(workspaceId) {
+      return signedIn() && get(workspacePath(workspaceId)).data.ownerUid == request.auth.uid;
+    }
+
+    function isProvisioningOwner(workspaceId) {
+      return isOwner(workspaceId) &&
+        get(workspacePath(workspaceId)).data.status == 'provisioning';
+    }
+
+    function moduleMetaPath(workspaceId, moduleName) {
+      return /databases/$(database)/documents/workspaces/$(workspaceId)/modules/$(moduleName)/meta/state;
+    }
+
+    function moduleRevisionAdvanced(workspaceId, moduleName) {
+      let before = get(moduleMetaPath(workspaceId, moduleName));
+      let after = getAfter(moduleMetaPath(workspaceId, moduleName));
+      return before.data.version is int &&
+        after.data.version is int &&
+        after.data.version == before.data.version + 1;
+    }
+
+    match /users/{userUid}/workspaces/{workspaceId} {
+      allow read, list: if signedIn() && request.auth.uid == userUid;
+      allow create: if signedIn() &&
+        request.resource.data.workspaceId == workspaceId &&
+        (
+          (request.auth.uid == userUid &&
+            getAfter(memberPath(workspaceId, userUid)).data.userId == userUid &&
+            getAfter(memberPath(workspaceId, userUid)).data.role == request.resource.data.role)
+          ||
+          (isOwner(workspaceId) &&
+            getAfter(memberPath(workspaceId, userUid)).data.role == request.resource.data.role)
+        );
+      allow update, delete: if false;
+    }
+
+    match /workspaces/{workspaceId} {
+      allow create: if signedIn() &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.status == 'provisioning' &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() >= 2 &&
+        request.resource.data.name.size() <= 100;
+
+      allow read: if isMember(workspaceId);
+
+      allow update: if isOwner(workspaceId) &&
+        request.resource.data.ownerUid == resource.data.ownerUid;
+
+      allow delete: if false;
+
+      match /members/{memberUid} {
+        allow read: if isMember(workspaceId) || (signedIn() && request.auth.uid == memberUid);
+
+        allow create: if signedIn() &&
+          request.resource.data.userId == memberUid &&
+          (
+            (memberUid == request.auth.uid &&
+              request.resource.data.role == 'owner' &&
+              getAfter(workspacePath(workspaceId)).data.ownerUid == request.auth.uid)
+            ||
+            (isOwner(workspaceId) &&
+              request.resource.data.role in ['admin', 'editor', 'viewer'])
+          );
+
+        allow update, delete: if isOwner(workspaceId) && memberUid != get(workspacePath(workspaceId)).data.ownerUid;
+      }
+
+      match /modules/{moduleName}/meta/{metaId} {
+        allow read: if isMember(workspaceId);
+
+        allow create: if canWrite(workspaceId) &&
+          isProvisioningOwner(workspaceId) &&
+          request.resource.data.version is int &&
+          request.resource.data.version == 1;
+
+        allow update: if canWrite(workspaceId) &&
+          request.resource.data.version is int &&
+          request.resource.data.version == resource.data.version + 1;
+
+        allow delete: if false;
+      }
+
+      match /modules/{moduleName}/records/{recordId} {
+        allow read: if isMember(workspaceId);
+
+        allow create, update: if canWrite(workspaceId) &&
+          (
+            isProvisioningOwner(workspaceId) ||
+            moduleRevisionAdvanced(workspaceId, moduleName)
+          ) &&
+          (
+            moduleName != 'auditLog' ||
+            (moduleName == 'auditLog' && !exists(/databases/$(database)/documents/workspaces/$(workspaceId)/modules/$(moduleName)/records/$(recordId)))
+          );
+
+        allow delete: if canWrite(workspaceId) &&
+          moduleName != 'auditLog' &&
+          (isProvisioningOwner(workspaceId) || moduleRevisionAdvanced(workspaceId, moduleName));
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
