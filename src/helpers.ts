@@ -105,7 +105,12 @@ export const getBukuKasVerificationStatus = <T extends { terverifikasi?: string;
   record: { id: string; kode_bukti: string; masuk?: number; keluar?: number },
   documents: T[]
 ): 'LENGKAP' | 'TANPA_BUKTI' | 'PERLU_KONFIRMASI' => {
-  const linked = getRelatedDocuments(documents, 'Buku Kas', record.id, record.kode_bukti);
+  // Payment proof must explicitly reference exactly one cash-row ID. A shared proof code alone
+  // is not enough to verify/post money because reused codes can associate one file to multiple rows.
+  const linked = documents.filter(document =>
+    document.id_terkait === record.id &&
+    (document.modul_terkait === 'Buku Kas' || !document.modul_terkait)
+  );
   const transactionAmount = Math.max(0, Number(record.masuk) || 0) + Math.max(0, Number(record.keluar) || 0);
   const approvedPaymentKinds = new Set(['Kwitansi_Foto', 'Transfer_Bank', 'Nota_Foto']);
   const matchingVerifiedEvidence = linked.some(document =>
