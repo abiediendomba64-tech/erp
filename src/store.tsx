@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { BukuKas, ArsipBukti, PosKewajiban, AuditLog, Tanah, Beko, NotaMaterial, StokBarang, Produksi, Penjualan, Pembelian, Penggajian, Anggaran, ArusKas, OCRResult, WhatsAppLog, MenuItem, QCRecord, AssetRecord, TaxRecord } from './types';
+import { BukuKas, ArsipBukti, PosKewajiban, AuditLog, Tanah, Beko, NotaMaterial, StokBarang, Produksi, Penjualan, Pembelian, Penggajian, Anggaran, ArusKas, OCRResult, WhatsAppLog, MenuItem, QCRecord, AssetRecord, TaxRecord, HousingUnit } from './types';
 import {
   initialBukuKas, initialArsipBukti, initialPosKewajiban,
   initialAuditLog, initialTanah, initialBeko, initialNotaMaterial,
@@ -29,6 +29,7 @@ interface AppState {
   qcRecords: QCRecord[];
   assets: AssetRecord[];
   taxRecords: TaxRecord[];
+  housingUnits: HousingUnit[];
 }
 
 type Action =
@@ -67,7 +68,9 @@ type Action =
   | { type: 'ADD_ASSET'; payload: AssetRecord }
   | { type: 'UPDATE_ASSET'; payload: AssetRecord }
   | { type: 'ADD_TAX_RECORD'; payload: TaxRecord }
-  | { type: 'UPDATE_TAX_RECORD'; payload: TaxRecord };
+  | { type: 'UPDATE_TAX_RECORD'; payload: TaxRecord }
+  | { type: 'ADD_HOUSING_UNIT'; payload: HousingUnit }
+  | { type: 'UPDATE_HOUSING_UNIT'; payload: HousingUnit };
 
 function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -107,6 +110,8 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'UPDATE_ASSET': return { ...state, assets: state.assets.map(item => item.id === action.payload.id ? action.payload : item) };
     case 'ADD_TAX_RECORD': return { ...state, taxRecords: [...state.taxRecords, action.payload] };
     case 'UPDATE_TAX_RECORD': return { ...state, taxRecords: state.taxRecords.map(item => item.id === action.payload.id ? action.payload : item) };
+    case 'ADD_HOUSING_UNIT': return { ...state, housingUnits: [...state.housingUnits, action.payload] };
+    case 'UPDATE_HOUSING_UNIT': return { ...state, housingUnits: state.housingUnits.map(item => item.id === action.payload.id ? action.payload : item) };
     default: return state;
   }
 }
@@ -132,6 +137,7 @@ const seedState: AppState = {
   qcRecords: [],
   assets: [],
   taxRecords: [],
+  housingUnits: [],
 };
 
 const APP_STORAGE_KEY = 'abiedien.erp.app.v1';
@@ -152,7 +158,7 @@ function loadAppState(): AppState {
     const arrays = [
       'bukuKas', 'arsipBukti', 'posKewajiban', 'auditLog', 'tanah', 'beko',
       'notaMaterial', 'stok', 'produksi', 'penjualan', 'pembelian', 'penggajian',
-      'anggaran', 'arusKas', 'ocr', 'whatsapp', 'menuConfig', 'qcRecords', 'assets', 'taxRecords'
+      'anggaran', 'arusKas', 'ocr', 'whatsapp', 'menuConfig', 'qcRecords', 'assets', 'taxRecords', 'housingUnits'
     ] as const;
 
     const result = { ...seedState } as AppState;
