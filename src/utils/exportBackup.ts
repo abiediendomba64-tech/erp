@@ -8,7 +8,7 @@ import { formatRupiah } from './numberParser';
 function safeCsvText(value: unknown): string {
   let text = value === null || value === undefined ? '' : String(value);
   // Prevent spreadsheet formula execution for untrusted text; numeric JS values remain numeric text.
-  if (typeof value === 'string' && /^[=+@\\-\\t\\r]/.test(text)) text = "'" + text;
+  if (typeof value === 'string' && text.length > 0 && ['=', '+', '-', '@', '\\t', '\\r'].includes(text[0])) text = "'" + text;
   return text;
 }
 
