@@ -36,7 +36,7 @@ import { AccountingProvider } from './store/accounting';
 
 export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat' | 'unit';
 
-function AppContent() {
+function AppContent({ workspaceRole }: { workspaceRole: 'owner' | 'admin' | 'editor' | 'viewer' }) {
   useEffect(() => {
     // Remove legacy browser-stored integration secrets as early as possible.
     // Integrations require a server-side secret store, which is not configured in this build.
@@ -57,7 +57,8 @@ function AppContent() {
 
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [currentRole, setCurrentRole] = useState<'ADMIN' | 'VIEWER'>('ADMIN');
+  const isViewerRole = workspaceRole === 'viewer';
+  const [currentRole, setCurrentRole] = useState<'ADMIN' | 'VIEWER'>(isViewerRole ? 'VIEWER' : 'ADMIN');
 
   const renderPage = () => {
     switch (currentPage) {
@@ -105,8 +106,9 @@ function AppContent() {
           setCurrentPage={setCurrentPage}
           isOpen={sidebarOpen}
           setIsOpen={setSidebarOpen}
-          currentRole={currentRole}
-          setCurrentRole={setCurrentRole}
+          currentRole={isViewerRole ? 'VIEWER' : currentRole}
+          setCurrentRole={isViewerRole ? () => undefined : setCurrentRole}
+          roleLocked={isViewerRole}
         />
         <main className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
           <div className="p-6">
@@ -119,6 +121,6 @@ function AppContent() {
   );
 }
 
-export default function App() {
-  return <AppContent />;
+export default function App({ workspaceRole = 'owner' }: { workspaceRole?: 'owner' | 'admin' | 'editor' | 'viewer' }) {
+  return <AppContent workspaceRole={workspaceRole} />;
 }
