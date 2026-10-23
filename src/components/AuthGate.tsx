@@ -108,13 +108,14 @@ function AuthForm({ onAuthenticated }: { onAuthenticated: (session: FirebaseSess
   );
 }
 
-function CreateWorkspacePanel({ session, localDataExists, busy, error, onCreate, onLogout }: {
+function CreateWorkspacePanel({ session, localDataExists, busy, error, onCreate, onLogout, onRefreshMembership }: {
   session: FirebaseSession;
   localDataExists: boolean;
   busy: boolean;
   error: string;
   onCreate: (name: string, mode: 'empty' | 'import') => Promise<void>;
   onLogout: () => void;
+  onRefreshMembership: () => Promise<void>;
 }) {
   const [name, setName] = useState('ERP Proyek');
   const [mode, setMode] = useState<'empty' | 'import'>('empty');
@@ -133,6 +134,13 @@ function CreateWorkspacePanel({ session, localDataExists, busy, error, onCreate,
       <section className="max-w-xl w-full rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
         <div className="flex items-center gap-3 mb-5"><Cloud size={28} className="text-indigo-600" /><h1 className="text-xl font-bold text-slate-900">Siapkan workspace cloud</h1></div>
         <p className="text-sm text-slate-600 mb-5">Login sebagai {session.email}. Pilih membuat database ERP baru atau mengimpor data browser secara eksplisit.</p>
+        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold text-slate-700">Firebase UID akun Anda</p>
+          <code className="mt-1 block break-all text-xs text-slate-600">{session.localId}</code>
+          <p className="mt-1 text-xs text-slate-500">Bagikan UID ini kepada pemilik workspace jika Anda perlu ditambahkan ke workspace yang sudah ada.</p>
+          <button onClick={() => void navigator.clipboard?.writeText(session.localId)} className="mt-2 rounded border border-slate-300 bg-white px-2 py-1 text-xs">Salin UID</button>
+          <button disabled={busy} onClick={() => void onRefreshMembership()} className="ml-2 mt-2 rounded border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-50">Periksa akses workspace</button>
+        </div>
         <label className="block text-sm font-medium text-slate-700">Nama workspace
           <input value={name} onChange={e => setName(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:ring-2 focus:ring-indigo-500" />
         </label>
@@ -323,5 +331,16 @@ export default function AuthGate() {
   if (workspaces.some(item => item.status === 'active')) {
     return <WorkspaceChooser workspaces={workspaces} busy={workspaceBusy} error={workspaceError} onOpen={openWorkspace} onLogout={handleLogout} />;
   }
-  return <CreateWorkspacePanel session={session} localDataExists={localDataExists} busy={workspaceBusy} error={workspaceError} onCreate={handleCreateWorkspace} onLogout={handleLogout} />;
+  return <CreateWorkspacePanel session={session} localDataExists={localDataExists} busy={workspaceBusy} error={workspaceError} onCreate={handleCreateWorkspace} onLogout={handleLogout} onRefreshMembership={async () => {
+    setWorkspaceBusy(true);
+    setWorkspaceError('');
+    try {
+      await loadAvailableWorkspaces(session);
+      setSession(getSavedSession());
+    } catch (e) {
+      setWorkspaceError(errorMessage(e));
+    } finally {
+      setWorkspaceBusy(false);
+    }
+  }} />;
 }
