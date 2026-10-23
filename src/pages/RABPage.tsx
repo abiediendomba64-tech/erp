@@ -110,6 +110,10 @@ export default function RABPage() {
   };
 
   const startEdit = (record: RAB) => {
+    if (record.status !== 'Draft') {
+      setMessage('RAB yang sudah Approved/In Progress/Completed tidak bisa diedit langsung agar nilai yang disetujui tidak berubah diam-diam. Buat RAB baru dengan tanggal/versi baru untuk revisi dan catat alasannya.');
+      return;
+    }
     setEditingId(record.id);
     setDraft({
       nama_proyek: record.nama_proyek,
@@ -201,7 +205,7 @@ export default function RABPage() {
       record.tanggal === draft.tanggal &&
       record.status !== 'Completed'
     );
-    if (duplicate && !editingId) {
+    if (duplicate) {
       setError('RAB proyek dan tanggal tersebut sudah ada. Edit RAB yang ada atau pilih tanggal/versi berbeda.');
       return;
     }
