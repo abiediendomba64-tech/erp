@@ -1,5 +1,13 @@
 import { useState } from 'react';
 import { Settings, Save, TestTube, CheckCircle, XCircle, Download, MessageCircle, Send, Database, Bell } from 'lucide-react';
+import { useAppContext } from '../store';
+import { useAccounting } from '../store/accounting';
+import { exportToCSV, exportToExcel, exportToJSON, printReceipt } from '../utils/exportBackup';
+import { formatRupiah, getLocalDateISO } from '../data';
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 interface SettingsData {
   // WhatsApp
@@ -62,37 +70,90 @@ const defaultSettings: SettingsData = {
   largeTransactionThreshold: 50000000,
 };
 
+function loadSettings(): SettingsData {
+  if (typeof window === 'undefined') return defaultSettings;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem('app_settings') || '{}') as Partial<SettingsData>;
+    // Legacy versions persisted service secrets in localStorage. Remove them when this page loads.
+    const safe = { ...defaultSettings, ...parsed, waApiToken: '', tgBotToken: '' } as SettingsData;
+    window.localStorage.setItem('app_settings', JSON.stringify(safe));
+    return safe;
+  } catch {
+    return defaultSettings;
+  }
+}
+
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<SettingsData>(defaultSettings);
+  const { state } = useAppContext();
+  const { state: accountingState } = useAccounting();
+  const [settings, setSettings] = useState<SettingsData>(loadSettings);
   const [testStatus, setTestStatus] = useState<{ wa?: 'success' | 'error'; tg?: 'success' | 'error' }>({});
   const [saved, setSaved] = useState(false);
+  const [integrationMessage, setIntegrationMessage] = useState('');
 
   const handleSave = () => {
-    // Simpan ke localStorage
-    localStorage.setItem('app_settings', JSON.stringify(settings));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    try {
+      // Never store bearer tokens/bot tokens in browser storage. A backend secret store is not configured.
+      const safe = { ...settings, waApiToken: '', tgBotToken: '' };
+      localStorage.setItem('app_settings', JSON.stringify(safe));
+      setSaved(true);
+      setIntegrationMessage('Pengaturan nonrahasia tersimpan di browser. Token WhatsApp/Telegram tidak disimpan; integrasi server belum dikonfigurasi.');
+      setTimeout(() => setSaved(false), 3000);
+    } catch {
+      setSaved(false);
+      setIntegrationMessage('Pengaturan gagal disimpan ke browser. Periksa izin penyimpanan perangkat.');
+    }
   };
 
   const handleTestWhatsApp = async () => {
-    // Simulasi test
-    setTestStatus({ ...testStatus, wa: 'success' });
-    setTimeout(() => setTestStatus({ ...testStatus, wa: undefined }), 3000);
+    setTestStatus(current => ({ ...current, wa: 'error' }));
+    setIntegrationMessage('WhatsApp belum diuji: endpoint backend/credential server belum dikonfigurasi. Tidak ada request yang dikirim dan status bukan sukses.');
   };
 
   const handleTestTelegram = async () => {
-    // Simulasi test
-    setTestStatus({ ...testStatus, tg: 'success' });
-    setTimeout(() => setTestStatus({ ...testStatus, tg: undefined }), 3000);
+    setTestStatus(current => ({ ...current, tg: 'error' }));
+    setIntegrationMessage('Telegram belum diuji: endpoint backend/credential server belum dikonfigurasi. Tidak ada request yang dikirim dan status bukan sukses.');
   };
 
   const handleExport = (format: 'xlsx' | 'csv' | 'pdf') => {
-    // Trigger export
-    alert(`Export ${format.toUpperCase()} akan dimulai. Data akan diunduh.`);
+    const stamp = getLocalDateISO();
+    const cashRows = state.bukuKas.map(row => ({ ...row }));
+    const auditRows = state.auditLog.map(row => ({ ...row }));
+    try {
+      if (format === 'csv') {
+        exportToCSV(cashRows, `erp-buku-kas-${stamp}`);
+        if (settings.exportIncludeAuditLog && auditRows.length) exportToCSV(auditRows, `erp-audit-log-${stamp}`);
+        setIntegrationMessage('Ekspor CSV buku kas dibuat dari data yang tersedia di browser.' + (settings.exportIncludeAuditLog ? ' Audit log diunduh terpisah bila berisi data.' : ''));
+        return;
+      }
+      if (format === 'xlsx') {
+        // The existing helper writes HTML-compatible .xls; it is not a native .xlsx workbook.
+        exportToExcel(cashRows, `erp-buku-kas-${stamp}`, undefined, 'Buku Kas ERP');
+        if (settings.exportIncludeAuditLog && auditRows.length) exportToExcel(auditRows, `erp-audit-log-${stamp}`, undefined, 'Audit Log ERP');
+        setIntegrationMessage('Berkas Excel-kompatibel .xls dibuat. Ini bukan format .xlsx native; data utama adalah buku kas lokal.' + (settings.exportIncludeAuditLog ? ' Audit log diunduh terpisah bila berisi data.' : ''));
+        return;
+      }
+      const rows = cashRows.map(row => `<tr><td>${escapeHtml(row.tgl)}</td><td>${escapeHtml(row.id)}</td><td>${escapeHtml(row.keterangan)}</td><td>${escapeHtml(row.proyek)}</td><td style="text-align:right">${escapeHtml(formatRupiah(row.masuk))}</td><td style="text-align:right">${escapeHtml(formatRupiah(row.keluar))}</td><td>${escapeHtml(row.status_verifikasi)}</td></tr>`).join('');
+      const auditTable = settings.exportIncludeAuditLog ? `<h2>Audit log</h2><p>Jumlah catatan: ${auditRows.length}. Audit log dilampirkan sebagai ringkasan, bukan file foto.</p>` : '';
+      printReceipt(`<h1>Laporan Buku Kas ERP</h1><p>Tanggal ekspor: ${escapeHtml(stamp)}</p><p>Saldo berdasarkan catatan (belum tentu saldo kas fisik): ${escapeHtml(formatRupiah(cashRows.reduce((sum, row) => sum + row.masuk - row.keluar, 0)))}</p><table><thead><tr><th>Tanggal</th><th>ID</th><th>Keterangan</th><th>Proyek</th><th>Masuk</th><th>Keluar</th><th>Verifikasi</th></tr></thead><tbody>${rows}</tbody></table>${auditTable}`, 'Laporan Buku Kas ERP');
+      setIntegrationMessage('Jendela cetak dibuka. Pilih “Save as PDF” pada dialog printer untuk menyimpan PDF; tidak ada file PDF yang dibuat otomatis.');
+    } catch (error) {
+      setIntegrationMessage(error instanceof Error ? `Ekspor gagal: ${error.message}` : 'Ekspor gagal.');
+    }
   };
 
   const handleBackupNow = () => {
-    alert('Backup akan dimulai. Data akan disimpan ke ' + settings.backupLocation);
+    try {
+      exportToJSON({ operational: state, accounting: accountingState }, `erp-backup-${getLocalDateISO()}`, {
+        source: 'browser-local', includesServiceSecrets: false, includesIndexedDbAttachments: false,
+        note: 'Backup ini mencakup store data operasional dan akuntansi yang tersedia di browser; lampiran IndexedDB dan Google Drive tidak ikut.'
+      });
+      setIntegrationMessage(settings.backupLocation === 'local'
+        ? 'Backup JSON lokal diunduh. Simpan salinannya di tempat aman. Lampiran IndexedDB dan Google Drive tidak termasuk.'
+        : 'Backup JSON lokal diunduh. Opsi Cloud/Drive belum terintegrasi; tidak ada upload cloud yang dilakukan. Lampiran IndexedDB tidak termasuk.');
+    } catch (error) {
+      setIntegrationMessage(error instanceof Error ? `Backup gagal: ${error.message}` : 'Backup gagal.');
+    }
   };
 
   return (
@@ -115,6 +176,8 @@ export default function SettingsPage() {
           {saved ? 'Tersimpan!' : 'Simpan Pengaturan'}
         </button>
       </div>
+
+      {integrationMessage && <p role="status" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">{integrationMessage}</p>}
 
       {/* WhatsApp Configuration */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -300,7 +363,7 @@ export default function SettingsPage() {
               onChange={e => setSettings({ ...settings, exportFormat: e.target.value as any })}
               className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
             >
-              <option value="xlsx">Excel (.xlsx)</option>
+              <option value="xlsx">Excel kompatibel (.xls, bukan .xlsx native)</option>
               <option value="csv">CSV (.csv)</option>
               <option value="pdf">PDF (.pdf)</option>
             </select>
@@ -325,7 +388,7 @@ export default function SettingsPage() {
               onClick={() => handleExport('xlsx')}
               className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 text-sm"
             >
-              <Download size={16} /> Export Excel
+              <Download size={16} /> Export Excel (.xls)
             </button>
             <button
               onClick={() => handleExport('csv')}
@@ -356,7 +419,7 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="font-medium text-gray-900">Backup Otomatis</p>
-              <p className="text-xs text-gray-500">Backup data secara berkala</p>
+              <p className="text-xs text-gray-500">Preferensi jadwal tersimpan, tetapi scheduler backup otomatis belum dibuat.</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
@@ -390,8 +453,8 @@ export default function SettingsPage() {
                   className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 >
                   <option value="local">Lokal (Download)</option>
-                  <option value="cloud">Cloud (Google Drive)</option>
-                  <option value="both">Keduanya</option>
+                  <option value="cloud">Cloud (Google Drive — belum tersedia)</option>
+                  <option value="both">Lokal + Drive (Drive belum tersedia)</option>
                 </select>
               </div>
             </>
@@ -478,8 +541,7 @@ export default function SettingsPage() {
       {/* Info */}
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
         <p className="text-sm text-blue-800">
-          <strong>Catatan:</strong> Pengaturan ini disimpan di browser (localStorage). 
-          Untuk produksi multi-user, perlu backend API dengan database untuk menyimpan konfigurasi per user/role.
+          <strong>Catatan:</strong> Pengaturan nonrahasia hanya disimpan di browser ini. Token integrasi tidak disimpan karena belum tersedia penyimpanan rahasia di server. Pengaturan per user, hak akses server, sync cloud, backup otomatis, serta pengiriman pesan belum aktif pada branch ini.
         </p>
       </div>
     </div>
