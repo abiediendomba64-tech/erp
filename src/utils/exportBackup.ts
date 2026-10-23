@@ -5,6 +5,22 @@
 
 import { formatRupiah } from './numberParser';
 
+function safeCsvText(value: unknown): string {
+  let text = value === null || value === undefined ? '' : String(value);
+  // Prevent spreadsheet formula execution for untrusted text; numeric JS values remain numeric text.
+  if (typeof value === 'string' && /^[=+@\\-\\t\\r]/.test(text)) text = "'" + text;
+  return text;
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ============ EXPORT TO CSV ============
 
 /**
@@ -32,7 +48,7 @@ export function exportToCSV<T extends Record<string, any>>(
     cols.map(col => {
       const value = row[col];
       // Escape quotes and wrap in quotes if contains comma
-      const strValue = value === null || value === undefined ? '' : String(value);
+      const strValue = safeCsvText(value);
       if (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n')) {
         return `"${strValue.replace(/"/g, '""')}"`;
       }
@@ -83,7 +99,7 @@ export function exportToExcel<T extends Record<string, any>>(
         <x:ExcelWorkbook>
           <x:ExcelWorksheets>
             <x:ExcelWorksheet>
-              <x:Name>${filename}</x:Name>
+              <x:Name>${escapeHtml(filename)}</x:Name>
               <x:WorksheetOptions>
                 <x:DisplayGridlines/>
               </x:WorksheetOptions>
@@ -104,7 +120,7 @@ export function exportToExcel<T extends Record<string, any>>(
   `;
   
   if (title) {
-    html += `<div class="title">${title}</div>`;
+    html += `<div class="title">${escapeHtml(title)}</div>`;
   }
   
   html += '<table>';
@@ -123,7 +139,7 @@ export function exportToExcel<T extends Record<string, any>>(
     cols.forEach(col => {
       const value = row[col];
       const isNumber = typeof value === 'number';
-      html += `<td${isNumber ? ' class="number"' : ''}>${value ?? ''}</td>`;
+      html += `<td${isNumber ? ' class="number"' : ''}>${escapeHtml(value ?? '')}</td>`;
     });
     html += '</tr>';
   });
