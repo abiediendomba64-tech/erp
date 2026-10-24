@@ -6,7 +6,7 @@ import {
   UserCog, Plus, ClipboardList, ClipboardCheck, Building2, Calculator, Home
 } from 'lucide-react';
 import { Page } from '../App';
-import { UserRole } from '../types';
+import type { UserRole } from '../types';
 
 interface SidebarProps {
   currentPage: Page;
