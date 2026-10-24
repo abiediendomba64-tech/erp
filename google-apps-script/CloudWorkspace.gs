@@ -364,14 +364,26 @@ function _erpVerifyGoogleToken_(idToken) {
   if (!token || token.length > 10000) throw new Error('Token login Google tidak valid.');
   var clientId = String(PropertiesService.getScriptProperties().getProperty('GOOGLE_OAUTH_CLIENT_ID') || '').trim();
   if (!clientId) throw new Error('GOOGLE_OAUTH_CLIENT_ID belum dikonfigurasi di Apps Script > Project Settings > Script Properties.');
-  var response = UrlFetchApp.fetch(
-    'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(token),
-    { method: 'get', muteHttpExceptions: true }
-  );
-  if (response.getResponseCode() !== 200) throw new Error('Login Google gagal diverifikasi. Silakan login ulang.');
-  var claims;
-  try { claims = JSON.parse(response.getContentText()); }
-  catch (error) { throw new Error('Respons verifikasi Google tidak valid.'); }
+
+  // Cache only a token already validated against Google's tokeninfo endpoint. Keep it
+  // short to reduce network/Apps Script quota usage; authorization and account status
+  // are still checked on every API request below.
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'ERP_GOOGLE_ID_' + _erpSha256_(token);
+  var cachedClaims = cache.get(cacheKey);
+  var claims = null;
+  if (cachedClaims) {
+    try { claims = JSON.parse(cachedClaims); } catch (ignored) { claims = null; }
+  }
+  if (!claims) {
+    var response = UrlFetchApp.fetch(
+      'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(token),
+      { method: 'get', muteHttpExceptions: true }
+    );
+    if (response.getResponseCode() !== 200) throw new Error('Login Google gagal diverifikasi. Silakan login ulang.');
+    try { claims = JSON.parse(response.getContentText()); }
+    catch (error) { throw new Error('Respons verifikasi Google tidak valid.'); }
+  }
 
   var expiresAt = Number(claims.exp);
   var issuer = String(claims.iss || '');
@@ -380,6 +392,10 @@ function _erpVerifyGoogleToken_(idToken) {
   if (!claims.email || String(claims.email_verified) !== 'true') throw new Error('Email Google belum terverifikasi.');
   if (!Number.isFinite(expiresAt) || expiresAt <= Math.floor(Date.now() / 1000) + 15) throw new Error('Sesi Google kedaluwarsa. Login ulang.');
   if (!claims.sub) throw new Error('Identitas unik Google tidak ditemukan.');
+
+  if (!cachedClaims) {
+    cache.put(cacheKey, JSON.stringify(claims), 300);
+  }
   return claims;
 }
 
@@ -402,7 +418,24 @@ function _erpValidateSnapshot_(input) {
   return JSON.parse(serialized);
 }
 
+function _erpAssertAuditLogAppendOnly_(oldSnapshot, newSnapshot) {
+  var oldLog = oldSnapshot && oldSnapshot.operational && oldSnapshot.operational.auditLog;
+  var newLog = newSnapshot && newSnapshot.operational && newSnapshot.operational.auditLog;
+  if (!Array.isArray(oldLog) || !Array.isArray(newLog)) {
+    throw new Error('Audit log harus tetap berupa array.');
+  }
+  if (newLog.length < oldLog.length) {
+    throw new Error('Audit log bersifat append-only; entri yang sudah ada tidak boleh dihapus.');
+  }
+  for (var index = 0; index < oldLog.length; index++) {
+    if (_erpStableJson_(oldLog[index]) !== _erpStableJson_(newLog[index])) {
+      throw new Error('Audit log bersifat append-only; entri lama tidak boleh diedit atau disusun ulang.');
+    }
+  }
+}
+
 function _erpAssertRoleMayChange_(role, oldSnapshot, newSnapshot) {
+  _erpAssertAuditLogAppendOnly_(oldSnapshot, newSnapshot);
   if (role === 'ADMIN') return;
   var allowedOperational = role === 'KEUANGAN'
     ? ['bukuKas', 'arsipBukti', 'posKewajiban', 'auditLog', 'anggaran', 'taxRecords']
