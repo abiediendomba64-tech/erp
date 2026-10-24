@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useReducer, useRef, ReactNode } from 'react';
-import { getCloudWorkspaceSession, persistCloudSlice } from '../lib/googleWorkspaceSync';
+import { persistWorkspaceSlice } from '../lib/gasBridge';
 import { Akun, JurnalUmum, Invoice, PurchaseOrder, RAB, Schedule } from '../types/accounting';
 import { initialAkun } from '../data/accounting';
 
@@ -77,13 +77,9 @@ function loadInitialState(): AccountingState {
     const saved = JSON.parse(raw) as Partial<AccountingState>;
     const accountsAreValid = Array.isArray(saved.akun) &&
       saved.akun.every((account) => account && typeof account.kode === 'string' && typeof account.tipe === 'string');
-    const role = getCloudWorkspaceSession()?.workspaceRole;
-    const accountMasterVisible = !role || role === 'ADMIN' || role === 'KEUANGAN';
 
     return {
-      // Scoped roles receive no account balances/chart master from the cloud.
-      // Preserve their intentionally empty view instead of re-injecting default accounts locally.
-      akun: accountsAreValid && (saved.akun!.length > 0 || !accountMasterVisible) ? saved.akun! : initialAkun,
+      akun: accountsAreValid && saved.akun!.length > 0 ? saved.akun! : initialAkun,
       jurnal: Array.isArray(saved.jurnal) ? saved.jurnal : [],
       invoice: Array.isArray(saved.invoice) ? saved.invoice : [],
       purchaseOrder: Array.isArray(saved.purchaseOrder) ? saved.purchaseOrder : [],
@@ -117,22 +113,24 @@ export function AccountingProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const serialized = JSON.stringify(state);
+    let previousCache: string | null = null;
     try {
+      previousCache = window.localStorage.getItem(STORAGE_KEY);
       window.localStorage.setItem(STORAGE_KEY, serialized);
     } catch (error) {
       console.error('Cache browser akuntansi tidak dapat ditulis. Cloud tetap menjadi sumber data utama.', error);
     }
 
     if (previousSerialized.current === null) {
-      // First render was hydrated from the selected cloud snapshot. Do not push it back
-      // immediately; only later user changes create a new server version.
       previousSerialized.current = serialized;
+      if (previousCache !== serialized) {
+        void persistWorkspaceSlice('accounting', state).catch(() => undefined);
+      }
       return;
     }
     if (previousSerialized.current === serialized) return;
     previousSerialized.current = serialized;
-    if (!getCloudWorkspaceSession()) return; // local-only development mode
-    void persistCloudSlice('accounting', state).catch(() => undefined);
+    void persistWorkspaceSlice('accounting', state).catch(() => undefined);
   }, [state]);
   return (
     <AccountingContext.Provider value={{ state, dispatch }}>

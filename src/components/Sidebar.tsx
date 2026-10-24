@@ -6,13 +6,14 @@ import {
   UserCog, Plus, ClipboardList, ClipboardCheck, Building2, Calculator, Home
 } from 'lucide-react';
 import { Page } from '../App';
+import { CloudUser } from '../lib/gasBridge';
 
 interface SidebarProps {
   currentPage: Page;
   setCurrentPage: (page: Page) => void;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-  currentRole: 'ADMIN' | 'KEUANGAN' | 'PROYEK' | 'VIEWER';
+  currentRole: CloudUser['role'];
 }
 
 // Menu untuk ADMIN (full access)
@@ -50,27 +51,27 @@ const adminMenu: { id: Page; label: string; icon: React.ReactNode; section: stri
   { id: 'unit', label: 'Register Unit Perumahan', icon: <Home size={20} />, section: 'Konstruksi' },
 ];
 
-// Menu untuk CLIENT/VIEWER (read-only, tidak ada data sensitif)
+// Menu untuk CLIENT/VIEWER (read-only, data sensitif disaring oleh backend).
 const clientMenu: { id: Page; label: string; icon: React.ReactNode; section: string }[] = [
-  { id: 'dashboard', label: 'Ringkasan Progres', icon: <LayoutDashboard size={20} />, section: 'Info' },
+  { id: 'dashboard', label: 'Ringkasan', icon: <LayoutDashboard size={20} />, section: 'Info' },
+  { id: 'tanah', label: 'Progress Tanah', icon: <LandPlot size={20} />, section: 'Info' },
+  { id: 'beko', label: 'Progress Beko', icon: <Truck size={20} />, section: 'Info' },
 ];
 
-const financeMenu = adminMenu.filter((item) => [
-  'dashboard', 'auditrekap', 'laporan', 'bukukas', 'arsipbukti', 'poskewajiban',
-  'anggaran', 'auditlog', 'accounting', 'inputtransaksi', 'laporankeuangan',
-  'invoicepo', 'rab', 'pajak'
+const financeMenu = adminMenu.filter(item => [
+  'dashboard','auditrekap','laporan','tanah','beko','bukukas','arsipbukti','poskewajiban',
+  'penjualan','pembelian','penggajian','anggaran','auditlog','accounting','inputtransaksi',
+  'laporankeuangan','invoicepo','pajak'
 ].includes(item.id));
 
-const projectMenu = adminMenu.filter((item) => [
-  'dashboard', 'tanah', 'beko', 'stok', 'produksi', 'penjualan',
-  'pembelian', 'rab', 'qc', 'aset', 'surat', 'unit'
+const projectMenu = adminMenu.filter(item => [
+  'dashboard','tanah','beko','stok','produksi','pembelian','anggaran','rab','qc','aset','unit','surat'
 ].includes(item.id));
 
 export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen, currentRole }: SidebarProps) {
   const menuItems = currentRole === 'ADMIN' ? adminMenu
     : currentRole === 'KEUANGAN' ? financeMenu
-      : currentRole === 'PROYEK' ? projectMenu
-        : clientMenu;
+      : currentRole === 'PROYEK' ? projectMenu : clientMenu;
   let currentSection = '';
 
   return (
@@ -92,20 +93,11 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
             {isOpen && (
               <div className="overflow-hidden">
                 <h1 className="font-bold text-sm whitespace-nowrap">Audit System</h1>
-                <p className="text-xs text-slate-400 whitespace-nowrap">Akses workspace cloud</p>
+                <p className="text-xs text-slate-400 whitespace-nowrap">Cloud • Hak akses server</p>
               </div>
             )}
           </div>
         </div>
-
-        {/* Identity comes from the authenticated backend; roles cannot be switched in the browser. */}
-        {isOpen && (
-          <div className="px-4 py-3 border-b border-slate-700">
-            <p className="text-[10px] uppercase tracking-wider text-slate-400">Role akses</p>
-            <p className="mt-1 text-sm font-semibold text-white">{currentRole}</p>
-            <p className="mt-1 text-[10px] leading-4 text-slate-400">Menu difilter berdasarkan role. Backend tetap memeriksa izin saat menyimpan.</p>
-          </div>
-        )}
 
         {/* Toggle */}
         <button onClick={() => setIsOpen(!isOpen)} className="absolute top-4 right-2 text-slate-400 hover:text-white hidden lg:block">
@@ -142,12 +134,12 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
         {isOpen && (
           <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-700">
             <div className="flex items-center gap-2">
-              <div className={`w-8 h-8 ${currentRole === 'ADMIN' ? 'bg-indigo-500' : currentRole === 'VIEWER' ? 'bg-emerald-500' : 'bg-sky-500'} rounded-full flex items-center justify-center text-xs font-bold`}>
+              <div className={`w-8 h-8 ${currentRole === 'ADMIN' ? 'bg-indigo-500' : 'bg-emerald-500'} rounded-full flex items-center justify-center text-xs font-bold`}>
                 {currentRole === 'ADMIN' ? 'A' : currentRole === 'KEUANGAN' ? 'K' : currentRole === 'PROYEK' ? 'P' : 'V'}
               </div>
               <div>
-                <p className="text-xs font-medium">{currentRole === 'ADMIN' ? 'Administrator' : currentRole === 'KEUANGAN' ? 'Keuangan' : currentRole === 'PROYEK' ? 'Tim Proyek' : 'Viewer'}</p>
-                <p className="text-xs text-slate-400">Izin diperiksa backend</p>
+                <p className="text-xs font-medium">{currentRole}</p>
+                <p className="text-xs text-slate-400">Role diverifikasi oleh backend</p>
               </div>
             </div>
           </div>

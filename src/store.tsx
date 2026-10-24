@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, useRef, ReactNode } from 'react';
-import { getCloudWorkspaceSession, persistCloudSlice } from './lib/googleWorkspaceSync';
+import { persistWorkspaceSlice } from './lib/gasBridge';
 import { BukuKas, ArsipBukti, PosKewajiban, AuditLog, Tanah, Beko, NotaMaterial, StokBarang, Produksi, Penjualan, Pembelian, Penggajian, Anggaran, ArusKas, OCRResult, WhatsAppLog, MenuItem, QCRecord, AssetRecord, TaxRecord, HousingUnit } from './types';
 import {
   initialBukuKas, initialArsipBukti, initialPosKewajiban,
@@ -316,22 +316,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const serialized = JSON.stringify(state);
+    let previousCache: string | null = null;
     try {
+      previousCache = window.localStorage.getItem(APP_STORAGE_KEY);
       window.localStorage.setItem(APP_STORAGE_KEY, serialized);
     } catch (error) {
       console.error('Cache browser ERP tidak dapat ditulis. Cloud tetap menjadi sumber data utama.', error);
     }
 
     if (previousSerialized.current === null) {
-      // First render was hydrated from the selected cloud snapshot. Do not push it back
-      // immediately; only later user changes create a new server version.
       previousSerialized.current = serialized;
+      // The login gate hydrates this cache from the cloud before the store mounts.
+      // If a documented legacy-data migration changes it, save the migrated result.
+      if (previousCache !== serialized) {
+        void persistWorkspaceSlice('operational', state).catch(() => undefined);
+      }
       return;
     }
     if (previousSerialized.current === serialized) return;
     previousSerialized.current = serialized;
-    if (!getCloudWorkspaceSession()) return; // local-only development mode
-    void persistCloudSlice('operational', state).catch(() => undefined);
+    void persistWorkspaceSlice('operational', state).catch(() => undefined);
   }, [state]);
   return (
     <AppContext.Provider value={{ state, dispatch }}>

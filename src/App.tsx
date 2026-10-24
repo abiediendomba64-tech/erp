@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react';
+import { LogOut } from 'lucide-react';
+import CloudAuthGate, { useCloudAuth } from './auth/CloudAuthGate';
+import CloudStatusIndicator from './components/CloudStatusIndicator';
 import { AppProvider } from './store';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -34,13 +37,11 @@ import SuratPage from './pages/SuratPage';
 import HousingUnitsPage from './pages/HousingUnitsPage';
 import ViewerDashboard from './pages/ViewerDashboard';
 import { AccountingProvider } from './store/accounting';
-import CloudAccessGate from './components/CloudAccessGate';
-import CloudSyncStatusBar from './components/CloudSyncStatusBar';
-import { getCloudWorkspaceSession } from './lib/googleWorkspaceSync';
 
 export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat' | 'unit';
 
 function AppContent() {
+  const { user, workspace, logout } = useCloudAuth();
   useEffect(() => {
     // Remove legacy browser-stored integration secrets as early as possible.
     // Integrations require a server-side secret store, which is not configured in this build.
@@ -59,16 +60,13 @@ function AppContent() {
     }
   }, []);
 
-  const cloudSession = getCloudWorkspaceSession();
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [currentRole] = useState<'ADMIN' | 'KEUANGAN' | 'PROYEK' | 'VIEWER'>(() =>
-    cloudSession?.workspaceRole ?? (import.meta.env.DEV ? 'ADMIN' : 'VIEWER')
-  );
+
 
   const renderPage = () => {
     switch (currentPage) {
-      case 'dashboard': return currentRole === 'VIEWER' ? <ViewerDashboard /> : <Dashboard />;
+      case 'dashboard': return user.role === 'VIEWER' ? <ViewerDashboard /> : <Dashboard />;
       case 'auditrekap': return <AuditRekapPage />;
       case 'bukukas': return <BukuKasPage />;
       case 'arsipbukti': return <ArsipBuktiPage />;
@@ -112,24 +110,19 @@ function AppContent() {
           setCurrentPage={setCurrentPage}
           isOpen={sidebarOpen}
           setIsOpen={setSidebarOpen}
-          currentRole={currentRole}
+          currentRole={user.role}
         />
         <main className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
-          <CloudSyncStatusBar />
-          {cloudSession && (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-900">{cloudSession.workspaceName}</p>
-                <p className="truncate text-xs text-slate-500">Workspace cloud aktif · Role {cloudSession.workspaceRole}</p>
-              </div>
-              <button
-                onClick={() => window.location.reload()}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                Keluar ERP
-              </button>
+          <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">{workspace.name}</p>
+              <p className="truncate text-xs text-slate-500">{user.nama} · {user.email} · {user.role}</p>
             </div>
-          )}
+            <button onClick={logout} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+              <LogOut size={16} /> Keluar
+            </button>
+          </header>
+          <CloudStatusIndicator />
           <div className="p-6">
             {renderPage()}
           </div>
@@ -141,9 +134,5 @@ function AppContent() {
 }
 
 export default function App() {
-  return (
-    <CloudAccessGate>
-      <AppContent />
-    </CloudAccessGate>
-  );
+  return <CloudAuthGate><AppContent /></CloudAuthGate>;
 }

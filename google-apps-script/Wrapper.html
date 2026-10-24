@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ERP Properti &amp; Konstruksi</title>
+    <style>
+      html, body { margin:0; width:100%; height:100%; font:14px Arial,sans-serif; color:#172033; background:#f8fafc; }
+      #setup { max-width:680px; margin:48px auto; padding:24px; background:white; border:1px solid #e2e8f0; border-radius:14px; }
+      #setup h1 { font-size:22px; margin:0 0 12px; }
+      #setup p { line-height:1.6; color:#475569; }
+      #app { display:none; width:100%; height:100%; border:0; background:#fff; }
+      code { background:#f1f5f9; padding:2px 5px; border-radius:4px; }
+    </style>
+  </head>
+  <body>
+    <div id="setup">
+      <h1>ERP Properti &amp; Konstruksi</h1>
+      <p>Backend Google Apps Script dan sumber data cloud belum dikonfigurasi lengkap.</p>
+      <p>Isi Script Properties <code>ERP_FRONTEND_URL</code>, <code>GOOGLE_CLIENT_ID</code>, dan <code>ERP_ADMIN_EMAILS</code>. Nilainya harus sesuai dengan domain frontend dan OAuth client Google.</p>
+      <p>Data lama pada browser tidak akan diunggah otomatis. Setelah login admin, pilih sendiri apakah akan memulai dengan data kosong atau menyalin data lokal.</p>
+    </div>
+    <iframe id="app" title="Panel ERP Properti &amp; Konstruksi" allow="identity-credentials-get"></iframe>
+    <script>
+      const FRONTEND_URL = <?!= JSON.stringify(frontendUrl) ?>;
+      const FRONTEND_ORIGIN = <?!= JSON.stringify(frontendOrigin) ?>;
+      const frame = document.getElementById('app');
+      const setup = document.getElementById('setup');
+
+      if (FRONTEND_URL && FRONTEND_ORIGIN) {
+        frame.src = FRONTEND_URL + (FRONTEND_URL.indexOf('?') >= 0 ? '&' : '?') + 'embedded=1';
+        frame.style.display = 'block';
+        setup.style.display = 'none';
+      }
+
+      function sendResponse(requestId, response) {
+        if (!frame.contentWindow || !FRONTEND_ORIGIN) return;
+        frame.contentWindow.postMessage({
+          type: 'erp-gas-response',
+          requestId: requestId,
+          response: response
+        }, FRONTEND_ORIGIN);
+      }
+
+      window.addEventListener('message', function (event) {
+        if (!FRONTEND_ORIGIN || event.origin !== FRONTEND_ORIGIN || event.source !== frame.contentWindow) return;
+        const message = event.data;
+        if (!message || message.type !== 'erp-gas-request' ||
+            typeof message.requestId !== 'string' ||
+            typeof message.action !== 'string' ||
+            typeof message.idToken !== 'string') return;
+
+        google.script.run
+          .withSuccessHandler(function (response) {
+            sendResponse(message.requestId, response);
+          })
+          .withFailureHandler(function (error) {
+            sendResponse(message.requestId, {
+              success: false,
+              code: 'backend_error',
+              error: error && error.message ? error.message : 'Permintaan backend gagal.'
+            });
+          })
+          .apiDispatch({
+            action: message.action,
+            payload: message.payload || {},
+            idToken: message.idToken
+          });
+      });
+    </script>
+  </body>
+</html>

@@ -1,15 +1,13 @@
 /**
- * LEGACY ERP accounting functions and domain calculations.
+ * ERP legacy service implementations and shared sheet helpers.
  *
- * Active HTTP security gate:
- * - doGet serves only the app wrapper and non-sensitive health/configuration data.
- * - legacy data GET/POST endpoints and chat webhooks are explicitly disabled.
- * - helpers ending in "_" are private to google.script.run.
- * - active identity, workspace membership, role checks, versioned state and audit
- *   handling live in CloudWorkspace.gs.
+ * Current web-app entrypoints and the authenticated gateway are in Security.gs.
+ * The HTML Service wrapper is Wrapper.html. All three files must be deployed together.
  *
- * Do not enable older OCR or WhatsApp/Telegram handlers until those flows write to
- * the canonical authenticated workspace store with verified senders and idempotency.
+ * Legacy direct GET/POST data routes, OCR, and messaging webhook handlers are
+ * intentionally not public and are not enabled in the new gateway.
+ * Pure calculations may remain available for testing; spreadsheet writes require
+ * the server gateway and its verified Google Identity token.
  */
 
 // ============ KONFIGURASI ============
@@ -66,76 +64,65 @@ function ensureSheetHeaders_(sheet, requiredHeaders) {
 /**
  * Handle GET requests (untuk testing)
  */
-/**
- * Web app shell and non-sensitive health endpoint only.
- * Data APIs are exposed through the authenticated Apps Script bridge in Index.html.
- */
-function doGet(e) {
-  var params = e && e.parameter ? e.parameter : {};
-  var path = String(params.path || '/');
+function legacyDoGet_(e) {
+  try {
+    const path = e && e.parameter && e.parameter.path ? e.parameter.path : '/health';
 
-  if (path === '/health') {
+    if (path === '/transaksi') return jsonResponse_(readSheetRecords_('BUKU_KAS'));
+    if (path === '/akun') return jsonResponse_(readSheetRecords_('AKUN'));
+    if (path === '/laporan/laba-rugi') return jsonResponse_(generateLabaRugi_());
+    if (path === '/laporan/neraca') return jsonResponse_(generateNeraca_());
+
     return jsonResponse_({
       status: 'OK',
-      backend: 'google-apps-script',
-      authenticatedDataApi: true,
-      legacyRestEndpoints: 'disabled',
-      note: 'Use the official ERP web app URL for login and workspace access.'
+      message: 'ERP Backend API is running',
+      endpoints: [
+        'GET /transaksi',
+        'GET /akun',
+        'GET /laporan/laba-rugi',
+        'GET /laporan/neraca',
+        'POST /transaksi',
+        'POST /reversal',
+        'POST /ocr',
+        'POST /webhook/whatsapp',
+        'POST /webhook/telegram'
+      ]
     });
+  } catch (error) {
+    return jsonResponse_({ success: false, error: String(error && error.message ? error.message : error) });
   }
-
-  if (path === '/transaksi' || path === '/akun' ||
-      path === '/laporan/laba-rugi' || path === '/laporan/neraca') {
-    return jsonResponse_({
-      success: false,
-      code: 'LEGACY_ENDPOINT_DISABLED',
-      error: 'Endpoint data lama dinonaktifkan. Gunakan aplikasi ERP dengan login Google.'
-    });
-  }
-
-  var template = HtmlService.createTemplateFromFile('Index');
-  template.frontendUrl = _erpGetFrontendUrl_();
-  return template.evaluate()
-    .setTitle('ERP Properti & Konstruksi')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
+
+
 
 /**
- * All legacy REST writes are intentionally disabled. Database changes must pass
- * through apiSaveWorkspace(), which checks identity, membership, module role,
- * snapshot checksum, and expected version under a script lock.
- * Webhooks remain disabled until verified webhook handlers are migrated to the
- * same canonical workspace store.
+ * Handle POST requests
  */
-function doPost(e) {
-  var params = e && e.parameter ? e.parameter : {};
-  var path = String(params.path || '');
-  var webhooksEnabled = String(PropertiesService.getScriptProperties().getProperty('ERP_WEBHOOKS_ENABLED') || '').toLowerCase() === 'true';
+function legacyDoPost_(e) {
+  try {
+    const path = e && e.parameter && e.parameter.path ? e.parameter.path : '';
+    const rawBody = e && e.postData && e.postData.contents ? e.postData.contents : '';
+    const data = rawBody ? JSON.parse(rawBody) : {};
 
-  if (path === '/webhook/whatsapp' || path === '/webhook/telegram') {
-    return jsonResponse_({
-      success: false,
-      code: 'WEBHOOKS_NOT_ENABLED',
-      error: webhooksEnabled
-        ? 'Webhook belum dimigrasikan ke workspace cloud kanonis; integrasi tetap ditolak agar tidak membuat database ganda.'
-        : 'Webhook dinonaktifkan sampai verifikasi pengirim dan pencatatan ke workspace cloud selesai.'
-    });
+    if (path === '/ocr') return jsonResponse_(handleOCR_(data));
+    if (path === '/webhook/whatsapp') return jsonResponse_(handleWhatsAppWebhook_(data));
+    if (path === '/webhook/telegram') return jsonResponse_(handleTelegramWebhook_(data));
+    if (path === '/transaksi') return jsonResponse_(handleAddTransaksi_(data));
+    if (path === '/reversal') return jsonResponse_(handleReversal_(data));
+
+    if (path.indexOf('/transaksi/') === 0) {
+      return jsonResponse_({
+        success: false,
+        error: 'Update/hapus transaksi posted tidak didukung. Gunakan reversal jurnal agar audit trail tetap utuh.'
+      });
+    }
+    return jsonResponse_({ success: false, error: 'Endpoint tidak dikenal: ' + path });
+  } catch (error) {
+    return jsonResponse_({ success: false, error: String(error && error.message ? error.message : error) });
   }
-
-  return jsonResponse_({
-    success: false,
-    code: 'LEGACY_ENDPOINT_DISABLED',
-    error: 'Endpoint REST lama tidak menerima perubahan. Login lewat web app ERP untuk memakai API workspace yang terautentikasi.'
-  });
 }
 
 
-function _erpGetFrontendUrl_() {
-  var value = String(PropertiesService.getScriptProperties().getProperty('ERP_FRONTEND_URL') || '').trim();
-  if (!/^https:\/\/[^\s]+$/i.test(value)) return '';
-  if (value.indexOf('javascript:') === 0 || value.indexOf('data:') === 0) return '';
-  return value;
-}
 
 // ============ OCR FUNCTIONS ============
 
