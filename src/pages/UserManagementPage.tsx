@@ -1,263 +1,262 @@
-import { useState } from 'react';
-import { Users, Plus, Edit, Trash2, Shield, Eye, Save, X } from 'lucide-react';
-import { UserRole } from '../types';
+import { useEffect, useState } from 'react';
+import { Users, Plus, Edit, Shield, Save, X, RefreshCw, UserCheck, UserX } from 'lucide-react';
+import {
+  addCloudUser,
+  listCloudUsers,
+  addWorkspaceMember,
+  type CloudManagedUser,
+  type WorkspaceRole,
+} from '../lib/googleWorkspaceApi';
+import { getCloudWorkspaceSession } from '../lib/googleWorkspaceSync';
 
-interface User {
-  id: string;
-  nama: string;
-  email: string;
-  phone: string;
-  role: UserRole;
-  status: 'active' | 'inactive';
-  createdAt: string;
-  lastLogin?: string;
-}
-
-const initialUsers: User[] = [
-  { id: 'U-001', nama: 'Administrator', email: 'admin@proyek.com', phone: '081234567890', role: 'ADMIN', status: 'active', createdAt: '2026-01-01', lastLogin: '2026-10-21' },
-  { id: 'U-002', nama: 'Keuangan', email: 'keuangan@proyek.com', phone: '081234567891', role: 'KEUANGAN', status: 'active', createdAt: '2026-01-01', lastLogin: '2026-10-20' },
-  { id: 'U-003', nama: 'Proyek Manager', email: 'proyek@proyek.com', phone: '081234567892', role: 'PROYEK', status: 'active', createdAt: '2026-01-01', lastLogin: '2026-10-19' },
-  { id: 'U-004', nama: 'Viewer Client', email: 'client@proyek.com', phone: '081234567893', role: 'VIEWER', status: 'active', createdAt: '2026-06-01', lastLogin: '2026-10-15' },
-];
+const roleOptions: WorkspaceRole[] = ['ADMIN', 'KEUANGAN', 'PROYEK', 'VIEWER'];
 
 export default function UserManagementPage() {
-  const [users, setUsers] = useState<User[]>(initialUsers);
+  const [users, setUsers] = useState<CloudManagedUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [formData, setFormData] = useState<Partial<User>>({
-    role: 'VIEWER',
-    status: 'active'
+  const [editingEmail, setEditingEmail] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    email: '',
+    display_name: '',
+    role: 'VIEWER' as WorkspaceRole,
+    active: true,
   });
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const session = getCloudWorkspaceSession();
 
-  const handleSave = () => {
-    if (editingUser) {
-      // Update
-      setUsers(users.map(u => u.id === editingUser.id ? { ...u, ...formData } as User : u));
-    } else {
-      // Create
-      const newUser: User = {
-        id: `U-${String(users.length + 1).padStart(3, '0')}`,
-        nama: formData.nama || '',
-        email: formData.email || '',
-        phone: formData.phone || '',
-        role: formData.role as UserRole,
-        status: formData.status as 'active' | 'inactive',
-        createdAt: new Date().toISOString().split('T')[0],
-      };
-      setUsers([...users, newUser]);
+  const loadUsers = async () => {
+    if (!session) {
+      setError('Manajemen pengguna cloud hanya tersedia setelah login melalui URL Apps Script resmi.');
+      setLoading(false);
+      return;
     }
-    setShowForm(false);
-    setEditingUser(null);
-    setFormData({ role: 'VIEWER', status: 'active' });
+    setLoading(true);
+    try {
+      const result = await listCloudUsers(session.idToken, session.workspaceId);
+      setUsers(result.users);
+      setError('');
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Gagal memuat pengguna dari backend.');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleEdit = (user: User) => {
-    setEditingUser(user);
-    setFormData(user);
+  useEffect(() => { void loadUsers(); }, []);
+
+  const resetForm = () => {
+    setEditingEmail(null);
+    setForm({ email: '', display_name: '', role: 'VIEWER', active: true });
+    setShowForm(false);
+  };
+
+  const editUser = (user: CloudManagedUser) => {
+    setEditingEmail(user.email);
+    setForm({
+      email: user.email,
+      display_name: user.display_name,
+      role: user.role,
+      active: user.active,
+    });
+    setMessage('');
+    setError('');
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Yakin hapus user ini?')) {
-      setUsers(users.filter(u => u.id !== id));
+  const saveUser = async () => {
+    if (!session) return;
+    const email = form.email.trim().toLowerCase();
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      setError('Masukkan alamat email Google yang valid.');
+      return;
+    }
+    if (form.display_name.trim().length > 100) {
+      setError('Nama maksimal 100 karakter.');
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setMessage('');
+    try {
+      await addCloudUser(
+        session.idToken,
+        email,
+        form.role,
+        form.display_name.trim(),
+        form.active,
+      );
+      if (form.active) {
+        await addWorkspaceMember(
+          session.idToken,
+          session.workspaceId,
+          email,
+          form.role,
+        );
+      }
+      setMessage(form.active
+        ? 'Pengguna disimpan dan akses workspace disinkronkan.'
+        : 'Pengguna dinonaktifkan di backend. Keanggotaan tersimpan untuk kebutuhan audit, tetapi login pengguna ditolak.');
+      resetForm();
+      await loadUsers();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Gagal menyimpan pengguna ke cloud.');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const roleColor = (role: UserRole) => {
-    switch (role) {
-      case 'ADMIN': return 'bg-red-100 text-red-800';
-      case 'KEUANGAN': return 'bg-blue-100 text-blue-800';
-      case 'PROYEK': return 'bg-emerald-100 text-emerald-800';
-      case 'VIEWER': return 'bg-gray-100 text-gray-800';
-    }
-  };
+  if (!session) {
+    return (
+      <div className="space-y-4">
+        <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900"><Users size={24} /> Manajemen User</h1>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Halaman ini tidak memakai daftar user contoh. Buka ERP melalui login Google dan workspace cloud untuk mengelola akun sebenarnya.
+        </div>
+      </div>
+    );
+  }
 
-  const rolePermissions: Record<UserRole, string[]> = {
-    'ADMIN': ['Semua akses', 'Kelola user', 'Konfigurasi sistem', 'Approve transaksi', 'Export data'],
-    'KEUANGAN': ['Buku kas', 'Arsip bukti', 'Utang', 'Laporan keuangan', 'Export data'],
-    'PROYEK': ['Register tanah', 'Beko', 'Stok', 'Produksi', 'Laporan proyek'],
-    'VIEWER': ['Dashboard (read-only)', 'Progress tanah', 'Progress beko'],
+  if (session.workspaceRole !== 'ADMIN') {
+    return (
+      <div className="space-y-4">
+        <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900"><Users size={24} /> Manajemen User</h1>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Akses ditolak. Pengelolaan pengguna hanya tersedia untuk ADMIN workspace.
+        </div>
+      </div>
+    );
+  }
+
+  const roleLabel = (role: WorkspaceRole) => {
+    const labels: Record<WorkspaceRole, string> = {
+      ADMIN: 'Admin penuh',
+      KEUANGAN: 'Keuangan',
+      PROYEK: 'Tim proyek',
+      VIEWER: 'Lihat saja',
+    };
+    return labels[role];
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Users size={24} className="text-indigo-500" />
-            Manajemen User
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
+            <Users size={24} className="text-indigo-600" /> Manajemen User
           </h1>
-          <p className="text-gray-500 mt-1">Tambah, edit, hapus user dan atur hak akses</p>
+          <p className="mt-1 text-sm text-slate-500">Daftar pengguna dan role aktual dari backend Google Apps Script.</p>
+          <p className="mt-1 text-xs text-slate-500">Workspace: {session.workspaceName} · {session.workspaceId}</p>
         </div>
-        <button
-          onClick={() => { setShowForm(true); setEditingUser(null); setFormData({ role: 'VIEWER', status: 'active' }); }}
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-        >
-          <Plus size={18} /> Tambah User
-        </button>
-      </div>
-
-      {/* Role Permissions Info */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-        <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-          <Shield size={18} className="text-indigo-500" />
-          Hak Akses per Role
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          {(Object.keys(rolePermissions) as UserRole[]).map(role => (
-            <div key={role} className="p-3 bg-gray-50 rounded-lg">
-              <div className={`inline-block px-2 py-1 rounded text-xs font-bold mb-2 ${roleColor(role)}`}>
-                {role}
-              </div>
-              <ul className="text-xs text-gray-600 space-y-1">
-                {rolePermissions[role].map((perm, i) => (
-                  <li key={i} className="flex items-center gap-1">
-                    <span className="text-emerald-500">✓</span> {perm}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+        <div className="flex gap-2">
+          <button onClick={() => void loadUsers()} disabled={loading}
+            className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Muat ulang
+          </button>
+          <button onClick={() => { resetForm(); setShowForm(true); setMessage(''); setError(''); }}
+            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+            <Plus size={16} /> Tambah user
+          </button>
         </div>
       </div>
 
-      {/* Form */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {roleOptions.map((role) => (
+          <div key={role} className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800"><Shield size={16} /> {role}</div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">{roleLabel(role)}</p>
+            <p className="mt-3 text-2xl font-bold tabular-nums text-slate-900">
+              {users.filter((user) => user.active && user.role === role).length}
+            </p>
+            <p className="text-xs text-slate-500">akun aktif</p>
+          </div>
+        ))}
+      </div>
+
+      {message && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{message}</div>}
+      {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
+
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900">
-                {editingUser ? 'Edit User' : 'Tambah User Baru'}
-              </h2>
-              <button onClick={() => { setShowForm(false); setEditingUser(null); }} className="text-gray-400 hover:text-gray-600">
-                <X size={24} />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700">Nama Lengkap *</label>
-                <input
-                  type="text"
-                  value={formData.nama || ''}
-                  onChange={e => setFormData({ ...formData, nama: e.target.value })}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder="Nama lengkap user"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">Email *</label>
-                <input
-                  type="email"
-                  value={formData.email || ''}
-                  onChange={e => setFormData({ ...formData, email: e.target.value })}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder="email@domain.com"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">No. WhatsApp *</label>
-                <input
-                  type="tel"
-                  value={formData.phone || ''}
-                  onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder="081234567890"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">Role *</label>
-                <select
-                  value={formData.role}
-                  onChange={e => setFormData({ ...formData, role: e.target.value as UserRole })}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="ADMIN">ADMIN - Full Access</option>
-                  <option value="KEUANGAN">KEUANGAN - Keuangan & Laporan</option>
-                  <option value="PROYEK">PROYEK - Lapangan & Stok</option>
-                  <option value="VIEWER">VIEWER - Read Only</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">Status</label>
-                <select
-                  value={formData.status}
-                  onChange={e => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-              <div className="flex gap-2 pt-4 border-t border-gray-200">
-                <button
-                  onClick={handleSave}
-                  className="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center justify-center gap-2"
-                >
-                  <Save size={18} /> Simpan
-                </button>
-                <button
-                  onClick={() => { setShowForm(false); setEditingUser(null); }}
-                  className="flex-1 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200"
-                >
-                  Batal
-                </button>
-              </div>
-            </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-slate-900">{editingEmail ? 'Edit pengguna' : 'Tambah pengguna'}</h2>
+            <button onClick={resetForm} aria-label="Tutup formulir" className="rounded p-1 text-slate-500 hover:bg-slate-100"><X size={20} /></button>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block text-sm font-medium text-slate-700">
+              Email Google *
+              <input type="email" autoComplete="email" disabled={Boolean(editingEmail)} value={form.email}
+                onChange={(event) => setForm({ ...form, email: event.target.value })}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-100" />
+            </label>
+            <label className="block text-sm font-medium text-slate-700">
+              Nama tampilan
+              <input type="text" maxLength={100} value={form.display_name}
+                onChange={(event) => setForm({ ...form, display_name: event.target.value })}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+            </label>
+            <label className="block text-sm font-medium text-slate-700">
+              Role
+              <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as WorkspaceRole })}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
+                {roleOptions.map((role) => <option key={role} value={role}>{role} — {roleLabel(role)}</option>)}
+              </select>
+            </label>
+            <label className="flex items-center gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+              <input type="checkbox" checked={form.active} onChange={(event) => setForm({ ...form, active: event.target.checked })} className="h-4 w-4 accent-indigo-600" />
+              <span>
+                <span className="block font-medium">Akun aktif</span>
+                <span className="block text-xs text-slate-500">Akun nonaktif akan ditolak saat login.</span>
+              </span>
+            </label>
+          </div>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button onClick={() => void saveUser()} disabled={saving}
+              className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-wait disabled:opacity-50">
+              <Save size={16} /> {saving ? 'Menyimpan…' : 'Simpan ke cloud'}
+            </button>
+            <button onClick={resetForm} disabled={saving}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Batal</button>
           </div>
         </div>
       )}
 
-      {/* User List */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">ID</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Nama</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">WhatsApp</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-600">Role</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Last Login</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-600">Aksi</th>
+                <th className="px-4 py-3 text-left font-semibold">Pengguna</th>
+                <th className="px-4 py-3 text-left font-semibold">Role akun</th>
+                <th className="px-4 py-3 text-left font-semibold">Role workspace</th>
+                <th className="px-4 py-3 text-left font-semibold">Status</th>
+                <th className="px-4 py-3 text-right font-semibold">Aksi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
-              {users.map(user => (
-                <tr key={user.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-mono text-xs text-indigo-600">{user.id}</td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{user.nama}</td>
-                  <td className="px-4 py-3 text-gray-600">{user.email}</td>
-                  <td className="px-4 py-3 text-gray-600">{user.phone}</td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${roleColor(user.role)}`}>
-                      {user.role}
+            <tbody className="divide-y divide-slate-100">
+              {loading && <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500">Memuat pengguna cloud…</td></tr>}
+              {!loading && users.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-500">Belum ada pengguna terdaftar. Tambahkan email Google yang benar-benar digunakan.</td></tr>}
+              {!loading && users.map((user) => (
+                <tr key={user.email} className="hover:bg-slate-50">
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-slate-900">{user.display_name || '—'}</div>
+                    <div className="mt-0.5 text-xs text-slate-500">{user.email}</div>
+                  </td>
+                  <td className="px-4 py-3"><span className="rounded-full bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700">{user.role}</span></td>
+                  <td className="px-4 py-3 text-slate-600">{user.workspace_role || <span className="text-amber-700">Belum ditambahkan</span>}</td>
+                  <td className="px-4 py-3">
+                    <span className={\`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold \${user.active ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}\`}>
+                      {user.active ? <UserCheck size={13} /> : <UserX size={13} />}
+                      {user.active ? 'Aktif' : 'Nonaktif'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${user.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'}`}>
-                      {user.status === 'active' ? '● Active' : '○ Inactive'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{user.lastLogin || '-'}</td>
-                  <td className="px-4 py-3 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => handleEdit(user)}
-                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
-                        title="Edit"
-                      >
-                        <Edit size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(user.id)}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                        title="Hapus"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+                  <td className="px-4 py-3 text-right">
+                    <button onClick={() => editUser(user)} title="Edit pengguna" className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">
+                      <Edit size={14} /> Edit
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -266,13 +265,9 @@ export default function UserManagementPage() {
         </div>
       </div>
 
-      {/* Info */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-        <p className="text-sm text-amber-800">
-          <strong>Catatan:</strong> Saat ini user management masih disimpan di browser (localStorage). 
-          Untuk produksi, perlu backend API dengan database dan authentication yang proper.
-        </p>
-      </div>
+      <p className="text-xs leading-5 text-slate-500">
+        Pengguna tidak dihapus agar jejak audit tetap dapat ditelusuri. Untuk memutus akses, nonaktifkan akun. Hak akses diverifikasi kembali oleh backend setiap pemanggilan data.
+      </p>
     </div>
   );
 }
