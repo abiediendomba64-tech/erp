@@ -33,11 +33,30 @@ let idToken = '';
 let versions: Record<Slice, number> = { operational: 0, accounting: 0 };
 let blocked: Record<Slice, boolean> = { operational: false, accounting: false };
 let failedSnapshots: Partial<Record<Slice, unknown>> = {};
+const inFlightSlices = new Set<Slice>();
 let queues: Record<Slice, Promise<void>> = { operational: Promise.resolve(), accounting: Promise.resolve() };
 let cloudStatus: CloudStatus = { state: 'idle', message: 'Belum terhubung ke Google Apps Script.' };
 const listeners = new Set<(status: CloudStatus) => void>();
 
 function notifyStatus(state: CloudStatus['state'], message: string) {
+  const requestedState = state;
+  const failed = (Object.keys(failedSnapshots) as Slice[]).filter(key => failedSnapshots[key] !== undefined);
+  const conflicted = (Object.keys(blocked) as Slice[]).filter(key => blocked[key]);
+  if (conflicted.length) {
+    state = 'conflict';
+    message = 'Ada konflik versi cloud. Perubahan yang tertinggal belum tersimpan; buat backup lalu muat ulang.';
+  } else if (failed.length && requestedState !== 'conflict') {
+    state = 'error';
+    if (requestedState === 'saved' || requestedState === 'saving' || !message) {
+      message = 'Sebagian perubahan belum tersimpan ke cloud. Coba lagi atau buat backup.';
+    }
+  } else if (inFlightSlices.size && requestedState === 'saved') {
+    state = 'saving';
+    message = 'Masih ada bagian ERP yang sedang disimpan ke cloud…';
+  } else if (!workspaceId && requestedState === 'saved') {
+    state = 'idle';
+    message = 'Tidak ada workspace aktif.';
+  }
   cloudStatus = { state, message, updatedAt: new Date().toISOString() };
   listeners.forEach(listener => listener(cloudStatus));
 }
@@ -131,6 +150,7 @@ export function configureCloudWorkspace(
   versions = { operational: nextVersions.operational, accounting: nextVersions.accounting };
   blocked = { operational: false, accounting: false };
   failedSnapshots = {};
+  inFlightSlices.clear();
   queues = { operational: Promise.resolve(), accounting: Promise.resolve() };
   notifyStatus('saved', 'Terhubung. Data utama dimuat dari Google Sheets.');
 }
@@ -151,12 +171,8 @@ export async function persistWorkspaceSlice(slice: Slice, data: unknown): Promis
   const operation = queues[slice].then(async () => {
     if (!workspaceId || !getCloudIdToken()) throw new Error('Workspace cloud belum aktif. Perubahan belum disimpan.');
     if (blocked[slice]) throw new Error('Penyimpanan diblokir setelah konflik cloud; muat ulang agar data tetap konsisten.');
-    const otherFailures = (Object.keys(failedSnapshots) as Slice[]).filter(key => key !== slice && failedSnapshots[key] !== undefined);
-    if (otherFailures.length) {
-      notifyStatus('error', 'Menyimpan bagian ini, tetapi ada perubahan lain yang belum tersimpan. Periksa status cloud setelah proses selesai.');
-    } else {
-      notifyStatus('saving', 'Menyimpan perubahan ke Google Sheets…');
-    }
+    inFlightSlices.add(slice);
+    notifyStatus('saving', 'Menyimpan perubahan ERP ke Google Sheets…');
     try {
       const result = await gasRpc<{ version: number; changedKeys?: string[]; unchanged?: boolean }>('workspace.save', {
         workspaceId,
@@ -167,13 +183,10 @@ export async function persistWorkspaceSlice(slice: Slice, data: unknown): Promis
       if (!Number.isInteger(result.version)) throw new Error('Backend tidak mengembalikan versi penyimpanan yang valid.');
       versions[slice] = result.version;
       delete failedSnapshots[slice];
-      const remainingFailures = (Object.keys(failedSnapshots) as Slice[]).filter(key => failedSnapshots[key] !== undefined);
-      if (remainingFailures.length) {
-        notifyStatus('error', 'Bagian ini tersimpan, tetapi ada perubahan di bagian lain yang belum tersimpan. Coba lagi atau buat backup.');
-      } else {
-        notifyStatus('saved', 'Semua perubahan ERP yang tertunda berhasil tersimpan di Google Sheets.');
-      }
+      inFlightSlices.delete(slice);
+      notifyStatus('saved', 'Perubahan ERP selesai diproses oleh Google Sheets.');
     } catch (error) {
+      inFlightSlices.delete(slice);
       failedSnapshots[slice] = data;
       const code = (error as Error & { code?: string }).code || '';
       if (code === 'version_conflict') {
@@ -208,6 +221,7 @@ export function clearCloudWorkspace(): void {
   versions = { operational: 0, accounting: 0 };
   blocked = { operational: false, accounting: false };
   failedSnapshots = {};
+  inFlightSlices.clear();
   queues = { operational: Promise.resolve(), accounting: Promise.resolve() };
   clearCloudIdToken();
   notifyStatus('idle', 'Sesi ERP ditutup.');
