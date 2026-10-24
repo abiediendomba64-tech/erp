@@ -6,7 +6,7 @@ Status dokumen: implementasi awal pada branch `feat/erp-google-cloud-ssot-202610
 
 Implementasi ini memakai Google Apps Script, Google Sheets, Google Identity Services, React, dan Google Apps Script HTML Service. **Tidak membutuhkan Supabase.** Google Sheets menjadi penyimpanan cloud yang digunakan backend; data browser hanya cache sementara, bukan sumber data utama.
 
-Model simpan awal adalah snapshot JSON per bagian modul dalam tab `ERP_STATE`, dilengkapi versi, lock server, pembatasan role, serta audit log server. Ini sengaja membuat migrasi banyak modul React lebih sederhana. Ini belum database relasional dengan satu tab per modul; untuk transaksi volume tinggi atau kebutuhan query SQL, model ini harus dievaluasi ulang. Setiap snapshot per bagian dibatasi 3 MB.
+Model simpan tahap awal adalah **satu snapshot JSON workspace** di tab `ERP_STATE`, berisi bagian operasional dan akuntansi sekaligus. Setiap perubahan menggunakan versi global yang sama dan lock server; jika versi perangkat sudah kedaluwarsa, backend menolak penulisan. Ini menyatukan sumber data cloud, tetapi belum database relasional dengan satu tab per modul; untuk transaksi volume tinggi atau query audit per baris, model ini perlu dikembangkan lebih lanjut. Bagian operasional dan akuntansi masing-masing dibatasi 3 MB dan snapshot gabungan 6 MB.
 
 ## 1. Siapkan Google Sheet
 
@@ -81,11 +81,11 @@ Perubahan yang disimpan harus menampilkan status cloud `tersimpan`. Jika terjadi
 
 ## Batas tahap ini — tidak boleh dianggap sudah aktif
 
-- Data operasional dan akuntansi sekarang dimuat/disimpan sebagai snapshot cloud dengan versi per bagian. Transaksi yang melibatkan dua bagian berbeda belum dijamin sebagai satu transaksi database atomik.
+- Data operasional dan akuntansi berada di satu snapshot workspace dengan satu versi global. Setiap simpan satu bagian mengubah snapshot yang sama; tetapi satu proses bisnis yang membutuhkan beberapa perubahan berurutan—misalnya posting Buku Kas beserta jurnal—belum dijamin sebagai satu transaksi database atomik.
 - Panel dimuat melalui Web App Apps Script. Akses langsung ke URL hosting React sengaja tidak menjalankan login; gunakan tautan `/exec` yang ditampilkan pada halaman tersebut.
 - Endpoint OCR, WhatsApp, dan Telegram sengaja dinonaktifkan pada gateway baru sampai upload Drive, validasi provider, deduplikasi webhook, dan alur approval diuji end-to-end.
 - Upload lampiran Google Drive belum disambungkan; lampiran lokal lama tidak otomatis dipindahkan.
-- API transaksi lama dan endpoint laporan yang membaca tab legacy dinonaktifkan untuk browser. Laporan cloud dihitung dari snapshot workspace.
+- API transaksi lama dan endpoint laporan yang membaca tab legacy dinonaktifkan untuk browser. Helper API laporan membaca snapshot workspace cloud; belum semua halaman laporan lama dipindahkan ke helper server tersebut.
 - Tidak ada migrasi otomatis dari `localStorage` tanpa tindakan eksplisit administrator.
 - Build/CI hijau tidak sama dengan deployment Google berhasil. Login, origin, izin akses spreadsheet, limit akun Google, serta uji dua perangkat harus diuji pada project Google milik pemilik ERP.
 
