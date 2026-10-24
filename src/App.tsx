@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { AppProvider } from './store';
+import CloudAuthGate from './components/CloudAuthGate';
+import { LoginUser } from './components/GoogleLoginPage';
+import { CloudStatus, getCloudStatus, subscribeCloudStatus, WorkspaceSnapshot } from './lib/googleBackend';
+import { AlertTriangle, Cloud, CheckCircle2, LoaderCircle, RefreshCw } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import AuditRekapPage from './pages/AuditRekapPage';
@@ -36,7 +40,7 @@ import { AccountingProvider } from './store/accounting';
 
 export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat' | 'unit';
 
-function AppContent() {
+function AppContent({ initialSnapshot, sessionUser, onLogout }: { initialSnapshot: WorkspaceSnapshot; sessionUser: LoginUser; onLogout: () => void }) {
   useEffect(() => {
     // Remove legacy browser-stored integration secrets as early as possible.
     // Integrations require a server-side secret store, which is not configured in this build.
@@ -57,7 +61,7 @@ function AppContent() {
 
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [currentRole, setCurrentRole] = useState<'ADMIN' | 'VIEWER'>('ADMIN');
+  const currentRole = sessionUser.role;
 
   const renderPage = () => {
     switch (currentPage) {
@@ -97,8 +101,8 @@ function AppContent() {
   };
 
   return (
-    <AppProvider>
-      <AccountingProvider>
+    <AppProvider initialState={initialSnapshot.operational as any}>
+      <AccountingProvider initialState={initialSnapshot.accounting as any}>
       <div className="flex h-screen bg-gray-50 overflow-hidden">
         <Sidebar
           currentPage={currentPage}
@@ -106,10 +110,12 @@ function AppContent() {
           isOpen={sidebarOpen}
           setIsOpen={setSidebarOpen}
           currentRole={currentRole}
-          setCurrentRole={setCurrentRole}
+          userEmail={sessionUser.email}
+          onLogout={onLogout}
         />
         <main className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
           <div className="p-6">
+            <CloudStatusGuard />
             {renderPage()}
           </div>
         </main>
@@ -120,5 +126,5 @@ function AppContent() {
 }
 
 export default function App() {
-  return <AppContent />;
+  return <CloudAuthGate>{({ initialSnapshot, sessionUser, onLogout }) => <AppContent initialSnapshot={initialSnapshot} sessionUser={sessionUser} onLogout={onLogout} />}</CloudAuthGate>;
 }
