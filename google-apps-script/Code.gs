@@ -73,28 +73,33 @@ function ensureSheetHeaders_(sheet, requiredHeaders) {
  * Handle GET requests (untuk testing)
  */
 function doGet(e) {
+  const params = e && e.parameter ? e.parameter : {};
   try {
-    const path = e && e.parameter && e.parameter.path ? e.parameter.path : '/health';
+    // The React frontend talks through this HTML-service bridge. The parent origin
+    // must be explicitly allowlisted in Script Properties before a bridge is served.
+    if (params.mode === 'bridge') return renderErpBridge_(String(params.parentOrigin || ''));
 
-    if (path === '/transaksi') return jsonResponse(readSheetRecords('BUKU_KAS'));
-    if (path === '/akun') return jsonResponse(readSheetRecords('AKUN'));
-    if (path === '/laporan/laba-rugi') return jsonResponse(generateLabaRugi());
-    if (path === '/laporan/neraca') return jsonResponse(generateNeraca());
+    // Meta WhatsApp webhook verification handshake.
+    if (params['hub.mode'] === 'subscribe') {
+      const expected = PropertiesService.getScriptProperties().getProperty('WHATSAPP_VERIFY_TOKEN') || '';
+      if (params['hub.verify_token'] && safeConstantTimeEqual_(String(params['hub.verify_token']), expected)) {
+        return ContentService.createTextOutput(String(params['hub.challenge'] || ''));
+      }
+      return jsonResponse({ success: false, error: 'Webhook verification failed.' });
+    }
 
+    const path = String(params.path || '/health');
+    // No unauthenticated read endpoint may return financial or personal data.
+    if (path !== '/health') {
+      return jsonResponse({ success: false, error: 'Endpoint baca langsung dinonaktifkan. Gunakan login ERP.' });
+    }
     return jsonResponse({
+      success: true,
       status: 'OK',
-      message: 'ERP Backend API is running',
-      endpoints: [
-        'GET /transaksi',
-        'GET /akun',
-        'GET /laporan/laba-rugi',
-        'GET /laporan/neraca',
-        'POST /transaksi',
-        'POST /reversal',
-        'POST /ocr',
-        'POST /webhook/whatsapp',
-        'POST /webhook/telegram'
-      ]
+      backend: 'Google Apps Script + Google Sheets',
+      authentication: 'required',
+      configured: Boolean(SPREADSHEET_ID),
+      schemaVersion: 1
     });
   } catch (error) {
     return jsonResponse({ success: false, error: String(error && error.message ? error.message : error) });
@@ -102,22 +107,50 @@ function doGet(e) {
 }
 
 
-
-/**
- * Handle POST requests
- */
 function doPost(e) {
   try {
-    const path = e && e.parameter && e.parameter.path ? e.parameter.path : '';
+    const params = e && e.parameter ? e.parameter : {};
+    const path = String(params.path || '');
     const rawBody = e && e.postData && e.postData.contents ? e.postData.contents : '';
     const data = rawBody ? JSON.parse(rawBody) : {};
 
-    if (path === '/ocr') return jsonResponse(handleOCR(data));
-    if (path === '/webhook/whatsapp') return jsonResponse(handleWhatsAppWebhook(data));
-    if (path === '/webhook/telegram') return jsonResponse(handleTelegramWebhook(data));
-    if (path === '/transaksi') return jsonResponse(handleAddTransaksi(data));
-    if (path === '/reversal') return jsonResponse(handleReversal(data));
+    // Public provider callbacks must have a dedicated secret. Store it in Script
+    // Properties and append it to the registered webhook URL as ?secret=...
+    if (path === '/webhook/whatsapp') {
+      if (!isValidWebhookSecret_(String(params.secret || ''), 'WHATSAPP_WEBHOOK_SECRET')) {
+        return jsonResponse({ success: false, error: 'Webhook authentication failed.' });
+      }
+      return jsonResponse(handleWhatsAppWebhook(data));
+    }
+    if (path === '/webhook/telegram') {
+      if (!isValidWebhookSecret_(String(params.secret || ''), 'TELEGRAM_WEBHOOK_SECRET')) {
+        return jsonResponse({ success: false, error: 'Webhook authentication failed.' });
+      }
+      return jsonResponse(handleTelegramWebhook(data));
+    }
 
+    // Legacy API paths are kept for compatibility but no longer permit anonymous
+    // transaction, OCR or reversal calls.
+    const session = getSessionContext_(String(data.sessionToken || ''));
+    if (!session) return jsonResponse({ success: false, error: 'Sesi tidak valid. Login ulang.' });
+    if (path === '/ocr') {
+      if (!['ADMIN', 'KEUANGAN', 'PROYEK'].includes(session.user.role)) {
+        return jsonResponse({ success: false, error: 'Akses ditolak.' });
+      }
+      return jsonResponse(handleOCR(data));
+    }
+    if (path === '/transaksi') {
+      if (!['ADMIN', 'KEUANGAN'].includes(session.user.role)) {
+        return jsonResponse({ success: false, error: 'Akses ditolak.' });
+      }
+      return jsonResponse(handleAddTransaksi(data));
+    }
+    if (path === '/reversal') {
+      if (!['ADMIN', 'KEUANGAN'].includes(session.user.role)) {
+        return jsonResponse({ success: false, error: 'Akses ditolak.' });
+      }
+      return jsonResponse(handleReversal(data));
+    }
     if (path.indexOf('/transaksi/') === 0) {
       return jsonResponse({
         success: false,
@@ -129,7 +162,6 @@ function doPost(e) {
     return jsonResponse({ success: false, error: String(error && error.message ? error.message : error) });
   }
 }
-
 
 
 // ============ OCR FUNCTIONS ============
@@ -1007,3 +1039,638 @@ function jsonResponse(data, statusCode = 200) {
     .createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
+
+
+
+// ============================================================================
+// AUTHENTICATION + GOOGLE SHEETS CANONICAL CLOUD STATE (ERP v1)
+// ============================================================================
+// Setup properties (Apps Script > Project Settings > Script Properties):
+// SPREADSHEET_ID, ERP_BOOTSTRAP_CODE (one-time), ALLOWED_APP_ORIGINS.
+// Add Gemini/WhatsApp/Telegram secrets separately only when those integrations
+// are deliberately enabled. No client may access these Script Properties.
+
+const ERP_USER_HEADERS_ = [
+  'id','email','name','phone','role','status','password_salt','password_hash',
+  'failed_attempts','locked_until','created_at','last_login'
+];
+const ERP_SESSION_HEADERS_ = ['token_hash','user_id','created_at','expires_at','last_seen','revoked_at'];
+const ERP_META_HEADERS_ = ['workspace_name','version','updated_at','updated_by'];
+const ERP_STATE_HEADERS_ = ['version','chunk_index','chunk_count','json_chunk','updated_at','updated_by'];
+const ERP_AUDIT_HEADERS_ = ['id','timestamp','actor_id','actor_email','action','entity','record_id','details_json'];
+const ERP_PASSWORD_ITERATIONS_ = 12000;
+const ERP_SESSION_HOURS_ = 12;
+const ERP_STATE_CHUNK_CHARS_ = 40000;
+const ERP_MAX_SNAPSHOT_CHARS_ = 4500000;
+const ERP_ROLE_VALUES_ = ['ADMIN','KEUANGAN','PROYEK','VIEWER'];
+
+function ensureErpBackendSheets_() {
+  const ss = getErpSpreadsheet_();
+  const definitions = [
+    ['USERS', ERP_USER_HEADERS_],
+    ['SESSIONS', ERP_SESSION_HEADERS_],
+    ['ERP_META', ERP_META_HEADERS_],
+    ['ERP_STATE', ERP_STATE_HEADERS_],
+    ['BACKEND_AUDIT', ERP_AUDIT_HEADERS_]
+  ];
+  definitions.forEach(([name, headers]) => {
+    const sheet = ss.getSheetByName(name) || ss.insertSheet(name);
+    ensureSheetHeaders_(sheet, headers);
+  });
+  return ss;
+}
+
+function sheetRecordsWithRows_(sheetName) {
+  const sheet = getErpSpreadsheet_().getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(v => String(v || '').trim());
+  return values.slice(1).map((row, index) => {
+    const record = { __rowNumber: index + 2 };
+    headers.forEach((header, col) => { if (header) record[header] = row[col]; });
+    return record;
+  }).filter(record => Object.keys(record).some(key =>
+    key !== '__rowNumber' && record[key] !== '' && record[key] !== null
+  ));
+}
+
+function safeSheetCell_(value) {
+  if (typeof value === 'string' && /^[=+\-@]/.test(value)) return "'" + value;
+  return value === undefined || value === null ? '' : value;
+}
+
+function appendRecord_(sheetName, headers, record) {
+  const sheet = getErpSpreadsheet_().getSheetByName(sheetName);
+  if (!sheet) throw new Error('Sheet belum dibuat: ' + sheetName);
+  const row = headers.map(header => safeSheetCell_(record[header]));
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+}
+
+function updateRecordRow_(sheetName, rowNumber, headers, record) {
+  const sheet = getErpSpreadsheet_().getSheetByName(sheetName);
+  if (!sheet) throw new Error('Sheet belum dibuat: ' + sheetName);
+  sheet.getRange(rowNumber, 1, 1, headers.length).setValues(
+    headers.map(header => safeSheetCell_(record[header]))
+  );
+}
+
+function sha256Base64_(value) {
+  return Utilities.base64Encode(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value), Utilities.Charset.UTF_8)
+  );
+}
+
+function passwordHash_(password, salt) {
+  let digest = String(salt) + ':' + String(password);
+  for (let i = 0; i < ERP_PASSWORD_ITERATIONS_; i++) digest = sha256Base64_(digest);
+  return digest;
+}
+
+function safeConstantTimeEqual_(left, right) {
+  left = String(left || '');
+  right = String(right || '');
+  let difference = left.length ^ right.length;
+  const max = Math.max(left.length, right.length);
+  for (let i = 0; i < max; i++) {
+    difference |= (left.charCodeAt(i) || 0) ^ (right.charCodeAt(i) || 0);
+  }
+  return difference === 0;
+}
+
+function newSessionToken_() {
+  return Utilities.getUuid().replace(/-/g, '') +
+    Utilities.getUuid().replace(/-/g, '') +
+    Utilities.getUuid().replace(/-/g, '');
+}
+
+function publicUser_(user) {
+  return {
+    id: String(user.id),
+    email: String(user.email),
+    name: String(user.name || ''),
+    phone: String(user.phone || ''),
+    role: String(user.role),
+    status: String(user.status),
+    createdAt: String(user.created_at || ''),
+    lastLogin: String(user.last_login || '')
+  };
+}
+
+function findUserByEmail_(email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  return sheetRecordsWithRows_('USERS').find(user =>
+    String(user.email || '').trim().toLowerCase() === normalized
+  ) || null;
+}
+
+function findUserById_(id) {
+  return sheetRecordsWithRows_('USERS').find(user => String(user.id) === String(id)) || null;
+}
+
+function createSession_(user) {
+  const token = newSessionToken_();
+  const now = new Date();
+  const expiry = new Date(now.getTime() + ERP_SESSION_HOURS_ * 60 * 60 * 1000);
+  appendRecord_('SESSIONS', ERP_SESSION_HEADERS_, {
+    token_hash: sha256Base64_(token),
+    user_id: String(user.id),
+    created_at: now.toISOString(),
+    expires_at: expiry.toISOString(),
+    last_seen: now.toISOString(),
+    revoked_at: ''
+  });
+  return { token: token, expiresAt: expiry.toISOString() };
+}
+
+function getSessionContext_(token) {
+  if (!token || String(token).length < 60 || String(token).length > 200) return null;
+  const tokenHash = sha256Base64_(token);
+  const session = sheetRecordsWithRows_('SESSIONS').find(item =>
+    safeConstantTimeEqual_(String(item.token_hash || ''), tokenHash) &&
+    !item.revoked_at &&
+    Date.parse(String(item.expires_at || '')) > Date.now()
+  );
+  if (!session) return null;
+  const foundUser = findUserById_(session.user_id);
+  if (!foundUser || String(foundUser.status) !== 'ACTIVE') return null;
+  return { user: foundUser, session: session };
+}
+
+function requireSession_(token, roles) {
+  const context = getSessionContext_(token);
+  if (!context) throw new Error('Sesi tidak valid atau telah kedaluwarsa. Login ulang.');
+  if (roles && roles.indexOf(String(context.user.role)) < 0) throw new Error('Akses ditolak untuk role ' + context.user.role + '.');
+  return context;
+}
+
+function recordBackendAudit_(context, action, entity, recordId, details) {
+  ensureErpBackendSheets_();
+  appendRecord_('BACKEND_AUDIT', ERP_AUDIT_HEADERS_, {
+    id: 'AUD-' + Utilities.getUuid(),
+    timestamp: new Date().toISOString(),
+    actor_id: context && context.user ? String(context.user.id) : 'SYSTEM',
+    actor_email: context && context.user ? String(context.user.email) : 'SYSTEM',
+    action: String(action),
+    entity: String(entity || 'ERP'),
+    record_id: String(recordId || ''),
+    details_json: JSON.stringify(details || {})
+  });
+}
+
+function allowedOrigins_() {
+  const raw = PropertiesService.getScriptProperties().getProperty('ALLOWED_APP_ORIGINS') || '';
+  return raw.split(',').map(item => item.trim().replace(/\/+$/, '')).filter(Boolean);
+}
+
+function renderErpBridge_(parentOrigin) {
+  const normalized = String(parentOrigin || '').trim().replace(/\/+$/, '');
+  const origins = allowedOrigins_();
+  if (!normalized || origins.indexOf(normalized) < 0 || !/^https:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(normalized) &&
+      !/^http:\/\/(localhost|127\.0\.0\.1)(?::\d+)?$/i.test(normalized)) {
+    return HtmlService.createHtmlOutput('Origin aplikasi tidak diizinkan. Atur ALLOWED_APP_ORIGINS di Script Properties.');
+  }
+  const template = HtmlService.createTemplateFromFile('Bridge');
+  template.parentOrigin = normalized;
+  return template.evaluate().setTitle('ERP secure backend bridge')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function isValidWebhookSecret_(provided, propertyName) {
+  const expected = PropertiesService.getScriptProperties().getProperty(propertyName) || '';
+  return expected.length >= 24 && safeConstantTimeEqual_(provided, expected);
+}
+
+function getWorkspaceMeta_() {
+  const sheet = getErpSpreadsheet_().getSheetByName('ERP_META');
+  if (!sheet || sheet.getLastRow() < 2) return null;
+  const row = sheet.getRange(2, 1, 1, ERP_META_HEADERS_.length).getValues()[0];
+  return {
+    workspace_name: String(row[0] || 'ERP Properti & Konstruksi'),
+    version: Number(row[1]) || 0,
+    updated_at: String(row[2] || ''),
+    updated_by: String(row[3] || '')
+  };
+}
+
+function loadWorkspaceSnapshot_() {
+  const meta = getWorkspaceMeta_();
+  if (!meta || meta.version < 1) return null;
+  const sheet = getErpSpreadsheet_().getSheetByName('ERP_STATE');
+  if (!sheet || sheet.getLastRow() < 2) throw new Error('Metadata cloud ada tetapi potongan data tidak ditemukan.');
+  const records = sheetRecordsWithRows_('ERP_STATE').filter(item => Number(item.version) === meta.version)
+    .sort((a, b) => Number(a.chunk_index) - Number(b.chunk_index));
+  if (!records.length) throw new Error('Snapshot cloud kosong untuk versi ' + meta.version + '.');
+  const count = Number(records[0].chunk_count);
+  if (!count || records.length !== count) throw new Error('Snapshot cloud tidak lengkap; jangan menyimpan perubahan sebelum diperiksa.');
+  for (let i = 0; i < records.length; i++) {
+    if (Number(records[i].chunk_index) !== i || Number(records[i].chunk_count) !== count) {
+      throw new Error('Urutan potongan snapshot cloud tidak valid.');
+    }
+  }
+  const raw = records.map(item => String(item.json_chunk || '')).join('');
+  if (raw.length > ERP_MAX_SNAPSHOT_CHARS_) throw new Error('Snapshot cloud melewati batas ukuran ERP.');
+  return { snapshot: validateErpSnapshot_(JSON.parse(raw)), meta: meta };
+}
+
+function validateErpSnapshot_(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) ||
+      !input.operational || typeof input.operational !== 'object' || Array.isArray(input.operational) ||
+      !input.accounting || typeof input.accounting !== 'object' || Array.isArray(input.accounting)) {
+    throw new Error('Snapshot ERP tidak valid (operational/accounting wajib berupa object).');
+  }
+  const operationalKeys = [
+    'bukuKas','arsipBukti','posKewajiban','auditLog','tanah','beko','notaMaterial',
+    'stok','produksi','penjualan','pembelian','penggajian','anggaran','arusKas',
+    'ocr','whatsapp','menuConfig','qcRecords','assets','taxRecords','housingUnits'
+  ];
+  const accountingKeys = ['akun','jurnal','invoice','purchaseOrder','rab','schedule'];
+  operationalKeys.forEach(key => {
+    if (!Array.isArray(input.operational[key])) throw new Error('Snapshot ERP tidak valid: ' + key + ' wajib berupa array.');
+  });
+  accountingKeys.forEach(key => {
+    if (!Array.isArray(input.accounting[key])) throw new Error('Snapshot ERP tidak valid: accounting.' + key + ' wajib berupa array.');
+  });
+  const normalized = JSON.parse(JSON.stringify(input));
+  const serialized = JSON.stringify(normalized);
+  if (serialized.length > ERP_MAX_SNAPSHOT_CHARS_) throw new Error('Data ERP terlalu besar untuk satu snapshot. Arsipkan data lama lebih dulu.');
+  return normalized;
+}
+
+function writeWorkspaceSnapshot_(snapshot, nextVersion, context) {
+  const json = JSON.stringify(validateErpSnapshot_(snapshot));
+  const chunks = [];
+  for (let cursor = 0; cursor < json.length;) {
+    let end = Math.min(cursor + ERP_STATE_CHUNK_CHARS_, json.length);
+    // Do not split a UTF-16 surrogate pair between Google Sheets cells.
+    if (end < json.length && end > cursor) {
+      const charCode = json.charCodeAt(end - 1);
+      if (charCode >= 0xD800 && charCode <= 0xDBFF) end--;
+    }
+    chunks.push(json.slice(cursor, end));
+    cursor = end;
+  }
+  if (!chunks.length) chunks.push('{}');
+  const sheet = getErpSpreadsheet_().getSheetByName('ERP_STATE');
+  // Retry after interrupted save safely reuses the uncommitted version number.
+  const rows = sheetRecordsWithRows_('ERP_STATE').filter(item => Number(item.version) === nextVersion)
+    .map(item => Number(item.__rowNumber)).sort((a, b) => b - a);
+  rows.forEach(rowNumber => sheet.deleteRow(rowNumber));
+  const now = new Date().toISOString();
+  const records = chunks.map((chunk, index) => [
+    nextVersion, index, chunks.length, chunk, now,
+    context && context.user ? String(context.user.id) : 'SYSTEM'
+  ]);
+  if (records.length) sheet.getRange(sheet.getLastRow() + 1, 1, records.length, ERP_STATE_HEADERS_.length).setValues(records);
+
+  const metaSheet = getErpSpreadsheet_().getSheetByName('ERP_META');
+  const existingMeta = getWorkspaceMeta_();
+  const metaRow = [
+    existingMeta ? existingMeta.workspace_name : 'ERP Properti & Konstruksi',
+    nextVersion, now, context && context.user ? String(context.user.id) : 'SYSTEM'
+  ];
+  if (metaSheet.getLastRow() < 2) {
+    metaSheet.getRange(2, 1, 1, metaRow.length).setValues([metaRow]);
+  } else {
+    metaSheet.getRange(2, 1, 1, metaRow.length).setValues([metaRow]);
+  }
+}
+
+function cloneSnapshot_(snapshot) {
+  return JSON.parse(JSON.stringify(snapshot));
+}
+
+function snapshotForRole_(snapshot, role) {
+  const result = cloneSnapshot_(snapshot);
+  const allOperational = [
+    'bukuKas','arsipBukti','posKewajiban','auditLog','tanah','beko','notaMaterial',
+    'stok','produksi','penjualan','pembelian','penggajian','anggaran','arusKas',
+    'ocr','whatsapp','menuConfig','qcRecords','assets','taxRecords','housingUnits'
+  ];
+  const financeKeys = ['bukuKas','arsipBukti','posKewajiban','tanah','beko','anggaran','arusKas','ocr','whatsapp'];
+  const projectKeys = ['tanah','beko','notaMaterial','stok','produksi','penjualan','pembelian','anggaran','qcRecords','assets','housingUnits'];
+  const visible = role === 'ADMIN' ? allOperational
+    : role === 'KEUANGAN' ? financeKeys
+      : role === 'PROYEK' ? projectKeys
+        : ['tanah','beko'];
+  allOperational.forEach(key => {
+    if (visible.indexOf(key) < 0) result.operational[key] = [];
+  });
+  result.operational.auditLog = role === 'ADMIN' ? result.operational.auditLog : [];
+  result.operational.menuConfig = role === 'ADMIN' ? result.operational.menuConfig : [];
+  if (role === 'ADMIN' || role === 'KEUANGAN') return result;
+  result.accounting = {
+    akun: [], jurnal: [], invoice: [], purchaseOrder: [], rab: [], schedule: []
+  };
+  if (role === 'VIEWER') {
+    result.operational.tanah = (snapshot.operational.tanah || []).map(item => ({
+      id: item.id, pemilik: '', luas_bt: Number(item.luas_bt) || 0, harga_per_bt: 0,
+      dp: 0, status: item.status, kode_bukti: '', url_bukti: '',
+      catatan: String(item.catatan || '').slice(0, 120)
+    }));
+    result.operational.beko = (snapshot.operational.beko || []).map(item => ({
+      id: item.id, item: item.item, panjang: Number(item.panjang) || 0,
+      lebar: Number(item.lebar) || 0, tinggi: Number(item.tinggi) || 0,
+      tarif: 0, status: item.status, kode_bukti: '', url_bukti: '',
+      catatan: String(item.catatan || '').slice(0, 120),
+      ...(item.satuan_volume ? { satuan_volume: item.satuan_volume } : {})
+    }));
+  }
+  return result;
+}
+
+function mergeSnapshotForRole_(currentSnapshot, incomingSnapshot, role) {
+  const current = cloneSnapshot_(currentSnapshot);
+  const incoming = validateErpSnapshot_(incomingSnapshot);
+  if (role === 'ADMIN') return incoming;
+  const allowedOperational = role === 'KEUANGAN'
+    ? ['bukuKas','arsipBukti','posKewajiban','tanah','beko','anggaran','arusKas','ocr','whatsapp']
+    : role === 'PROYEK'
+      ? ['tanah','beko','notaMaterial','stok','produksi','penjualan','pembelian','anggaran','qcRecords','assets','housingUnits']
+      : [];
+  if (role === 'VIEWER') throw new Error('Role VIEWER hanya mendapat akses baca.');
+  allowedOperational.forEach(key => { current.operational[key] = incoming.operational[key]; });
+  if (role === 'KEUANGAN') current.accounting = incoming.accounting;
+  // auditLog is retained from the canonical snapshot; BACKEND_AUDIT is the
+  // server-authored activity log and is never part of client-writable state.
+  current.operational.auditLog = currentSnapshot.operational.auditLog;
+  return current;
+}
+
+function apiBootstrapAdmin(bootstrapCode, email, password, name, phone, snapshot) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    ensureErpBackendSheets_();
+    const properties = PropertiesService.getScriptProperties();
+    const expectedCode = properties.getProperty('ERP_BOOTSTRAP_CODE') || '';
+    const users = sheetRecordsWithRows_('USERS').filter(user => String(user.status) === 'ACTIVE');
+    if (users.length) return { success: false, error: 'Administrator sudah dibuat. Gunakan halaman login.' };
+    if (!expectedCode || !safeConstantTimeEqual_(String(bootstrapCode || ''), expectedCode)) {
+      return { success: false, error: 'Kode aktivasi awal tidak benar. Periksa ERP_BOOTSTRAP_CODE pada Script Properties.' };
+    }
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const cleanName = String(name || '').trim();
+    const cleanPassword = String(password || '');
+    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalizedEmail)) return { success: false, error: 'Email tidak valid.' };
+    if (cleanName.length < 2 || cleanName.length > 100) return { success: false, error: 'Nama minimal 2 karakter.' };
+    if (cleanPassword.length < 12 || cleanPassword.length > 128) return { success: false, error: 'Kata sandi harus 12–128 karakter.' };
+    const validatedSnapshot = validateErpSnapshot_(snapshot);
+    const now = new Date().toISOString();
+    const salt = Utilities.getUuid() + Utilities.getUuid();
+    const user = {
+      id: 'USR-' + Utilities.getUuid(),
+      email: normalizedEmail, name: cleanName, phone: String(phone || '').trim(),
+      role: 'ADMIN', status: 'ACTIVE',
+      password_salt: salt, password_hash: passwordHash_(cleanPassword, salt),
+      failed_attempts: 0, locked_until: '', created_at: now, last_login: now
+    };
+    appendRecord_('USERS', ERP_USER_HEADERS_, user);
+    properties.deleteProperty('ERP_BOOTSTRAP_CODE');
+    const session = createSession_(user);
+    writeWorkspaceSnapshot_(validatedSnapshot, 1, { user: user });
+    const context = { user: user };
+    recordBackendAudit_(context, 'BOOTSTRAP_ADMIN', 'USERS', user.id, { role: 'ADMIN' });
+    return {
+      success: true, sessionToken: session.token, expiresAt: session.expiresAt,
+      user: publicUser_(user), version: 1, snapshot: snapshotForRole_(validatedSnapshot, 'ADMIN')
+    };
+  } catch (error) {
+    return { success: false, error: String(error && error.message ? error.message : error) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function apiLogin(email, password) {
+  try {
+    ensureErpBackendSheets_();
+    const lock = LockService.getScriptLock();
+    lock.waitLock(10000);
+    try {
+      const user = findUserByEmail_(email);
+      // Keep the response generic to avoid confirming whether an email exists.
+      if (!user || String(user.status) !== 'ACTIVE') {
+        return { success: false, error: 'Email atau kata sandi tidak valid, atau akun terkunci.' };
+      }
+      const lockedUntil = Date.parse(String(user.locked_until || ''));
+      if (lockedUntil && lockedUntil > Date.now()) {
+        return { success: false, error: 'Email atau kata sandi tidak valid, atau akun terkunci.' };
+      }
+      const passOk = safeConstantTimeEqual_(String(user.password_hash || ''),
+        passwordHash_(String(password || ''), String(user.password_salt || 'invalid-salt')));
+      if (!passOk) {
+        const failures = (Number(user.failed_attempts) || 0) + 1;
+        const next = Object.assign({}, user, {
+          failed_attempts: failures,
+          locked_until: failures >= 5 ? new Date(Date.now() + 15 * 60 * 1000).toISOString() : ''
+        });
+        updateRecordRow_('USERS', user.__rowNumber, ERP_USER_HEADERS_, next);
+        return { success: false, error: 'Email atau kata sandi tidak valid, atau akun terkunci.' };
+      }
+      const nextUser = Object.assign({}, user, {
+        failed_attempts: 0, locked_until: '', last_login: new Date().toISOString()
+      });
+      updateRecordRow_('USERS', user.__rowNumber, ERP_USER_HEADERS_, nextUser);
+      const session = createSession_(nextUser);
+      recordBackendAudit_({ user: nextUser }, 'LOGIN', 'SESSIONS', nextUser.id, { expiresAt: session.expiresAt });
+      return { success: true, sessionToken: session.token, expiresAt: session.expiresAt, user: publicUser_(nextUser) };
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (error) {
+    return { success: false, error: String(error && error.message ? error.message : error) };
+  }
+}
+
+function apiGetSession(token) {
+  try {
+    const context = requireSession_(String(token || ''), ERP_ROLE_VALUES_);
+    return { success: true, user: publicUser_(context.user), expiresAt: String(context.session.expires_at) };
+  } catch (error) {
+    return { success: false, error: String(error && error.message ? error.message : error) };
+  }
+}
+
+function apiLoadWorkspace(token) {
+  try {
+    const context = requireSession_(String(token || ''), ERP_ROLE_VALUES_);
+    ensureErpBackendSheets_();
+    const loaded = loadWorkspaceSnapshot_();
+    if (!loaded) return { success: false, error: 'Workspace belum diinisialisasi. Administrator harus menjalankan setup awal.' };
+    return {
+      success: true, version: loaded.meta.version, updatedAt: loaded.meta.updated_at,
+      snapshot: snapshotForRole_(loaded.snapshot, String(context.user.role))
+    };
+  } catch (error) {
+    return { success: false, error: String(error && error.message ? error.message : error) };
+  }
+}
+
+function apiSaveWorkspace(token, snapshot, expectedVersion) {
+  const lock = LockService.getScriptLock();
+  try {
+    const context = requireSession_(String(token || ''), ['ADMIN','KEUANGAN','PROYEK']);
+    lock.waitLock(10000);
+    ensureErpBackendSheets_();
+    const loaded = loadWorkspaceSnapshot_();
+    if (!loaded) return { success: false, error: 'Workspace belum diinisialisasi.' };
+    if (Number(expectedVersion) !== Number(loaded.meta.version)) {
+      return { success: false, conflict: true, version: loaded.meta.version, error: 'Versi data cloud berubah. Muat ulang sebelum menyimpan untuk mencegah data tertimpa.' };
+    }
+    const merged = mergeSnapshotForRole_(loaded.snapshot, snapshot, String(context.user.role));
+    const newVersion = loaded.meta.version + 1;
+    writeWorkspaceSnapshot_(merged, newVersion, context);
+    const changedSections = [];
+    ['operational','accounting'].forEach(section => {
+      const before = loaded.snapshot[section];
+      const after = merged[section];
+      Object.keys(after).forEach(key => {
+        if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) changedSections.push(section + '.' + key);
+      });
+    });
+    recordBackendAudit_(context, 'SAVE_WORKSPACE', 'ERP_STATE', String(newVersion), {
+      versionBefore: loaded.meta.version, versionAfter: newVersion,
+      changedSections: changedSections.slice(0, 50)
+    });
+    return { success: true, version: newVersion, updatedAt: new Date().toISOString() };
+  } catch (error) {
+    return { success: false, error: String(error && error.message ? error.message : error) };
+  } finally {
+    try { lock.releaseLock(); } catch (ignored) {}
+  }
+}
+
+function apiLogout(token) {
+  try {
+    const tokenHash = sha256Base64_(String(token || ''));
+    const session = sheetRecordsWithRows_('SESSIONS').find(item =>
+      safeConstantTimeEqual_(String(item.token_hash || ''), tokenHash) && !item.revoked_at
+    );
+    if (session) {
+      const next = Object.assign({}, session, { revoked_at: new Date().toISOString() });
+      updateRecordRow_('SESSIONS', session.__rowNumber, ERP_SESSION_HEADERS_, next);
+      const user = findUserById_(session.user_id);
+      if (user) recordBackendAudit_({ user: user }, 'LOGOUT', 'SESSIONS', user.id, {});
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error && error.message ? error.message : error) };
+  }
+}
+
+function apiListUsers(token) {
+  try {
+    requireSession_(String(token || ''), ['ADMIN']);
+    return { success: true, users: sheetRecordsWithRows_('USERS').map(publicUser_) };
+  } catch (error) {
+    return { success: false, error: String(error && error.message ? error.message : error) };
+  }
+}
+
+function apiCreateUser(token, input) {
+  const lock = LockService.getScriptLock();
+  try {
+    const context = requireSession_(String(token || ''), ['ADMIN']);
+    lock.waitLock(10000);
+    ensureErpBackendSheets_();
+    const email = String(input && input.email || '').trim().toLowerCase();
+    const name = String(input && input.name || '').trim();
+    const password = String(input && input.password || '');
+    const role = String(input && input.role || '');
+    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) throw new Error('Email tidak valid.');
+    if (name.length < 2 || name.length > 100) throw new Error('Nama minimal 2 karakter.');
+    if (password.length < 12 || password.length > 128) throw new Error('Kata sandi harus 12–128 karakter.');
+    if (ERP_ROLE_VALUES_.indexOf(role) < 0) throw new Error('Role tidak valid.');
+    if (findUserByEmail_(email)) throw new Error('Email sudah terdaftar.');
+    const salt = Utilities.getUuid() + Utilities.getUuid();
+    const now = new Date().toISOString();
+    const user = {
+      id: 'USR-' + Utilities.getUuid(), email, name,
+      phone: String(input && input.phone || '').trim(), role, status: 'ACTIVE',
+      password_salt: salt, password_hash: passwordHash_(password, salt),
+      failed_attempts: 0, locked_until: '', created_at: now, last_login: ''
+    };
+    appendRecord_('USERS', ERP_USER_HEADERS_, user);
+    recordBackendAudit_(context, 'CREATE_USER', 'USERS', user.id, { email: email, role: role });
+    return { success: true, user: publicUser_(user) };
+  } catch (error) {
+    return { success: false, error: String(error && error.message ? error.message : error) };
+  } finally {
+    try { lock.releaseLock(); } catch (ignored) {}
+  }
+}
+
+function apiSetUserStatus(token, userId, status) {
+  const lock = LockService.getScriptLock();
+  try {
+    const context = requireSession_(String(token || ''), ['ADMIN']);
+    lock.waitLock(10000);
+    const target = findUserById_(userId);
+    if (!target) throw new Error('User tidak ditemukan.');
+    const nextStatus = String(status || '').toUpperCase();
+    if (!['ACTIVE','INACTIVE'].includes(nextStatus)) throw new Error('Status user tidak valid.');
+    if (String(context.user.id) === String(target.id) && nextStatus !== 'ACTIVE') throw new Error('Admin tidak dapat menonaktifkan akun sendiri.');
+    if (String(target.role) === 'ADMIN' && nextStatus !== 'ACTIVE') {
+      const activeAdmins = sheetRecordsWithRows_('USERS').filter(user => user.role === 'ADMIN' && user.status === 'ACTIVE');
+      if (activeAdmins.length <= 1) throw new Error('Admin aktif terakhir tidak dapat dinonaktifkan.');
+    }
+    updateRecordRow_('USERS', target.__rowNumber, ERP_USER_HEADERS_, Object.assign({}, target, { status: nextStatus }));
+    if (nextStatus !== 'ACTIVE') {
+      const sessions = sheetRecordsWithRows_('SESSIONS').filter(session =>
+        String(session.user_id) === String(target.id) && !session.revoked_at
+      );
+      const sheet = getErpSpreadsheet_().getSheetByName('SESSIONS');
+      sessions.forEach(session => {
+        const next = Object.assign({}, session, { revoked_at: new Date().toISOString() });
+        updateRecordRow_('SESSIONS', session.__rowNumber, ERP_SESSION_HEADERS_, next);
+      });
+    }
+    recordBackendAudit_(context, 'SET_USER_STATUS', 'USERS', target.id, { status: nextStatus });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error && error.message ? error.message : error) };
+  } finally {
+    try { lock.releaseLock(); } catch (ignored) {}
+  }
+}
+
+function apiChangePassword(token, currentPassword, newPassword) {
+  const lock = LockService.getScriptLock();
+  try {
+    const context = requireSession_(String(token || ''), ERP_ROLE_VALUES_);
+    lock.waitLock(10000);
+    const user = findUserById_(context.user.id);
+    if (!user) throw new Error('User tidak ditemukan.');
+    const currentHash = passwordHash_(String(currentPassword || ''), String(user.password_salt || ''));
+    if (!safeConstantTimeEqual_(String(user.password_hash || ''), currentHash)) throw new Error('Kata sandi lama tidak benar.');
+    const password = String(newPassword || '');
+    if (password.length < 12 || password.length > 128) throw new Error('Kata sandi baru harus 12–128 karakter.');
+    const salt = Utilities.getUuid() + Utilities.getUuid();
+    const nextUser = Object.assign({}, user, { password_salt: salt, password_hash: passwordHash_(password, salt) });
+    updateRecordRow_('USERS', user.__rowNumber, ERP_USER_HEADERS_, nextUser);
+    const sessions = sheetRecordsWithRows_('SESSIONS').filter(item =>
+      String(item.user_id) === String(user.id) && !item.revoked_at
+    );
+    sessions.forEach(item => updateRecordRow_('SESSIONS', item.__rowNumber, ERP_SESSION_HEADERS_,
+      Object.assign({}, item, { revoked_at: new Date().toISOString() })
+    ));
+    const session = createSession_(nextUser);
+    recordBackendAudit_({ user: nextUser }, 'CHANGE_PASSWORD', 'USERS', user.id, {});
+    return { success: true, sessionToken: session.token, expiresAt: session.expiresAt, user: publicUser_(nextUser) };
+  } catch (error) {
+    return { success: false, error: String(error && error.message ? error.message : error) };
+  } finally {
+    try { lock.releaseLock(); } catch (ignored) {}
+  }
+}
+
+function apiHealth() {
+  return {
+    success: true,
+    backend: 'Google Apps Script + Google Sheets',
+    configured: Boolean(SPREADSHEET_ID),
+    stateVersion: getWorkspaceMeta_() ? getWorkspaceMeta_().version : 0
+  };
+}
+
