@@ -1412,7 +1412,7 @@ function apiBootstrapAdmin(bootstrapCode, email, password, name, phone, snapshot
     const normalizedEmail = String(email || '').trim().toLowerCase();
     const cleanName = String(name || '').trim();
     const cleanPassword = String(password || '');
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(normalizedEmail)) return { success: false, error: 'Email tidak valid.' };
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return { success: false, error: 'Email tidak valid.' };
     if (cleanName.length < 2 || cleanName.length > 100) return { success: false, error: 'Nama minimal 2 karakter.' };
     if (cleanPassword.length < 12 || cleanPassword.length > 128) return { success: false, error: 'Kata sandi harus 12–128 karakter.' };
     const validatedSnapshot = validateErpSnapshot_(snapshot);
@@ -1578,7 +1578,7 @@ function apiCreateUser(token, input) {
     const name = String(input && input.name || '').trim();
     const password = String(input && input.password || '');
     const role = String(input && input.role || '');
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) throw new Error('Email tidak valid.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Email tidak valid.');
     if (name.length < 2 || name.length > 100) throw new Error('Nama minimal 2 karakter.');
     if (password.length < 12 || password.length > 128) throw new Error('Kata sandi harus 12–128 karakter.');
     if (ERP_ROLE_VALUES_.indexOf(role) < 0) throw new Error('Role tidak valid.');
