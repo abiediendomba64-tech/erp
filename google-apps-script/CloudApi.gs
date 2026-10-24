@@ -373,11 +373,11 @@ function cloudVerifiedPaymentProof_(cashRow, documents) {
   return (documents || []).some(document =>
     document &&
     document.terverifikasi === 'Ya' &&
+    Boolean(document.diverifikasi_oleh && document.waktu_verifikasi) &&
     document.id_terkait === cashRow.id &&
     (document.modul_terkait === 'Buku Kas' || !document.modul_terkait) &&
     ['Kwitansi_Foto', 'Transfer_Bank', 'Nota_Foto'].indexOf(String(document.jenis || '')) >= 0 &&
-    Math.abs(Number(document.nominal) - amount) <= 0.005 &&
-    cloudFileBelongsToErpFolder_(document)
+    Math.abs(Number(document.nominal) - amount) <= 0.005
   );
 }
 
@@ -573,10 +573,11 @@ function normalizeCloudWorkspaceData_(input, previousData, user, workspaceRole, 
   (ops.arsipBukti || []).forEach(document => {
     const previous = previousDocs.get(String(document.id || ''));
     const verified = String(document.terverifikasi || '') === 'Ya';
+    // The submitter identity is server-controlled. A client cannot claim another uploader.
+    document.nama_pengunggah = previous && previous.nama_pengunggah ? previous.nama_pengunggah : user.email;
     if (!verified) {
       document.diverifikasi_oleh = '';
       document.waktu_verifikasi = '';
-      if (!document.nama_pengunggah) document.nama_pengunggah = user.email;
       return;
     }
 
@@ -586,7 +587,9 @@ function normalizeCloudWorkspaceData_(input, previousData, user, workspaceRole, 
     }
 
     const roleCanVerify = workspaceRole === 'ADMIN' || workspaceRole === 'KEUANGAN';
-    const fileValid = cloudFileBelongsToErpFolder_(document);
+    const fileValid = sameTarget
+      ? Boolean(previous.diverifikasi_oleh && previous.waktu_verifikasi)
+      : cloudFileBelongsToErpFolder_(document);
     let relatedCashValid = true;
     if (String(document.modul_terkait || '') === 'Buku Kas' &&
         ['Kwitansi_Foto', 'Transfer_Bank', 'Nota_Foto'].indexOf(String(document.jenis || '')) >= 0) {
@@ -611,11 +614,10 @@ function normalizeCloudWorkspaceData_(input, previousData, user, workspaceRole, 
 
     if (!sameTarget) {
       if (!roleCanVerify) throw new Error('Role ' + workspaceRole + ' tidak boleh memverifikasi bukti. Minta Admin/Keuangan memeriksa bukti.');
-      const uploader = String(document.nama_pengunggah || (previous && previous.nama_pengunggah) || '');
+      const uploader = previous && previous.nama_pengunggah ? String(previous.nama_pengunggah) : String(user.email || '');
       if (workspaceRole !== 'ADMIN' && uploader && uploader.toLowerCase() === String(user.email).toLowerCase()) {
         throw new Error('Inputter tidak boleh menyetujui bukti yang diunggah sendiri. Minta pengguna lain atau Admin memverifikasi.');
       }
-      document.nama_pengunggah = previous && previous.nama_pengunggah ? previous.nama_pengunggah : user.email;
       document.diverifikasi_oleh = user.email;
       document.waktu_verifikasi = now;
     } else {
