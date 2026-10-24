@@ -58,10 +58,11 @@ function AppContent() {
     }
   }, []);
 
+  const cloudSession = getCloudWorkspaceSession();
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [currentRole] = useState<'ADMIN' | 'KEUANGAN' | 'PROYEK' | 'VIEWER'>(() =>
-    getCloudWorkspaceSession()?.workspaceRole ?? (import.meta.env.DEV ? 'ADMIN' : 'VIEWER')
+    cloudSession?.workspaceRole ?? (import.meta.env.DEV ? 'ADMIN' : 'VIEWER')
   );
 
   const renderPage = () => {
@@ -114,6 +115,20 @@ function AppContent() {
         />
         <main className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
           <CloudSyncStatusBar />
+          {cloudSession && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">{cloudSession.workspaceName}</p>
+                <p className="truncate text-xs text-slate-500">{cloudSession.idToken ? 'Google account authenticated' : 'Session missing'} · Role {cloudSession.workspaceRole}</p>
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Keluar ERP
+              </button>
+            </div>
+          )}
           <div className="p-6">
             {renderPage()}
           </div>
