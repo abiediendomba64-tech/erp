@@ -248,7 +248,7 @@ export default function UserManagementPage() {
                   <td className="px-4 py-3"><span className="rounded-full bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-700">{user.role}</span></td>
                   <td className="px-4 py-3 text-slate-600">{user.workspace_role || <span className="text-amber-700">Belum ditambahkan</span>}</td>
                   <td className="px-4 py-3">
-                    <span className={\`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold \${user.active ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}\`}>
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ${user.active ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
                       {user.active ? <UserCheck size={13} /> : <UserX size={13} />}
                       {user.active ? 'Aktif' : 'Nonaktif'}
                     </span>
