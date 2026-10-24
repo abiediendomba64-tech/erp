@@ -1674,3 +1674,58 @@ function apiHealth() {
   };
 }
 
+
+
+function apiUpdateUser(token, userId, input) {
+  const lock = LockService.getScriptLock();
+  try {
+    const context = requireSession_(String(token || ''), ['ADMIN']);
+    lock.waitLock(10000);
+    const target = findUserById_(userId);
+    if (!target) throw new Error('User tidak ditemukan.');
+    const name = String(input && input.name || '').trim();
+    const phone = String(input && input.phone || '').trim();
+    const role = String(input && input.role || '');
+    if (name.length < 2 || name.length > 100) throw new Error('Nama minimal 2 karakter.');
+    if (phone.length > 40) throw new Error('Nomor telepon terlalu panjang.');
+    if (ERP_ROLE_VALUES_.indexOf(role) < 0) throw new Error('Role tidak valid.');
+    if (String(target.id) === String(context.user.id) && role !== 'ADMIN') {
+      throw new Error('Admin tidak dapat menurunkan role akun sendiri.');
+    }
+    if (String(target.role) === 'ADMIN' && role !== 'ADMIN' && String(target.status) === 'ACTIVE') {
+      const activeAdmins = sheetRecordsWithRows_('USERS').filter(user => user.role === 'ADMIN' && user.status === 'ACTIVE');
+      if (activeAdmins.length <= 1) throw new Error('Admin aktif terakhir tidak dapat diturunkan role-nya.');
+    }
+    const nextUser = Object.assign({}, target, { name: name, phone: phone, role: role });
+    updateRecordRow_('USERS', target.__rowNumber, ERP_USER_HEADERS_, nextUser);
+    recordBackendAudit_(context, 'UPDATE_USER', 'USERS', target.id, { role: role, name: name });
+    return { success: true, user: publicUser_(nextUser) };
+  } catch (error) {
+    return { success: false, error: String(error && error.message ? error.message : error) };
+  } finally {
+    try { lock.releaseLock(); } catch (ignored) {}
+  }
+}
+
+function apiListBackendAudit(token, limit) {
+  try {
+    requireSession_(String(token || ''), ['ADMIN']);
+    const capped = Math.max(1, Math.min(500, Number(limit) || 100));
+    const records = sheetRecordsWithRows_('BACKEND_AUDIT')
+      .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))
+      .slice(0, capped)
+      .map(row => ({
+        id: String(row.id || ''),
+        timestamp: String(row.timestamp || ''),
+        actorId: String(row.actor_id || ''),
+        actorEmail: String(row.actor_email || ''),
+        action: String(row.action || ''),
+        entity: String(row.entity || ''),
+        recordId: String(row.record_id || ''),
+        details: String(row.details_json || '{}')
+      }));
+    return { success: true, records: records };
+  } catch (error) {
+    return { success: false, error: String(error && error.message ? error.message : error) };
+  }
+}
