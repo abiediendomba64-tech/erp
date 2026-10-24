@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, createContext, useContext, ReactNode } from 'react';
-import { LoaderCircle, ShieldCheck, Cloud, LogOut, AlertCircle, Database } from 'lucide-react';
+import { Loader2, ShieldCheck, Cloud, LogOut, AlertCircle, Database } from 'lucide-react';
 import { clearCloudWorkspace, configureCloudWorkspace, gasRpc, setCloudIdToken, CloudUser, CloudWorkspace, WorkspaceLoad } from '../lib/gasBridge';
 import { createEmptyWorkspaceSnapshot, readLocalWorkspaceSnapshot, validateWorkspaceSnapshot, WorkspaceSnapshot } from '../lib/initialWorkspace';
 
@@ -219,7 +219,7 @@ export default function CloudAuthGate({ children }: Props) {
 
         {screen === 'checking' && (
           <div className="flex items-center gap-3 rounded-lg bg-slate-50 p-4 text-slate-600">
-            <LoaderCircle className="animate-spin" size={20} /> Memeriksa sesi Google…
+            <Loader2 className="animate-spin" size={20} /> Memeriksa sesi Google…
           </div>
         )}
 
