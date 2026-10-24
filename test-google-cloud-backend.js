@@ -89,6 +89,7 @@ const tokenClaims = {
   'finance-token': { email: 'finance@example.com', name: 'Finance Uji', sub: 'google-finance', aud: 'web-client-id.apps.googleusercontent.com', iss: 'https://accounts.google.com', email_verified: 'true', exp: String(future) },
   'project-token': { email: 'project@example.com', name: 'Project Uji', sub: 'google-project', aud: 'web-client-id.apps.googleusercontent.com', iss: 'accounts.google.com', email_verified: 'true', exp: String(future) },
   'viewer-token': { email: 'viewer@example.com', name: 'Viewer Uji', sub: 'google-viewer', aud: 'web-client-id.apps.googleusercontent.com', iss: 'accounts.google.com', email_verified: 'true', exp: String(future) },
+  'outsider-token': { email: 'outsider@example.com', name: 'Outsider Uji', sub: 'google-outsider', aud: 'web-client-id.apps.googleusercontent.com', iss: 'accounts.google.com', email_verified: 'true', exp: String(future) },
   'wrong-audience-token': { email: 'admin@example.com', sub: 'google-admin', aud: 'some-other-client', iss: 'accounts.google.com', email_verified: 'true', exp: String(future) },
   'expired-token': { email: 'admin@example.com', sub: 'google-admin', aud: 'web-client-id.apps.googleusercontent.com', iss: 'accounts.google.com', email_verified: 'true', exp: '1' },
   'unverified-token': { email: 'admin@example.com', sub: 'google-admin', aud: 'web-client-id.apps.googleusercontent.com', iss: 'accounts.google.com', email_verified: 'false', exp: String(future) },
@@ -158,12 +159,26 @@ context.apiLogin('admin-token');
 assert.equal(tokeninfoCalls, firstTokeninfoCalls, 'validated token should be briefly cached to limit external requests');
 console.log('PASS: verified allowlisted Google identity bootstraps ADMIN and verified token cache avoids repeated tokeninfo calls');
 
-const created = context.apiCreateWorkspace('admin-token', 'Workspace Uji', emptySnapshot());
+const seededSnapshot = emptySnapshot();
+seededSnapshot.operational.housingUnits.push({ id: 'UNIT-SECRET', kode_unit: 'A-01', nilai_internal: 'secret' });
+seededSnapshot.operational.penggajian.push({ id: 'PAYROLL-SECRET', nama: 'Gaji Rahasia', gaji_pokok: 999999 });
+seededSnapshot.operational.tanah.push({
+  id: 'LAND-1', pemilik: 'Pemilik Rahasia', luas_bt: 12, harga_per_bt: 900000, dp: 200000,
+  status: 'DP', kode_bukti: 'BUKTI-SECRET', url_bukti: 'https://secret.example.test/land', catatan: 'Catatan rahasia',
+});
+seededSnapshot.operational.beko.push({
+  id: 'BEKO-1', item: 'Pekerjaan rahasia', panjang: 1, lebar: 2, tinggi: 3, tarif: 500000,
+  status: 'Lunas', kode_bukti: 'BUKTI-BEKO', url_bukti: 'https://secret.example.test/beko',
+  catatan: 'Tarif rahasia', status_pembayaran: 'Lunas', satuan_volume: 'm3',
+});
+seededSnapshot.accounting.invoice.push({ id: 'INVOICE-SECRET', no_invoice: 'INV-SECRET', total: 987654 });
+const created = context.apiCreateWorkspace('admin-token', 'Workspace Uji', seededSnapshot);
 assert.equal(created.workspace.version, 1);
 assert.equal(created.workspace.role, 'ADMIN');
 const workspaceId = created.workspace.id;
 const loadedInitial = context.apiLoadWorkspace('admin-token', workspaceId);
 assert.equal(loadedInitial.snapshot.operational.bukuKas.length, 0);
+assert.equal(loadedInitial.snapshot.operational.housingUnits[0].id, 'UNIT-SECRET');
 console.log('PASS: cloud workspace initializes and checksum-validated snapshot can be loaded');
 
 context.apiAddUser('admin-token', 'finance@example.com', 'KEUANGAN', 'Finance Uji', true);
@@ -171,10 +186,16 @@ context.apiAddWorkspaceMember('admin-token', workspaceId, 'finance@example.com',
 context.apiAddUser('admin-token', 'viewer@example.com', 'VIEWER', 'Viewer Uji', true);
 context.apiAddWorkspaceMember('admin-token', workspaceId, 'viewer@example.com', 'VIEWER');
 context.apiAddUser('admin-token', 'project@example.com', 'PROYEK', 'Project Uji', true);
+context.apiAddWorkspaceMember('admin-token', workspaceId, 'project@example.com', 'PROYEK');
+context.apiAddUser('admin-token', 'outsider@example.com', 'VIEWER', 'Outsider Uji', true);
 
 const financeLogin = context.apiLogin('finance-token');
 assert.equal(financeLogin.workspaces[0].role, 'KEUANGAN');
 const financeSnapshot = context.apiLoadWorkspace('finance-token', workspaceId).snapshot;
+assert.equal(financeSnapshot.operational.housingUnits.length, 0, 'finance must not receive housing-unit private records');
+assert.equal(financeSnapshot.operational.penggajian.length, 0, 'finance must not receive payroll records');
+assert.equal(financeSnapshot.operational.tanah[0].harga_per_bt, 900000, 'finance can read project cost details needed for accounting');
+assert.equal(financeSnapshot.accounting.invoice[0].id, 'INVOICE-SECRET', 'finance can read the accounting store');
 financeSnapshot.operational.bukuKas.push({ id: 'CASH-1', keluar: 50000 });
 const save = context.apiSaveWorkspace('finance-token', workspaceId, 1, financeSnapshot);
 assert.equal(save.success, true);
@@ -209,8 +230,25 @@ assert.equal(staleSave.currentVersion, 3);
 console.log('PASS: stale writes are rejected without overwriting the latest snapshot');
 
 assert.throws(() => context.apiSaveWorkspace('viewer-token', workspaceId, 3, context.apiLoadWorkspace('admin-token', workspaceId).snapshot), /VIEWER/);
-assert.throws(() => context.apiLoadWorkspace('project-token', workspaceId), /tidak memiliki akses/);
-console.log('PASS: VIEWER cannot write and non-members cannot read a workspace');
+
+const projectSnapshot = context.apiLoadWorkspace('project-token', workspaceId).snapshot;
+assert.equal(projectSnapshot.operational.bukuKas.length, 0, 'project role must not receive the cashbook');
+assert.equal(projectSnapshot.operational.penggajian.length, 0, 'project role must not receive payroll');
+assert.equal(projectSnapshot.accounting.invoice.length, 0, 'project role must not receive invoice/accounting details');
+projectSnapshot.operational.bukuKas.push({ id: 'CASH-FORBIDDEN', keluar: 1 });
+assert.throws(() => context.apiSaveWorkspace('project-token', workspaceId, 3, projectSnapshot), /tidak diizinkan/);
+
+const viewerSnapshot = context.apiLoadWorkspace('viewer-token', workspaceId).snapshot;
+assert.equal(viewerSnapshot.operational.bukuKas.length, 0);
+assert.equal(viewerSnapshot.operational.tanah[0].pemilik, '');
+assert.equal(viewerSnapshot.operational.tanah[0].harga_per_bt, 0);
+assert.equal(viewerSnapshot.operational.tanah[0].dp, 0);
+assert.equal(viewerSnapshot.operational.tanah[0].url_bukti, '');
+assert.equal(viewerSnapshot.operational.beko[0].tarif, 0);
+assert.equal(viewerSnapshot.operational.beko[0].status_pembayaran, undefined);
+assert.equal(viewerSnapshot.accounting.invoice.length, 0);
+assert.throws(() => context.apiLoadWorkspace('outsider-token', workspaceId), /tidak memiliki akses/);
+console.log('PASS: scoped roles receive filtered data, Viewer receives redacted progress only, and unauthorized writes/read access are rejected');
 
 assert.throws(() => context.apiLogin('wrong-audience-token'), /aplikasi Google yang berbeda/);
 assert.throws(() => context.apiLogin('expired-token'), /kedaluwarsa/);
@@ -221,6 +259,10 @@ console.log('PASS: wrong audience, expired, unverified and invalid Google ID tok
 const audit = context.apiGetWorkspaceAudit('admin-token', workspaceId, 100);
 assert.ok(audit.events.some((event) => event.action === 'SNAPSHOT_SAVE_COMMITTED'));
 assert.ok(audit.events.some((event) => event.action === 'WORKSPACE_CREATED'));
+const fullStored = context.apiLoadWorkspace('admin-token', workspaceId).snapshot;
+assert.equal(fullStored.operational.housingUnits[0].id, 'UNIT-SECRET', 'scoped save must preserve private modules');
+assert.equal(fullStored.operational.penggajian[0].id, 'PAYROLL-SECRET', 'scoped save must preserve payroll');
+console.log('PASS: scoped writes merge authorized modules without clearing hidden server records');
 
 const chunkSheet = sheetMap.get('ERP_STATE_CHUNKS');
 const targetChunk = chunkSheet.rows.find((row) => row[0] === workspaceId && Number(row[1]) === 3);
