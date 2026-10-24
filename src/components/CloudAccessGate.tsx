@@ -11,6 +11,8 @@ import {
 import {
   createEmptyWorkspaceSnapshot,
   downloadLocalWorkspaceBackup,
+  downloadRawLocalWorkspaceBackup,
+  isLocalSnapshotSyncedForWorkspace,
   readLocalWorkspaceSnapshot,
   saveWorkspaceSnapshotToLocalCache,
   type WorkspaceSnapshot,
@@ -105,7 +107,11 @@ export default function CloudAccessGate({ children }: { children: ReactNode }) {
     } catch (readError) {
       setLocalReadError(readError instanceof Error ? readError.message : 'Cache lokal tidak dapat dibaca.');
       setLocalSnapshot(null);
-      setLocalHasRows(false);
+      // Treat any unparseable local cache as user data, never as an empty installation.
+      setLocalHasRows(
+        window.localStorage.getItem('abiedien.erp.app.v1') !== null ||
+        window.localStorage.getItem('abiedien.erp.accounting.v1') !== null
+      );
       setBackupDownloaded(false);
       return null;
     }
@@ -190,16 +196,23 @@ export default function CloudAccessGate({ children }: { children: ReactNode }) {
     if (localSnapshot) {
       downloadLocalWorkspaceBackup(localSnapshot);
       setBackupDownloaded(true);
-      setNotice('Backup JSON lokal telah diminta untuk diunduh. Lampiran IndexedDB tidak termasuk; pastikan file benar-benar terunduh sebelum melanjutkan.');
+      setNotice('Permintaan unduh backup JSON telah dijalankan. Periksa folder Downloads; lampiran IndexedDB tidak termasuk.');
+      return;
+    }
+    const downloadedRaw = downloadRawLocalWorkspaceBackup();
+    if (downloadedRaw) {
+      setBackupDownloaded(true);
+      setNotice('Backup mentah cache lokal yang rusak telah diminta untuk diunduh. Simpan file ini dan periksa sebelum impor.');
     } else {
       setBackupDownloaded(true);
-      setNotice('Tidak ada cache ERP lokal yang dapat dibaca sebagai backup.');
+      setNotice('Tidak ada cache lokal yang ditemukan untuk dicadangkan.');
     }
   };
 
   const activateWorkspace = async (workspace: CloudWorkspace) => {
-    if (localHasRows && !backupDownloaded) {
-      setError('Unduh backup lokal lebih dahulu agar data browser tidak tertimpa tanpa salinan.');
+    const localSnapshotIsSynced = isLocalSnapshotSyncedForWorkspace(localSnapshot, workspace.id);
+    if (localHasRows && !localSnapshotIsSynced && !backupDownloaded) {
+      setError('Data browser berbeda dari snapshot cloud terakhir atau berasal dari workspace lain. Unduh backup sebelum menggantinya.');
       return;
     }
     setPhase('loading');
@@ -320,22 +333,23 @@ export default function CloudAccessGate({ children }: { children: ReactNode }) {
           <div className="font-medium">{user?.display_name || user?.email}</div>
           <div className="text-slate-500">{user?.email} · Role global {user?.role}</div>
         </div>
-        {localHasRows && (
+        {localHasRows && workspaces.some((item) => !isLocalSnapshotSyncedForWorkspace(localSnapshot, item.id)) && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-            <p className="text-sm font-semibold text-amber-900">Data browser lokal ditemukan</p>
-            <p className="mt-1 text-sm leading-5 text-amber-800">Saat workspace cloud dibuka, cache browser akan diganti dengan snapshot cloud. Unduh backup JSON dahulu. Lampiran yang hanya tersimpan di IndexedDB tidak termasuk.</p>
+            <p className="text-sm font-semibold text-amber-900">Data browser lokal perlu diperiksa</p>
+            <p className="mt-1 text-sm leading-5 text-amber-800">Sebelum memilih workspace yang berbeda atau memiliki data lokal yang belum sinkron, unduh backup JSON. Jika cache sama dengan snapshot cloud yang terakhir tersimpan, backup tambahan tidak diperlukan. Lampiran IndexedDB tidak termasuk.</p>
             <button onClick={downloadBackup} className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100">
               Unduh backup lokal
             </button>
-            {backupDownloaded && <p className="mt-2 text-xs text-amber-800">Permintaan unduh telah dijalankan. Pastikan file terlihat di folder Downloads.</p>}
+            {backupDownloaded && <p className="mt-2 text-xs text-amber-800">Permintaan unduh telah dijalankan. Periksa folder Downloads.</p>}
           </div>
         )}
+        {localReadError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{localReadError} Jika perlu, unduh backup mentah sebelum cache lokal diganti.</p>}
         <div className="space-y-2">
           <p className="text-sm font-semibold text-slate-700">Pilih workspace</p>
           {workspaces.map((workspace) => (
             <button
               key={workspace.id}
-              disabled={phase === 'loading' || (localHasRows && !backupDownloaded)}
+              disabled={phase === 'loading' || (localHasRows && !isLocalSnapshotSyncedForWorkspace(localSnapshot, workspace.id) && !backupDownloaded)}
               onClick={() => void activateWorkspace(workspace)}
               className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-4 py-3 text-left hover:border-indigo-300 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
