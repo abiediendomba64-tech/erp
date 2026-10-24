@@ -1064,8 +1064,8 @@ function setupErpBackend() {
     'sender_name', 'text', 'media_id', 'media_mime_type', 'status', 'raw_json'
   ]);
   ensureNamedSheet_(ss, 'AUDIT_LOG', [
-    'id', 'timestamp', 'user_sub', 'user_email', 'aksi', 'modul',
-    'record_id', 'nilai_lama', 'nilai_baru', 'alasan'
+    'id', 'timestamp', 'user_sub', 'user_email', 'user', 'aksi',
+    'modul', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan'
   ]);
   return {
     success: true,
