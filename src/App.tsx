@@ -33,6 +33,9 @@ import TaxesPage from './pages/TaxesPage';
 import SuratPage from './pages/SuratPage';
 import HousingUnitsPage from './pages/HousingUnitsPage';
 import { AccountingProvider } from './store/accounting';
+import CloudAccessGate from './components/CloudAccessGate';
+import CloudSyncStatusBar from './components/CloudSyncStatusBar';
+import { getCloudWorkspaceSession } from './lib/googleWorkspaceSync';
 
 export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat' | 'unit';
 
@@ -57,7 +60,9 @@ function AppContent() {
 
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [currentRole, setCurrentRole] = useState<'ADMIN' | 'VIEWER'>('ADMIN');
+  const [currentRole] = useState<'ADMIN' | 'KEUANGAN' | 'PROYEK' | 'VIEWER'>(() =>
+    getCloudWorkspaceSession()?.workspaceRole ?? (import.meta.env.DEV ? 'ADMIN' : 'VIEWER')
+  );
 
   const renderPage = () => {
     switch (currentPage) {
@@ -106,9 +111,9 @@ function AppContent() {
           isOpen={sidebarOpen}
           setIsOpen={setSidebarOpen}
           currentRole={currentRole}
-          setCurrentRole={setCurrentRole}
         />
         <main className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
+          <CloudSyncStatusBar />
           <div className="p-6">
             {renderPage()}
           </div>
@@ -120,5 +125,9 @@ function AppContent() {
 }
 
 export default function App() {
-  return <AppContent />;
+  return (
+    <CloudAccessGate>
+      <AppContent />
+    </CloudAccessGate>
+  );
 }
