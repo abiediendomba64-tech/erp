@@ -120,7 +120,7 @@ function AppContent() {
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-slate-900">{cloudSession.workspaceName}</p>
-                <p className="truncate text-xs text-slate-500">{cloudSession.idToken ? 'Google account authenticated' : 'Session missing'} · Role {cloudSession.workspaceRole}</p>
+                <p className="truncate text-xs text-slate-500">Workspace cloud aktif · Role {cloudSession.workspaceRole}</p>
               </div>
               <button
                 onClick={() => window.location.reload()}
