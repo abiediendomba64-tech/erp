@@ -344,3 +344,52 @@ assert.deepEqual(operational.calculateBudgetVariance(10000000, 12500000), {
 console.log('PASS: rumus RAB, stok, penjualan, pembelian, produksi, payroll, dan realisasi anggaran dari fungsi aktual');
 
 console.log('\nALL PRODUCTION ACCOUNTING REGRESSION TESTS PASSED');
+
+
+// Cloud backend regression checks: ensure all public data calls pass through verified identity.
+const securitySource = await readFile(new URL('./google-apps-script/Security.gs', import.meta.url), 'utf8');
+runInNewContext(securitySource, gasContext, { filename: 'Security.gs' });
+gasContext.jsonResponse_ = payload => payload; // capture HTTP response bodies in this isolated unit-test context
+
+assert.equal(typeof gasContext.doGet, 'function', 'Google Web App wrapper entry point must exist');
+assert.equal(typeof gasContext.doPost, 'function', 'Google Web App POST entry point must exist');
+assert.equal(typeof gasContext.apiDispatch, 'function', 'Authenticated dispatch must exist');
+const publicHealth = gasContext.doGet({ parameter: { path: '/health' } });
+assert.equal(publicHealth.success, true, 'health check remains available without reading business data');
+const legacyRead = gasContext.doGet({ parameter: { path: '/akun' } });
+assert.equal(legacyRead.code, 'legacy_api_disabled', 'legacy direct data read endpoint must be disabled');
+const legacyWrite = gasContext.doPost({ parameter: { path: '/transaksi' }, postData: { contents: '{}' } });
+assert.equal(legacyWrite.code, 'endpoint_disabled', 'legacy unauthenticated transaction write endpoint must be disabled');
+const noToken = gasContext.apiDispatch({ action: 'auth.me', idToken: '' });
+assert.equal(noToken.success, false, 'cloud API rejects missing Google ID token');
+assert.equal(noToken.code, 'unauthenticated', 'missing token has explicit auth error');
+
+const trustedAudit = [{ id: 'SERVER-LOG-1', actor_email: 'admin@example.com' }];
+const incomingAudit = [...trustedAudit, { id: 'BROWSER-FAKE-LOG' }];
+const preservedAdminData = gasContext.preserveRestrictedCollections_(
+  { role: 'ADMIN' },
+  'operational',
+  { auditLog: trustedAudit, tanah: [] },
+  { auditLog: incomingAudit, tanah: [] }
+);
+assert.deepEqual(JSON.parse(JSON.stringify(preservedAdminData.auditLog)), trustedAudit,
+  'browser payload may not append or rewrite the authoritative server audit log');
+
+const viewerBefore = { bukuKas: [], auditLog: [], tanah: [], beko: [], housingUnits: [] };
+const viewerAfter = { ...viewerBefore, tanah: [{ id: 'UNAUTHORIZED' }] };
+assert.throws(() => gasContext.validateRoleChanges_(
+  { role: 'VIEWER' }, 'operational', viewerBefore, viewerAfter
+), /tidak berhak mengubah bagian/,
+'VIEWER must not be able to mutate operational records on the server');
+
+assert.match(securitySource, /version_conflict/, 'version conflicts must be rejected rather than silently overwriting');
+assert.match(securitySource, /tokeninfo\?id_token=/, 'Google ID tokens must be verified server-side');
+const wrapperSource = await readFile(new URL('./google-apps-script/Wrapper.html', import.meta.url), 'utf8');
+assert.match(wrapperSource, /event\.origin !== FRONTEND_ORIGIN/, 'bridge must validate frontend origin');
+assert.match(wrapperSource, /event\.source !== frame\.contentWindow/, 'bridge must validate the calling frame');
+const appServiceSource = await readFile(new URL('./src/services/api.ts', import.meta.url), 'utf8');
+assert.doesNotMatch(appServiceSource, /fetch\s*\(/, 'ERP client helpers must not bypass the authenticated Apps Script bridge');
+const userManagementSource = await readFile(new URL('./src/pages/UserManagementPage.tsx', import.meta.url), 'utf8');
+assert.doesNotMatch(userManagementSource, /admin@proyek\.com|keuangan@proyek\.com|proyek@proyek\.com/,
+  'user management must not seed fake users');
+console.log('PASS: Google cloud backend auth guard, legacy API shutdown, server audit immutability, and role limits');
