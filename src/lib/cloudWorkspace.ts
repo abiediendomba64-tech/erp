@@ -25,6 +25,7 @@ export interface CloudStatus {
 }
 
 let activeToken: string | null = null;
+let activeRole: CloudRole = 'VIEWER';
 let activeVersion: number | null = null;
 let currentSnapshot: WorkspaceSnapshot | null = null;
 let writeBlocked = false;
@@ -55,6 +56,7 @@ export function clearCloudWorkspace(): void {
   activeToken = null;
   activeVersion = null;
   currentSnapshot = null;
+  activeRole = 'VIEWER';
   writeBlocked = false;
   queue = Promise.resolve();
   publish({ status: 'ready', message: 'Tidak ada sesi cloud aktif.', version: null });
@@ -63,10 +65,12 @@ export function clearCloudWorkspace(): void {
 export function activateCloudWorkspace(
   token: string,
   snapshot: WorkspaceSnapshot,
-  version: number
+  version: number,
+  role: CloudRole
 ): void {
   activeToken = token;
   activeVersion = version;
+  activeRole = role;
   currentSnapshot = JSON.parse(JSON.stringify(snapshot)) as WorkspaceSnapshot;
   writeBlocked = false;
   queue = Promise.resolve();
@@ -87,6 +91,9 @@ export async function persistWorkspaceSlice(
   slice: 'operational' | 'accounting',
   value: unknown
 ): Promise<void> {
+  // Read-only and project-only sessions may hydrate a default chart in the UI, but may not
+  // upload the hidden accounting arrays back to the canonical snapshot.
+  if (activeRole === 'VIEWER' || (activeRole === 'PROYEK' && slice === 'accounting')) return Promise.resolve();
   let resolveTask!: () => void;
   let rejectTask!: (error: Error) => void;
   const task = new Promise<void>((resolve, reject) => {
