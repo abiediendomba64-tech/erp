@@ -35,7 +35,7 @@ function ensureCloudSchema_() {
   ensureSheetHeaders_(ss.getSheetByName('ERP_STATE_HEAD') || ss.insertSheet('ERP_STATE_HEAD'),
     ['workspace_id', 'version', 'chunk_count', 'updated_at', 'updated_by']);
   ensureSheetHeaders_(ss.getSheetByName('ERP_RECORDS') || ss.insertSheet('ERP_RECORDS'),
-    ['workspace_id', 'namespace', 'module', 'record_id', 'payload_json', 'updated_at', 'updated_by', 'deleted']);
+    ['workspace_id', 'version', 'namespace', 'module', 'record_id', 'payload_json', 'updated_at', 'updated_by', 'deleted']);
 
 }
 
@@ -198,7 +198,7 @@ function createCloudWorkspace_(user, name, data) {
     const now = new Date().toISOString();
     ss.getSheetByName('ERP_WORKSPACES').appendRow([id, workspaceName, user.email, now]);
     ss.getSheetByName('ERP_MEMBERS').appendRow([id, user.email, 'ADMIN', now, 'active']);
-    const recordCount = writeCloudRecords_(id, data, user.email, now);
+    const recordCount = writeCloudRecords_(id, 1, data, user.email, now);
     ss.getSheetByName('ERP_STATE_HEAD').appendRow([id, 1, recordCount, now, user.email]);
     cloudAudit_(user.email, 'CREATE_WORKSPACE', 'ERP_WORKSPACES', id, '', workspaceName);
     return { success: true, workspace_id: id, name: workspaceName, role: 'ADMIN', version: 1 };
@@ -263,7 +263,7 @@ function saveCloudWorkspaceState_(user, workspaceId, data, expectedVersion) {
     authorizeCloudStateChanges_(current.data, data, membership.role);
     const nextVersion = current.version + 1;
     const now = new Date().toISOString();
-    const changes = writeCloudRecordDiff_(String(workspaceId), current.data, data, user.email, now);
+    const changes = writeCloudRecordDiff_(String(workspaceId), nextVersion, current.data, data, user.email, now);
     updateCloudStateHead_(String(workspaceId), nextVersion, changes.recordCount, now, user.email);
     cloudAudit_(user.email, 'SAVE_WORKSPACE_STATE', 'ERP_STATE', String(workspaceId),
       JSON.stringify({ version: current.version }),
@@ -326,68 +326,63 @@ function readCloudWorkspaceState_(workspaceId) {
   const version = Number(head[1]);
   if (!Number.isInteger(version) || version < 1) throw new Error('Versi workspace tidak valid.');
 
+  const latest = new Map();
+  const rows = ss.getSheetByName('ERP_RECORDS').getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const rowVersion = Number(row[1]);
+    if (String(row[0]) !== workspaceId || !Number.isInteger(rowVersion) || rowVersion > version) continue;
+    const namespace = String(row[2] || '');
+    const moduleName = String(row[3] || '');
+    const recordId = String(row[4] || '');
+    const key = [namespace, moduleName, recordId].join('|');
+    // Rows are append-only; later rows for the same key supersede earlier events.
+    latest.set(key, {
+      namespace: namespace,
+      module: moduleName,
+      id: recordId,
+      json: String(row[5] || ''),
+      deleted: String(row[8]).toLowerCase() === 'true'
+    });
+  }
+
   const data = { operational: {}, accounting: {} };
   CLOUD_OPERATIONAL_KEYS_.forEach(key => data.operational[key] = []);
   CLOUD_ACCOUNTING_KEYS_.forEach(key => data.accounting[key] = []);
-  const sheet = ss.getSheetByName('ERP_RECORDS');
-  const rows = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (String(row[0]) !== workspaceId || String(row[7]).toLowerCase() === 'true') continue;
-    const namespace = String(row[1] || '');
-    const moduleName = String(row[2] || '');
-    if ((namespace !== 'operational' && namespace !== 'accounting') ||
-        !Object.prototype.hasOwnProperty.call(data[namespace], moduleName)) {
+  latest.forEach(record => {
+    if (record.deleted) return;
+    if ((record.namespace !== 'operational' && record.namespace !== 'accounting') ||
+        !Object.prototype.hasOwnProperty.call(data[record.namespace], record.module)) {
       throw new Error('Database berisi record dengan namespace/modul yang tidak dikenal. Tidak ada perubahan ditulis.');
     }
     let payload;
     try {
-      payload = JSON.parse(String(row[4] || 'null'));
+      payload = JSON.parse(record.json);
     } catch (error) {
-      throw new Error('Record cloud rusak pada ' + moduleName + '/' + row[3] + '. Periksa backup sebelum melanjutkan.');
+      throw new Error('Record cloud rusak pada ' + record.module + '/' + record.id + '. Periksa backup sebelum melanjutkan.');
     }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      throw new Error('Record cloud bukan object pada ' + moduleName + '/' + row[3] + '.');
+      throw new Error('Record cloud bukan object pada ' + record.module + '/' + record.id + '.');
     }
-    data[namespace][moduleName].push(payload);
-  }
+    data[record.namespace][record.module].push(payload);
+  });
   validateCloudWorkspaceData_(data);
   return { version: version, data: data };
 }
 
-function writeCloudRecords_(workspaceId, data, email, timestamp) {
-  const sheet = getErpSpreadsheet_().getSheetByName('ERP_RECORDS');
+function writeCloudRecords_(workspaceId, version, data, email, timestamp) {
   const rows = [];
-  ['operational', 'accounting'].forEach(namespace => {
-    Object.keys(data[namespace]).forEach(moduleName => {
-      const records = data[namespace][moduleName];
-      if (!Array.isArray(records)) throw new Error('Modul harus berupa array: ' + moduleName);
-      const seen = new Set();
-      records.forEach(record => {
-        const id = cloudRecordId_(moduleName, record);
-        if (seen.has(id)) throw new Error('ID duplikat pada modul ' + moduleName + ': ' + id);
-        seen.add(id);
-        const json = JSON.stringify(record);
-        if (json.length > 30000) throw new Error('Record ' + moduleName + '/' + id + ' lebih dari 30.000 karakter. Simpan foto/PDF di Google Drive dan hanya simpan tautannya.');
-        rows.push([workspaceId, namespace, moduleName, id, json, timestamp, email, false]);
-      });
-    });
+  flattenCloudRecords_(data).forEach(record => {
+    rows.push([workspaceId, version, record.namespace, record.module, record.id, record.json, timestamp, email, false]);
   });
+  const sheet = getErpSpreadsheet_().getSheetByName('ERP_RECORDS');
   if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
   return rows.length;
 }
 
-function writeCloudRecordDiff_(workspaceId, oldData, newData, email, timestamp) {
+function writeCloudRecordDiff_(workspaceId, version, oldData, newData, email, timestamp) {
   const ss = getErpSpreadsheet_();
   const recordsSheet = ss.getSheetByName('ERP_RECORDS');
-  const values = recordsSheet.getDataRange().getValues();
-  const rowByKey = new Map();
-  for (let i = 1; i < values.length; i++) {
-    if (String(values[i][0]) !== workspaceId) continue;
-    const key = [String(values[i][1]), String(values[i][2]), String(values[i][3])].join('|');
-    rowByKey.set(key, i + 1);
-  }
-
   const oldRecords = flattenCloudRecords_(oldData);
   const newRecords = flattenCloudRecords_(newData);
   const changes = [];
@@ -395,53 +390,45 @@ function writeCloudRecordDiff_(workspaceId, oldData, newData, email, timestamp) 
 
   oldRecords.forEach((record, key) => {
     if (!newRecords.has(key)) {
-      changes.push({ key, record, next: null, deleted: true });
+      changes.push({ key, old: record, next: null, deleted: true });
       deleted++;
     }
   });
   newRecords.forEach((record, key) => {
     const old = oldRecords.get(key);
-    if (!old || old.json !== record.json) changes.push({ key, record: old || null, next: record, deleted: false });
+    if (!old || old.json !== record.json) changes.push({ key, old: old || null, next: record, deleted: false });
   });
 
   if (changes.length > 150) throw new Error('Satu penyimpanan mengubah lebih dari 150 record. Pecah perubahan menjadi beberapa penyimpanan agar Apps Script tetap ringan.');
 
   const auditSheet = ss.getSheetByName('AUDIT_LOG') || ss.insertSheet('AUDIT_LOG');
   ensureSheetHeaders_(auditSheet, ['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan']);
-
+  const eventRows = [];
   const auditRows = [];
-  const updates = [];
-  const inserts = [];
 
   changes.forEach(change => {
     const [namespace, moduleName, recordId] = change.key.split('|');
-    const existingRow = rowByKey.get(change.key);
-    const nextPayload = change.next ? change.next.json : (change.record ? change.record.json : '');
-    const nextDeleted = change.deleted;
-    if (nextPayload.length > 30000) throw new Error('Payload record melampaui batas penyimpanan satu sel.');
-
-    const row = [workspaceId, namespace, moduleName, recordId, nextPayload, timestamp, email, nextDeleted];
-    if (existingRow) updates.push({ row: existingRow, values: row });
-    else inserts.push(row);
-
+    const payload = change.next ? change.next.json : change.old.json;
+    // Keep one cell below Sheets' per-cell text limit. Binary documents must live in Drive.
+    if (payload.length > 30000) throw new Error('Record ' + moduleName + '/' + recordId + ' melampaui batas 30.000 karakter.');
+    eventRows.push([workspaceId, version, namespace, moduleName, recordId, payload, timestamp, email, change.deleted]);
     auditRows.push([
       'LOG-' + Utilities.getUuid(),
       timestamp,
       email,
-      nextDeleted ? 'DELETE_RECORD' : change.record ? 'UPDATE_RECORD' : 'CREATE_RECORD',
+      change.deleted ? 'DELETE_RECORD' : change.old ? 'UPDATE_RECORD' : 'CREATE_RECORD',
       namespace + '.' + moduleName,
       recordId,
-      change.record ? change.record.json : '',
+      change.old ? change.old.json : '',
       change.next ? change.next.json : '',
       'ERP cloud versioned save'
     ]);
   });
 
-  // The database sheet contains latest record values; AUDIT_LOG preserves old/new values append-only.
-  updates.forEach(update => recordsSheet.getRange(update.row, 1, 1, update.values.length).setValues([update.values]));
-  if (inserts.length) recordsSheet.getRange(recordsSheet.getLastRow() + 1, 1, inserts.length, inserts[0].length).setValues(inserts);
+  // Append-only writes; the state becomes visible only after the head version is advanced.
+  // If execution fails before the head update, the new event rows are ignored on load.
+  if (eventRows.length) recordsSheet.getRange(recordsSheet.getLastRow() + 1, 1, eventRows.length, eventRows[0].length).setValues(eventRows);
   if (auditRows.length) auditSheet.getRange(auditSheet.getLastRow() + 1, 1, auditRows.length, auditRows[0].length).setValues(auditRows);
-
   return { changed: changes.length - deleted, deleted: deleted, recordCount: newRecords.size };
 }
 
@@ -485,7 +472,7 @@ function updateCloudStateHead_(workspaceId, version, recordCount, timestamp, ema
   const values = sheet.getDataRange().getValues();
   for (let i = 1; i < values.length; i++) {
     if (String(values[i][0]) === workspaceId) {
-      // Keep legacy column layout stable: chunk_count now stores live record count.
+      // Keep the legacy header layout: column C now stores active record count.
       sheet.getRange(i + 1, 2, 1, 4).setValues([[version, recordCount, timestamp, email]]);
       return;
     }
