@@ -393,3 +393,70 @@ const userManagementSource = await readFile(new URL('./src/pages/UserManagementP
 assert.doesNotMatch(userManagementSource, /admin@proyek\.com|keuangan@proyek\.com|proyek@proyek\.com/,
   'user management must not seed fake users');
 console.log('PASS: Google cloud backend auth guard, legacy API shutdown, server audit immutability, and role limits');
+
+
+const accountFixture = [
+  { kode: '1-1001', nama: 'Kas', tipe: 'Aset', kategori: 'Aset Lancar', saldo_normal: 'Debit', saldo: 0 },
+  { kode: '4-1001', nama: 'Pendapatan', tipe: 'Pendapatan', kategori: 'Pendapatan Usaha', saldo_normal: 'Kredit', saldo: 0 },
+  { kode: '5-1001', nama: 'Beban Material', tipe: 'Beban', kategori: 'Beban Langsung', saldo_normal: 'Debit', saldo: 0 }
+];
+const journalFixture = {
+  id: 'J-CLOUD-1',
+  tanggal: '2026-10-24',
+  no_jurnal: 'JU-CLOUD-1',
+  keterangan: 'Uji cloud',
+  entries: [
+    { id: 'E-1', akun_kode: '1-1001', akun_nama: 'Nama dari browser tidak dipercaya', debit: 100, kredit: 0 },
+    { id: 'E-2', akun_kode: '4-1001', akun_nama: 'Nama palsu', debit: 0, kredit: 100 }
+  ],
+  total_debit: 999,
+  total_kredit: 999,
+  status: 'Posted',
+  createdBy: 'browser-supplied-user',
+  createdAt: '2026-10-24T00:00:00.000Z'
+};
+const accountingFixture = {
+  akun: accountFixture,
+  jurnal: [journalFixture],
+  invoice: [],
+  purchaseOrder: [],
+  rab: [],
+  schedule: []
+};
+const serverValidatedAccounting = gasContext.validateSlice_('accounting', accountingFixture);
+assert.equal(serverValidatedAccounting.jurnal[0].total_debit, 100,
+  'backend derives the journal debit total from entries instead of trusting the browser');
+assert.equal(serverValidatedAccounting.jurnal[0].total_kredit, 100,
+  'backend derives the journal credit total from entries instead of trusting the browser');
+assert.equal(serverValidatedAccounting.jurnal[0].entries[0].akun_nama, 'Kas',
+  'account display name comes from the server chart of accounts');
+const invalidAccounting = JSON.parse(JSON.stringify(accountingFixture));
+invalidAccounting.jurnal[0].entries[1].kredit = 90;
+assert.throws(() => gasContext.validateSlice_('accounting', invalidAccounting), /tidak balance/,
+  'backend rejects a posted journal with unbalanced entries');
+
+const reportSnapshot = {
+  accounting: {
+    akun: accountFixture,
+    jurnal: [
+      { ...journalFixture, id: 'J-REV', no_jurnal: 'JU-REV', status: 'Posted', entries: [
+        { id: 'R1', akun_kode: '1-1001', debit: 100, kredit: 0 },
+        { id: 'R2', akun_kode: '4-1001', debit: 0, kredit: 100 }
+      ] },
+      { ...journalFixture, id: 'J-EXP', no_jurnal: 'JU-EXP', status: 'Posted', entries: [
+        { id: 'E3', akun_kode: '5-1001', debit: 30, kredit: 0 },
+        { id: 'E4', akun_kode: '1-1001', debit: 0, kredit: 30 }
+      ] }
+    ]
+  }
+};
+gasContext.loadWorkspace_ = () => reportSnapshot;
+const cloudPnl = gasContext.buildProfitLossFromCloud_({ role: 'ADMIN' }, 'W-TEST', '2026-10');
+assert.equal(cloudPnl.total_pendapatan, 100);
+assert.equal(cloudPnl.total_beban, 30);
+assert.equal(cloudPnl.laba_bersih, 70);
+const cloudBalance = gasContext.buildBalanceSheetFromCloud_({ role: 'ADMIN' }, 'W-TEST', '2026-10-24');
+assert.equal(cloudBalance.aset.total_aset, 70);
+assert.equal(cloudBalance.total_kewajiban_ekuitas, 70);
+assert.equal(cloudBalance.balance, true);
+console.log('PASS: backend recalculates journal totals, rejects imbalance, and computes cloud reports from the canonical workspace');
