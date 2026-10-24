@@ -201,6 +201,7 @@ function createCloudWorkspace_(user, name, data) {
   const workspaceName = String(name || '').trim();
   if (workspaceName.length < 2 || workspaceName.length > 100) throw new Error('Nama workspace wajib 2-100 karakter.');
   validateCloudWorkspaceData_(data);
+  data = normalizeCloudWorkspaceData_(data, null, user, 'ADMIN', true);
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -272,7 +273,8 @@ function saveCloudWorkspaceState_(user, workspaceId, data, expectedVersion) {
       return { success: true, saved: false, version: current.version, error_code: 'conflict' };
     }
     validateCloudWorkspaceData_(data);
-    const scoped = restoreHiddenCloudModules_(current.data, data, membership.role);
+    let scoped = restoreHiddenCloudModules_(current.data, data, membership.role);
+    scoped = normalizeCloudWorkspaceData_(scoped, current.data, user, membership.role, false);
     authorizeCloudStateChanges_(current.data, scoped, membership.role);
     const nextVersion = current.version + 1;
     const now = new Date().toISOString();
@@ -302,6 +304,390 @@ function validateCloudWorkspaceData_(data) {
   });
   const json = JSON.stringify(data);
   if (json.length > CLOUD_MAX_JSON_CHARS_) throw new Error('Snapshot ERP terlalu besar. Pindahkan file/foto ke Google Drive; batas snapshot 1,5 juta karakter.');
+}
+
+
+function cloudFiniteNumber_(value, label, allowNegative) {
+  const number = Number(value);
+  if (!isFinite(number) || (!allowNegative && number < 0)) {
+    throw new Error(label + (allowNegative ? ' harus berupa angka valid.' : ' harus berupa angka nol atau lebih.'));
+  }
+  return number;
+}
+
+function cloudRoundMoney_(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+function cloudIsDate_(value) {
+  const input = String(value || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) return false;
+  const parsed = new Date(input + 'T00:00:00Z');
+  return isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === input;
+}
+
+function cloudObjectMap_(rows) {
+  const map = new Map();
+  (rows || []).forEach(row => {
+    if (row && row.id) map.set(String(row.id), row);
+  });
+  return map;
+}
+
+function cloudProofFileId_(document) {
+  if (document && document.drive_file_id) return String(document.drive_file_id).trim();
+  const url = String(document && document.link_drive || '');
+  if (!/^https:\/\/(?:drive|docs)\.google\.com\//i.test(url)) return '';
+  const match = url.match(/\/d\/([A-Za-z0-9_-]{10,})/i) || url.match(/[?&]id=([A-Za-z0-9_-]{10,})/i);
+  return match ? match[1] : '';
+}
+
+function cloudFileBelongsToErpFolder_(document) {
+  const folderId = String(PropertiesService.getScriptProperties().getProperty('DOCUMENTS_FOLDER_ID') || '').trim();
+  const fileId = cloudProofFileId_(document);
+  if (!folderId || !fileId) return false;
+  try {
+    const file = DriveApp.getFileById(fileId);
+    if (file.isTrashed()) return false;
+    const parents = file.getParents();
+    while (parents.hasNext()) {
+      if (parents.next().getId() === folderId) return true;
+    }
+  } catch (error) {
+    return false;
+  }
+  return false;
+}
+
+function cloudSameVerificationTarget_(oldDoc, newDoc) {
+  if (!oldDoc || !newDoc) return false;
+  const fields = ['jenis', 'nominal', 'modul_terkait', 'id_terkait', 'link_drive', 'drive_file_id', 'kode_bukti'];
+  return fields.every(field => String(oldDoc[field] == null ? '' : oldDoc[field]) ===
+    String(newDoc[field] == null ? '' : newDoc[field]));
+}
+
+function cloudVerifiedPaymentProof_(cashRow, documents) {
+  const amount = Math.max(0, Number(cashRow && cashRow.masuk) || 0) +
+    Math.max(0, Number(cashRow && cashRow.keluar) || 0);
+  if (amount <= 0) return false;
+  return (documents || []).some(document =>
+    document &&
+    document.terverifikasi === 'Ya' &&
+    document.id_terkait === cashRow.id &&
+    (document.modul_terkait === 'Buku Kas' || !document.modul_terkait) &&
+    ['Kwitansi_Foto', 'Transfer_Bank', 'Nota_Foto'].indexOf(String(document.jenis || '')) >= 0 &&
+    Math.abs(Number(document.nominal) - amount) <= 0.005 &&
+    cloudFileBelongsToErpFolder_(document)
+  );
+}
+
+function cloudValidateJournal_(journal, accountCodes) {
+  if (!journal || !journal.id || !Array.isArray(journal.entries) || journal.entries.length < 2) {
+    throw new Error('Jurnal harus memiliki ID dan minimal dua baris debit/kredit.');
+  }
+  let debit = 0;
+  let credit = 0;
+  journal.entries.forEach((entry, index) => {
+    const name = 'Jurnal ' + journal.id + ', baris ' + (index + 1);
+    if (!entry || !accountCodes.has(String(entry.akun_kode || ''))) {
+      throw new Error(name + ': akun tidak ada di Chart of Accounts.');
+    }
+    const d = cloudFiniteNumber_(entry.debit, name + ' debit', false);
+    const c = cloudFiniteNumber_(entry.kredit, name + ' kredit', false);
+    if (d > 0 && c > 0) throw new Error(name + ': debit dan kredit tidak boleh positif bersamaan.');
+    if (d === 0 && c === 0) throw new Error(name + ': isi debit atau kredit dengan nominal positif.');
+    debit += d;
+    credit += c;
+  });
+  debit = cloudRoundMoney_(debit);
+  credit = cloudRoundMoney_(credit);
+  if (debit <= 0 || Math.abs(debit - credit) > 0.005) {
+    throw new Error('Jurnal ' + journal.id + ' tidak seimbang. Debit=' + debit + ', Kredit=' + credit + '.');
+  }
+  // Server recalculates journal totals from the entries rather than trusting client totals.
+  journal.total_debit = debit;
+  journal.total_kredit = credit;
+}
+
+function normalizeCloudWorkspaceData_(input, previousData, user, workspaceRole, bootstrap) {
+  const data = JSON.parse(JSON.stringify(input));
+  const ops = data.operational;
+  const accounting = data.accounting;
+  const previousOps = previousData && previousData.operational || {};
+  const previousAccounting = previousData && previousData.accounting || {};
+  const now = new Date().toISOString();
+
+  // Master identity: codes used for joins must be unique and stable.
+  const unitByCode = new Map();
+  (ops.housingUnits || []).forEach(unit => {
+    const code = String(unit && unit.kode_unit || '').trim().toLowerCase();
+    if (!code) throw new Error('Setiap unit perumahan wajib memiliki kode_unit.');
+    if (unitByCode.has(code)) throw new Error('Kode unit perumahan duplikat: ' + unit.kode_unit);
+    unitByCode.set(code, unit);
+    if (!cloudIsDate_(unit.created_at ? String(unit.created_at).slice(0, 10) : '') && !bootstrap) {
+      // Timestamp metadata may be valid ISO or omitted on legacy rows; do not treat it as a business date.
+    }
+  });
+
+  const accountCodes = new Set();
+  (accounting.akun || []).forEach(account => {
+    const code = String(account && account.kode || '').trim();
+    if (!code) throw new Error('Chart of Accounts berisi kode akun kosong.');
+    if (accountCodes.has(code)) throw new Error('Kode akun duplikat: ' + code);
+    if (['Debit', 'Kredit'].indexOf(String(account.saldo_normal || '')) < 0) {
+      throw new Error('Saldo normal akun ' + code + ' harus Debit atau Kredit.');
+    }
+    accountCodes.add(code);
+  });
+
+  // Recompute quantity × unit price server-side.
+  (ops.penjualan || []).forEach(record => {
+    if (!cloudIsDate_(record.tanggal)) throw new Error('Tanggal penjualan ' + record.id + ' tidak valid.');
+    if (!Array.isArray(record.items)) throw new Error('Penjualan ' + record.id + ' harus memiliki array items.');
+    let subtotal = 0;
+    record.items = record.items.map((item, index) => {
+      const qty = cloudFiniteNumber_(item.jumlah, 'Jumlah item penjualan ' + record.id + '/' + (index + 1), false);
+      const price = cloudFiniteNumber_(item.harga, 'Harga item penjualan ' + record.id + '/' + (index + 1), false);
+      if (qty <= 0 || price <= 0) throw new Error('Jumlah dan harga item penjualan wajib lebih besar dari nol.');
+      const line = cloudRoundMoney_(qty * price);
+      subtotal += line;
+      return Object.assign({}, item, { subtotal: line });
+    });
+    const discount = cloudFiniteNumber_(record.diskon || 0, 'Diskon penjualan ' + record.id, false);
+    const tax = cloudFiniteNumber_(record.ppn || 0, 'PPN penjualan ' + record.id, false);
+    subtotal = cloudRoundMoney_(subtotal);
+    if (discount > subtotal) throw new Error('Diskon penjualan ' + record.id + ' tidak boleh melebihi subtotal.');
+    // These fields are derived in the UI; their line subtotals are stored only as a cache.
+  });
+
+  (ops.pembelian || []).forEach(record => {
+    if (!cloudIsDate_(record.tanggal)) throw new Error('Tanggal pembelian ' + record.id + ' tidak valid.');
+    if (!Array.isArray(record.items)) throw new Error('Pembelian ' + record.id + ' harus memiliki array items.');
+    record.items = record.items.map((item, index) => {
+      const qty = cloudFiniteNumber_(item.jumlah, 'Jumlah item pembelian ' + record.id + '/' + (index + 1), false);
+      const price = cloudFiniteNumber_(item.harga, 'Harga item pembelian ' + record.id + '/' + (index + 1), false);
+      if (qty <= 0 || price <= 0) throw new Error('Jumlah dan harga item pembelian wajib lebih besar dari nol.');
+      return Object.assign({}, item, { subtotal: cloudRoundMoney_(qty * price) });
+    });
+    cloudFiniteNumber_(record.ppn || 0, 'PPN pembelian ' + record.id, false);
+  });
+
+  (accounting.invoice || []).forEach(invoice => {
+    if (!Array.isArray(invoice.items)) throw new Error('Invoice ' + invoice.id + ' harus memiliki array items.');
+    let subtotal = 0;
+    invoice.items = invoice.items.map((item, index) => {
+      const qty = cloudFiniteNumber_(item.qty, 'Qty invoice ' + invoice.id + '/' + (index + 1), false);
+      const price = cloudFiniteNumber_(item.harga, 'Harga invoice ' + invoice.id + '/' + (index + 1), false);
+      if (qty <= 0 || price <= 0) throw new Error('Qty dan harga invoice wajib lebih besar dari nol.');
+      const line = cloudRoundMoney_(qty * price);
+      subtotal += line;
+      return Object.assign({}, item, { subtotal: line });
+    });
+    subtotal = cloudRoundMoney_(subtotal);
+    const discount = cloudFiniteNumber_(invoice.diskon || 0, 'Diskon invoice ' + invoice.id, false);
+    const tax = cloudFiniteNumber_(invoice.ppn || 0, 'PPN invoice ' + invoice.id, false);
+    if (discount > subtotal) throw new Error('Diskon invoice ' + invoice.id + ' melebihi subtotal.');
+    invoice.subtotal = subtotal;
+    invoice.total = cloudRoundMoney_(subtotal - discount + tax);
+  });
+
+  (accounting.purchaseOrder || []).forEach(order => {
+    if (!Array.isArray(order.items)) throw new Error('PO ' + order.id + ' harus memiliki array items.');
+    let subtotal = 0;
+    order.items = order.items.map((item, index) => {
+      const qty = cloudFiniteNumber_(item.qty, 'Qty PO ' + order.id + '/' + (index + 1), false);
+      const price = cloudFiniteNumber_(item.harga, 'Harga PO ' + order.id + '/' + (index + 1), false);
+      if (qty <= 0 || price <= 0) throw new Error('Qty dan harga PO wajib lebih besar dari nol.');
+      const line = cloudRoundMoney_(qty * price);
+      subtotal += line;
+      return Object.assign({}, item, { subtotal: line });
+    });
+    subtotal = cloudRoundMoney_(subtotal);
+    const tax = cloudFiniteNumber_(order.ppn || 0, 'PPN PO ' + order.id, false);
+    order.subtotal = subtotal;
+    order.total = cloudRoundMoney_(subtotal + tax);
+  });
+
+  (accounting.rab || []).forEach(record => {
+    if (!Array.isArray(record.items) || record.items.length === 0) {
+      throw new Error('RAB ' + record.id + ' wajib memiliki minimal satu item.');
+    }
+    const linkedCode = String(record.unit || '').trim().toLowerCase();
+    const linkedUnit = linkedCode ? unitByCode.get(linkedCode) : null;
+    if (linkedCode && !linkedUnit) throw new Error('RAB ' + record.id + ' memakai kode unit yang belum ada di master unit.');
+    if (linkedUnit && String(linkedUnit.proyek || '').trim().toLowerCase() !== String(record.nama_proyek || '').trim().toLowerCase()) {
+      throw new Error('Nama proyek RAB ' + record.id + ' harus sama dengan proyek master unit.');
+    }
+    const pool = cloudFiniteNumber_(record.biaya_bersama_total || 0, 'Biaya bersama RAB ' + record.id, false);
+    const unitCount = cloudFiniteNumber_(record.jumlah_unit_alokasi || 0, 'Jumlah unit alokasi RAB ' + record.id, false);
+    if (pool > 0 && (!Number.isInteger(unitCount) || unitCount <= 0)) {
+      throw new Error('Pool biaya bersama RAB ' + record.id + ' harus dialokasikan ke jumlah unit bilangan bulat positif.');
+    }
+    if (record.status !== 'Draft' && (!String(record.sumber_harga || '').trim() || !String(record.disetujui_oleh || '').trim())) {
+      throw new Error('RAB non-Draft wajib memiliki sumber harga dan nama pemberi persetujuan.');
+    }
+    let itemTotal = 0;
+    record.items = record.items.map((item, index) => {
+      if (!String(item.deskripsi || '').trim() || !String(item.satuan || '').trim()) {
+        throw new Error('RAB ' + record.id + ', item ' + (index + 1) + ' memerlukan deskripsi dan satuan.');
+      }
+      const volume = cloudFiniteNumber_(item.volume, 'Volume RAB ' + record.id + '/' + (index + 1), false);
+      const price = cloudFiniteNumber_(item.harga_satuan, 'Harga satuan RAB ' + record.id + '/' + (index + 1), false);
+      if (volume <= 0 || price <= 0) throw new Error('Volume dan harga satuan RAB wajib lebih besar dari nol.');
+      const amount = cloudRoundMoney_(volume * price);
+      itemTotal += amount;
+      return Object.assign({}, item, { jumlah: amount });
+    });
+    record.total_biaya = cloudRoundMoney_(itemTotal + (pool > 0 ? (linkedCode ? pool / unitCount : pool) : 0));
+  });
+
+  (ops.penggajian || []).forEach(record => {
+    ['gaji_pokok', 'tunjangan', 'lembur', 'potongan', 'pph21'].forEach(field => {
+      cloudFiniteNumber_(record[field] || 0, 'Penggajian ' + record.id + ' / ' + field, false);
+    });
+  });
+
+  (ops.taxRecords || []).forEach(record => {
+    const base = cloudFiniteNumber_(record.dasar_pengenaan || 0, 'Dasar pajak ' + record.id, false);
+    if (record.tarif_persen !== null && record.tarif_persen !== undefined && record.tarif_persen !== '') {
+      const rate = cloudFiniteNumber_(record.tarif_persen, 'Tarif pajak ' + record.id, false);
+      if (rate > 100) throw new Error('Tarif pajak ' + record.id + ' tidak boleh lebih dari 100%.');
+      record.nilai_pajak = cloudRoundMoney_(base * rate / 100);
+    } else {
+      record.nilai_pajak = cloudFiniteNumber_(record.nilai_pajak || 0, 'Nominal pajak ' + record.id, false);
+    }
+    if (record.status !== 'Draft' && (!String(record.sumber_aturan || '').trim() || !String(record.disetujui_oleh || '').trim())) {
+      throw new Error('Kewajiban pajak non-Draft wajib memiliki sumber aturan dan pemberi persetujuan.');
+    }
+    if (['Dibayar', 'Dilaporkan'].indexOf(String(record.status || '')) >= 0 && !String(record.bukti_pembayaran || '').trim()) {
+      throw new Error('Pajak berstatus Dibayar/Dilaporkan wajib memiliki referensi bukti pembayaran.');
+    }
+    if (record.status === 'Dilaporkan' && !String(record.nomor_pelaporan || '').trim()) {
+      throw new Error('Pajak berstatus Dilaporkan wajib memiliki nomor pelaporan.');
+    }
+  });
+
+  // Only use Drive-backed, human-verified evidence to complete a cash transaction.
+  const previousDocs = cloudObjectMap_(previousOps.arsipBukti || []);
+  const cashById = cloudObjectMap_(ops.bukuKas || []);
+  (ops.arsipBukti || []).forEach(document => {
+    const previous = previousDocs.get(String(document.id || ''));
+    const verified = String(document.terverifikasi || '') === 'Ya';
+    if (!verified) {
+      document.diverifikasi_oleh = '';
+      document.waktu_verifikasi = '';
+      if (!document.nama_pengunggah) document.nama_pengunggah = user.email;
+      return;
+    }
+
+    const sameTarget = cloudSameVerificationTarget_(previous, document) && previous.terverifikasi === 'Ya';
+    if (previous && previous.terverifikasi === 'Ya' && !cloudSameVerificationTarget_(previous, document)) {
+      throw new Error('Bukti ' + document.id + ' sudah terverifikasi tetapi nominal, tautan, jenis, atau relasi diubah. Ubah status menjadi Perlu_Konfirmasi, simpan, lalu verifikasi ulang.');
+    }
+
+    const roleCanVerify = workspaceRole === 'ADMIN' || workspaceRole === 'KEUANGAN';
+    const fileValid = cloudFileBelongsToErpFolder_(document);
+    let relatedCashValid = true;
+    if (String(document.modul_terkait || '') === 'Buku Kas' &&
+        ['Kwitansi_Foto', 'Transfer_Bank', 'Nota_Foto'].indexOf(String(document.jenis || '')) >= 0) {
+      const relatedCash = cashById.get(String(document.id_terkait || ''));
+      relatedCashValid = Boolean(relatedCash) &&
+        Math.abs(Number(document.nominal) -
+          (Math.max(0, Number(relatedCash.masuk) || 0) + Math.max(0, Number(relatedCash.keluar) || 0))) <= 0.005;
+    }
+
+    if (!fileValid || !relatedCashValid) {
+      if (bootstrap) {
+        document.terverifikasi = 'Perlu_Konfirmasi';
+        document.diverifikasi_oleh = '';
+        document.waktu_verifikasi = '';
+        document.catatan_audit = String(document.catatan_audit || '') +
+          ' Status verifikasi diturunkan saat impor cloud karena berkas Drive atau relasi/nominal transaksi belum lolos validasi server.';
+        if (!document.nama_pengunggah) document.nama_pengunggah = user.email;
+        return;
+      }
+      throw new Error('Bukti ' + document.id + ' tidak dapat diverifikasi: file harus berada di folder Drive ERP dan nominal/ID transaksi Buku Kas harus cocok.');
+    }
+
+    if (!sameTarget) {
+      if (!roleCanVerify) throw new Error('Role ' + workspaceRole + ' tidak boleh memverifikasi bukti. Minta Admin/Keuangan memeriksa bukti.');
+      const uploader = String(document.nama_pengunggah || (previous && previous.nama_pengunggah) || '');
+      if (workspaceRole !== 'ADMIN' && uploader && uploader.toLowerCase() === String(user.email).toLowerCase()) {
+        throw new Error('Inputter tidak boleh menyetujui bukti yang diunggah sendiri. Minta pengguna lain atau Admin memverifikasi.');
+      }
+      document.nama_pengunggah = previous && previous.nama_pengunggah ? previous.nama_pengunggah : user.email;
+      document.diverifikasi_oleh = user.email;
+      document.waktu_verifikasi = now;
+    } else {
+      document.diverifikasi_oleh = previous.diverifikasi_oleh || user.email;
+      document.waktu_verifikasi = previous.waktu_verifikasi || now;
+    }
+  });
+
+  const documentById = cloudObjectMap_(ops.arsipBukti || []);
+  (ops.bukuKas || []).forEach(record => {
+    const amountIn = cloudFiniteNumber_(record.masuk || 0, 'Kas masuk ' + record.id, false);
+    const amountOut = cloudFiniteNumber_(record.keluar || 0, 'Kas keluar ' + record.id, false);
+    if (amountIn > 0 && amountOut > 0) throw new Error('Transaksi Buku Kas ' + record.id + ' tidak boleh memiliki kas masuk dan keluar bersamaan.');
+    const paymentDocumentExists = (ops.arsipBukti || []).some(document =>
+      document.id_terkait === record.id &&
+      (document.modul_terkait === 'Buku Kas' || !document.modul_terkait));
+    const verifiedProof = cloudVerifiedPaymentProof_(record, ops.arsipBukti || []);
+    record.status_verifikasi = verifiedProof ? 'LENGKAP' : ((paymentDocumentExists || String(record.kode_bukti || '').trim())
+      ? 'PERLU_KONFIRMASI' : 'TANPA_BUKTI');
+
+    if (record.posting_status === 'POSTED') {
+      if (!verifiedProof) {
+        if (bootstrap) {
+          record.posting_status = 'HISTORICAL';
+          record.status_verifikasi = 'PERLU_KONFIRMASI';
+          return;
+        }
+        throw new Error('Transaksi Buku Kas ' + record.id + ' tidak boleh Posted tanpa bukti Drive terverifikasi dengan ID transaksi dan nominal yang cocok.');
+      }
+      const linked = (accounting.jurnal || []).find(journal => journal.id === record.jurnal_id);
+      if (!linked || linked.status !== 'Posted') throw new Error('Transaksi Buku Kas ' + record.id + ' harus terhubung ke jurnal Posted.');
+      cloudValidateJournal_(linked, accountCodes);
+      const sameRecord = String(linked.keterangan || '').indexOf('(Buku Kas ' + record.id + ')') >= 0;
+      if (!sameRecord) throw new Error('Jurnal ' + linked.id + ' tidak menyebut ID Buku Kas ' + record.id + '; relasi jurnal ditolak.');
+    } else if (record.posting_status === 'DRAFT' && record.jurnal_id) {
+      const linked = (accounting.jurnal || []).find(journal => journal.id === record.jurnal_id);
+      if (!linked || linked.status !== 'Draft') {
+        if (bootstrap) {
+          record.posting_status = 'HISTORICAL';
+          record.jurnal_id = undefined;
+          return;
+        }
+        throw new Error('Jurnal Draft untuk Buku Kas ' + record.id + ' tidak ditemukan atau status jurnalnya tidak cocok.');
+      }
+      cloudValidateJournal_(linked, accountCodes);
+      if (String(linked.keterangan || '').indexOf('(Buku Kas ' + record.id + ')') < 0) {
+        throw new Error('Jurnal Draft tidak memiliki relasi ID Buku Kas yang tepat.');
+      }
+    }
+  });
+
+  // Validate every Posted journal centrally, including manually entered accounting journals.
+  const journalsById = new Map();
+  (accounting.jurnal || []).forEach(journal => {
+    if (!journal || !journal.id) throw new Error('Setiap jurnal wajib memiliki ID.');
+    if (journalsById.has(String(journal.id))) throw new Error('ID jurnal duplikat: ' + journal.id);
+    journalsById.set(String(journal.id), journal);
+    if (journal.status === 'Posted') cloudValidateJournal_(journal, accountCodes);
+  });
+
+  // Approved non-Draft records need explicit master references rather than invented defaults.
+  (ops.housingUnits || []).forEach(unit => {
+    if (!String(unit.kode_unit || '').trim() || !String(unit.proyek || '').trim()) {
+      throw new Error('Setiap unit perumahan wajib memiliki kode unit dan nama proyek.');
+    }
+    ['luas_tanah_m2', 'luas_bangunan_m2'].forEach(field => {
+      if (unit[field] !== undefined) cloudFiniteNumber_(unit[field], 'Unit ' + unit.kode_unit + ' / ' + field, false);
+    });
+  });
+
+  validateCloudWorkspaceData_(data);
+  return data;
 }
 
 function cloudAllowedModules_(role) {
