@@ -1,0 +1,51 @@
+name: ERP Google Cloud SSOT Quality Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+      - feat/erp-operational-modules-20261023
+  push:
+    branches:
+      - main
+      - feat/erp-operational-modules-20261023
+      - feat/google-apps-script-auth-ssot-20261024
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erp-google-cloud-ssot-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check Apps Script syntax
+        shell: bash
+        run: |
+          node --check < google-apps-script/Code.gs
+          node --check < google-apps-script/CloudWorkspace.gs
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Accounting and cloud backend regression tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
