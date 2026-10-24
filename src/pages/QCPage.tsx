@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ClipboardCheck, Plus, Save, Pencil, X, AlertTriangle, CheckCircle2, Clock3, Download } from 'lucide-react';
-import { downloadLocalDocumentFile, saveLocalDocumentFile } from '../utils/localDocuments';
+import { downloadLocalDocumentFile } from '../utils/localDocuments';
+import { uploadDocumentToDrive, openDriveDocument } from '../utils/googleDriveDocuments';
 import { useAppContext } from '../store';
 import { generateId, getLocalDateISO } from '../data';
 import type { QCOutcome, QCRecord } from '../types';
@@ -85,15 +86,17 @@ export default function QCPage() {
 
     const now = new Date().toISOString();
     const previous = editingId ? state.qcRecords.find(item => item.id === editingId) : undefined;
-    let localFileKey = previous?.local_file_key || draft.local_file_key || '';
+    let uploadedDriveFile = null;
     if (selectedFile) {
       try {
-        localFileKey = await saveLocalDocumentFile(selectedFile);
+        uploadedDriveFile = await uploadDocumentToDrive(selectedFile);
       } catch (uploadError) {
-        setError(uploadError instanceof Error ? uploadError.message : 'Gagal menyimpan lampiran QC ke browser ini.');
+        setError(uploadError instanceof Error ? uploadError.message : 'Gagal mengunggah lampiran QC ke Google Drive.');
         return;
       }
     }
+    const localFileKey = selectedFile ? '' : previous?.local_file_key || draft.local_file_key || '';
+    const evidenceUrl = uploadedDriveFile?.url || draft.tautan_bukti.trim();
     const record: QCRecord = {
       ...draft,
       proyek: draft.proyek.trim(),
@@ -103,11 +106,12 @@ export default function QCPage() {
       pemeriksa: draft.pemeriksa.trim(),
       temuan: draft.temuan.trim(),
       tindakan_perbaikan: draft.tindakan_perbaikan.trim(),
-      tautan_bukti: draft.tautan_bukti.trim(),
+      tautan_bukti: evidenceUrl,
       local_file_key: localFileKey || undefined,
-      nama_file: selectedFile?.name || previous?.nama_file || draft.nama_file || '',
-      mime_type: selectedFile?.type || previous?.mime_type || draft.mime_type || '',
-      ukuran_bytes: selectedFile?.size || previous?.ukuran_bytes || draft.ukuran_bytes || 0,
+      drive_file_id: uploadedDriveFile?.id || previous?.drive_file_id,
+      nama_file: uploadedDriveFile?.name || previous?.nama_file || draft.nama_file || '',
+      mime_type: uploadedDriveFile?.mimeType || previous?.mime_type || draft.mime_type || '',
+      ukuran_bytes: uploadedDriveFile?.size || previous?.ukuran_bytes || draft.ukuran_bytes || 0,
       id: editingId || generateId('QC', state.qcRecords),
       created_at: previous?.created_at || now,
       updated_at: now
@@ -125,10 +129,14 @@ export default function QCPage() {
     setShowForm(false);
     setEditingId(null);
     setSelectedFile(null);
-    setMessage('Checklist QC dan lampiran (jika ada) tersimpan lokal pada browser/perangkat ini. Lampiran belum diunggah atau disinkronkan ke Google Drive/cloud.');
+    setMessage(uploadedDriveFile ? 'Checklist QC tersimpan; lampiran berhasil diunggah ke Google Drive.' : 'Checklist QC tersimpan. Tautan/berkas lama tetap menggunakan sumber yang tercatat; file lokal lama belum dipindahkan ke Drive.');
   };
 
   const downloadEvidence = async (record: QCRecord) => {
+    if (!record.local_file_key && record.tautan_bukti) {
+      openDriveDocument(record.tautan_bukti);
+      return;
+    }
     if (!record.local_file_key) return;
     try {
       await downloadLocalDocumentFile(record.local_file_key, record.nama_file || 'bukti-qc');
@@ -174,8 +182,8 @@ export default function QCPage() {
         <label className="text-sm font-medium md:col-span-3">Temuan/catatan<textarea value={draft.temuan} onChange={e => setField('temuan', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" rows={2} placeholder="Catat hasil ukur, standar/gambar acuan, dan temuan aktual." /></label>
         <label className="text-sm font-medium md:col-span-2">Tindakan perbaikan {draft.hasil === 'Perlu_Perbaikan' ? '*' : ''}<textarea value={draft.tindakan_perbaikan} onChange={e => setField('tindakan_perbaikan', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" rows={2} /></label>
         <label className="text-sm font-medium">Tenggat perbaikan<input type="date" value={draft.tenggat_perbaikan} onChange={e => setField('tenggat_perbaikan', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" /></label>
-        <label className="text-sm font-medium md:col-span-3">Lampiran bukti foto/PDF (opsional, maks. 10 MB)<input type="file" accept="image/*,application/pdf" onChange={e => setSelectedFile(e.target.files?.[0] || null)} className="mt-1 block w-full rounded-lg border px-3 py-2 text-sm" /><span className="mt-1 block text-xs text-gray-500">Disimpan di IndexedDB browser lokal. Ganti dengan memilih file baru; ini bukan upload Drive.</span>{draft.nama_file && !selectedFile && <span className="mt-1 block text-xs text-cyan-800">Lampiran tersimpan: {draft.nama_file}</span>}{selectedFile && <span className="mt-1 block text-xs text-cyan-800">File baru dipilih: {selectedFile.name}</span>}</label>
-        <label className="text-sm font-medium md:col-span-3">Tautan bukti eksternal (opsional)<input type="url" value={draft.tautan_bukti} onChange={e => setField('tautan_bukti', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" placeholder="https://... (hanya referensi; sistem tidak mengunggah file)" /></label>
+        <label className="text-sm font-medium md:col-span-3">Lampiran bukti foto/PDF (opsional, maksimal 4 MB)<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={e => setSelectedFile(e.target.files?.[0] || null)} className="mt-1 block w-full rounded-lg border px-3 py-2 text-sm" /><span className="mt-1 block text-xs text-gray-500">File baru diunggah ke folder Google Drive ERP. Pastikan folder dibagikan hanya kepada staf/pemilik yang berhak.</span>{draft.nama_file && !selectedFile && <span className="mt-1 block text-xs text-cyan-800">Lampiran tersimpan: {draft.nama_file}</span>}{selectedFile && <span className="mt-1 block text-xs text-cyan-800">File baru dipilih: {selectedFile.name}</span>}</label>
+        <label className="text-sm font-medium md:col-span-3">Tautan bukti eksternal (opsional)<input type="url" value={draft.tautan_bukti} onChange={e => setField('tautan_bukti', e.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2" placeholder="https://drive.google.com/... atau tautan yang sudah Anda miliki" /></label>
       </div>
       <div className="mt-5 flex gap-2"><button onClick={save} className="inline-flex items-center gap-2 rounded-lg bg-cyan-700 px-4 py-2 text-white hover:bg-cyan-800"><Save size={16} />Simpan</button><button onClick={() => setShowForm(false)} className="rounded-lg bg-gray-100 px-4 py-2">Batal</button></div>
     </section>}
