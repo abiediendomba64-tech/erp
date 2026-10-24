@@ -206,7 +206,7 @@ console.log('PASS: KEUANGAN role can save an allowed finance change and advances
 
 const forbiddenProjectChange = context.apiLoadWorkspace('finance-token', workspaceId).snapshot;
 forbiddenProjectChange.operational.housingUnits.push({ id: 'UNIT-FORBIDDEN' });
-assert.throws(() => context.apiSaveWorkspace('finance-token', workspaceId, 2, forbiddenProjectChange), /tidak boleh mengubah modul operational\.housingUnits/);
+assert.throws(() => context.apiSaveWorkspace('finance-token', workspaceId, 2, forbiddenProjectChange), /mengirim perubahan pada modul operational\.housingUnits yang tidak diizinkan/);
 console.log('PASS: KEUANGAN cannot write project/unit data');
 
 const auditAppendSnapshot = context.apiLoadWorkspace('finance-token', workspaceId).snapshot;
