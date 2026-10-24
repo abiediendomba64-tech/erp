@@ -81,6 +81,8 @@ const properties = new Map([
   ['ERP_FRONTEND_URL', 'https://erp.example.test'],
 ]);
 let uuidCounter = 0;
+const scriptCache = new Map();
+let tokeninfoCalls = 0;
 const future = Math.floor(Date.now() / 1000) + 3600;
 const tokenClaims = {
   'admin-token': { email: 'admin@example.com', name: 'Admin Uji', sub: 'google-admin', aud: 'web-client-id.apps.googleusercontent.com', iss: 'https://accounts.google.com', email_verified: 'true', exp: String(future) },
@@ -108,6 +110,7 @@ const context = {
   },
   UrlFetchApp: {
     fetch: (url) => {
+      tokeninfoCalls++;
       const decoded = new URL(url).searchParams.get('id_token');
       const claims = tokenClaims[decoded];
       return {
@@ -115,6 +118,12 @@ const context = {
         getContentText: () => JSON.stringify(claims || { error: 'invalid_token' }),
       };
     },
+  },
+  CacheService: {
+    getScriptCache: () => ({
+      get: (key) => scriptCache.get(key) || null,
+      put: (key, value, ttl) => { scriptCache.set(key, value); },
+    }),
   },
   Utilities: {
     getUuid: () => 'uuid-' + (++uuidCounter),
@@ -144,7 +153,10 @@ const firstLogin = context.apiLogin('admin-token');
 assert.equal(firstLogin.success, true);
 assert.equal(firstLogin.user.role, 'ADMIN');
 assert.equal(firstLogin.workspaces.length, 0);
-console.log('PASS: verified allowlisted Google identity bootstraps the first server-side ADMIN');
+const firstTokeninfoCalls = tokeninfoCalls;
+context.apiLogin('admin-token');
+assert.equal(tokeninfoCalls, firstTokeninfoCalls, 'validated token should be briefly cached to limit external requests');
+console.log('PASS: verified allowlisted Google identity bootstraps ADMIN and verified token cache avoids repeated tokeninfo calls');
 
 const created = context.apiCreateWorkspace('admin-token', 'Workspace Uji', emptySnapshot());
 assert.equal(created.workspace.version, 1);
@@ -174,14 +186,29 @@ forbiddenProjectChange.operational.housingUnits.push({ id: 'UNIT-FORBIDDEN' });
 assert.throws(() => context.apiSaveWorkspace('finance-token', workspaceId, 2, forbiddenProjectChange), /tidak boleh mengubah modul operational\.housingUnits/);
 console.log('PASS: KEUANGAN cannot write project/unit data');
 
+const auditAppendSnapshot = context.apiLoadWorkspace('finance-token', workspaceId).snapshot;
+auditAppendSnapshot.operational.auditLog.push({
+  id: 'LOG-CLOUD-1', action: 'CREATE', record_id: 'CASH-1', note: 'append-only test',
+});
+const auditSave = context.apiSaveWorkspace('finance-token', workspaceId, 2, auditAppendSnapshot);
+assert.equal(auditSave.success, true);
+assert.equal(auditSave.version, 3);
+const tamperAuditSnapshot = context.apiLoadWorkspace('finance-token', workspaceId).snapshot;
+tamperAuditSnapshot.operational.auditLog[0].note = 'tampered';
+assert.throws(
+  () => context.apiSaveWorkspace('finance-token', workspaceId, 3, tamperAuditSnapshot),
+  /append-only/
+);
+console.log('PASS: audit entries may be appended but existing audit history cannot be edited');
+
 const staleSnapshot = context.apiLoadWorkspace('finance-token', workspaceId).snapshot;
 const staleSave = context.apiSaveWorkspace('finance-token', workspaceId, 1, staleSnapshot);
 assert.equal(staleSave.success, false);
 assert.equal(staleSave.code, 'VERSION_CONFLICT');
-assert.equal(staleSave.currentVersion, 2);
+assert.equal(staleSave.currentVersion, 3);
 console.log('PASS: stale writes are rejected without overwriting the latest snapshot');
 
-assert.throws(() => context.apiSaveWorkspace('viewer-token', workspaceId, 2, context.apiLoadWorkspace('admin-token', workspaceId).snapshot), /VIEWER/);
+assert.throws(() => context.apiSaveWorkspace('viewer-token', workspaceId, 3, context.apiLoadWorkspace('admin-token', workspaceId).snapshot), /VIEWER/);
 assert.throws(() => context.apiLoadWorkspace('project-token', workspaceId), /tidak memiliki akses/);
 console.log('PASS: VIEWER cannot write and non-members cannot read a workspace');
 
@@ -196,7 +223,7 @@ assert.ok(audit.events.some((event) => event.action === 'SNAPSHOT_SAVE_COMMITTED
 assert.ok(audit.events.some((event) => event.action === 'WORKSPACE_CREATED'));
 
 const chunkSheet = sheetMap.get('ERP_STATE_CHUNKS');
-const targetChunk = chunkSheet.rows.find((row) => row[0] === workspaceId && Number(row[1]) === 2);
+const targetChunk = chunkSheet.rows.find((row) => row[0] === workspaceId && Number(row[1]) === 3);
 targetChunk[3] = String(targetChunk[3]) + 'tamper';
 assert.throws(() => context.apiLoadWorkspace('admin-token', workspaceId), /Checksum snapshot cloud tidak cocok/);
 console.log('PASS: backend audit events exist and tampered snapshot is rejected by checksum');
