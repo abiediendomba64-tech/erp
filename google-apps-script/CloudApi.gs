@@ -69,6 +69,10 @@ function handleCloudApi_(request) {
     case 'workspace.member.add':
       requireGlobalAdmin_(session.user);
       return addCloudWorkspaceMember_(session.user, request.workspaceId, request.email, request.role);
+    case 'document.upload':
+      return uploadCloudDocument_(session.user, request.workspaceId, request.file);
+    case 'ocr.process':
+      return processCloudOcr_(session.user, request.workspaceId, request.fileId, request.documentType);
     default:
       throw new Error('Action API tidak dikenal.');
   }
