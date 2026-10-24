@@ -1,4 +1,6 @@
 import { WorkspaceData } from './googleErpApi';
+import { initialMenuConfig } from '../data';
+import { initialAkun } from '../data/accounting';
 
 export const OPERATIONAL_KEYS = [
   'bukuKas', 'arsipBukti', 'posKewajiban', 'auditLog', 'tanah', 'beko',
@@ -11,10 +13,11 @@ export const ACCOUNTING_KEYS = ['akun', 'jurnal', 'invoice', 'purchaseOrder', 'r
 export function createEmptyWorkspaceData(): WorkspaceData {
   const operational: Record<string, unknown> = {};
   for (const key of OPERATIONAL_KEYS) operational[key] = [];
+  operational.menuConfig = initialMenuConfig;
   return {
     operational,
     accounting: {
-      akun: [],
+      akun: initialAkun,
       jurnal: [],
       invoice: [],
       purchaseOrder: [],
