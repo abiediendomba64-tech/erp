@@ -32,6 +32,7 @@ export default function GoogleLoginPage({ onLogin }: { onLogin: (token: string, 
 
   useEffect(() => {
     if (!googleClientId) return;
+    if (window.google?.accounts?.id) { setScriptReady(true); return; }
     const existing = document.querySelector<HTMLScriptElement>('script[data-google-identity="1"]');
     const script = existing || document.createElement('script');
     script.src = 'https://accounts.google.com/gsi/client';
