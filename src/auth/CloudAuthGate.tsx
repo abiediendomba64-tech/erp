@@ -36,7 +36,7 @@ export default function CloudAuthGate({ children }: Props) {
   const buttonHost = useRef<HTMLDivElement | null>(null);
   const tokenRef = useRef('');
 
-  const loadWorkspace = useCallback(async (token: string, workspaceId: string) => {
+  const loadWorkspace = useCallback(async (token: string, workspaceId: string, role: CloudUser['role']) => {
     setBusy(true);
     setError('');
     try {
@@ -46,8 +46,7 @@ export default function CloudAuthGate({ children }: Props) {
       window.localStorage.setItem('abiedien.erp.app.v1', JSON.stringify(snapshot.operational));
       window.localStorage.setItem('abiedien.erp.accounting.v1', JSON.stringify(snapshot.accounting));
       setCloudIdToken(token);
-      (window as any).__erpCloudRole = user?.role || 'ADMIN';
-      configureCloudWorkspace(token, result.workspace.id, result.versions, user?.role || 'ADMIN');
+      configureCloudWorkspace(token, result.workspace.id, result.versions, role);
       setWorkspace(result.workspace);
       setScreen('ready');
     } catch (cause) {
@@ -68,11 +67,11 @@ export default function CloudAuthGate({ children }: Props) {
       setUser(result.user);
       setWorkspaces(result.workspaces || []);
       if (result.user.workspaceId) {
-        await loadWorkspace(token, result.user.workspaceId);
+        await loadWorkspace(token, result.user.workspaceId, result.user.role);
         return;
       }
       if (result.user.role === 'ADMIN' && result.workspaces.length === 1) {
-        await loadWorkspace(token, result.workspaces[0].id);
+        await loadWorkspace(token, result.workspaces[0].id, result.user.role);
         return;
       }
       if (result.user.role === 'ADMIN' && result.workspaces.length > 1) {
@@ -173,7 +172,7 @@ export default function CloudAuthGate({ children }: Props) {
         name: workspaceName.trim(),
         snapshot
       }, tokenRef.current);
-      await loadWorkspace(tokenRef.current, created.workspaceId);
+      await loadWorkspace(tokenRef.current, created.workspaceId, user.role);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Workspace gagal dibuat.');
       setBusy(false);
@@ -253,7 +252,7 @@ export default function CloudAuthGate({ children }: Props) {
             <select value={selectedWorkspaceId} onChange={event => setSelectedWorkspaceId(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2">
               {workspaces.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}
             </select>
-            <button disabled={busy || !selectedWorkspaceId} onClick={() => void loadWorkspace(tokenRef.current, selectedWorkspaceId)} className="w-full rounded-lg bg-indigo-600 px-4 py-3 font-semibold text-white disabled:opacity-50">
+            <button disabled={busy || !selectedWorkspaceId} onClick={() => void loadWorkspace(tokenRef.current, selectedWorkspaceId, user?.role || 'VIEWER')} className="w-full rounded-lg bg-indigo-600 px-4 py-3 font-semibold text-white disabled:opacity-50">
               {busy ? 'Memuat data…' : 'Buka workspace'}
             </button>
             {error && <p className="text-sm text-red-700 bg-red-50 p-3 rounded-lg">{error}</p>}
