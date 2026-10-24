@@ -72,5 +72,54 @@ export function readCurrentBrowserData(): WorkspaceData | null {
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : 'Data browser tidak bisa dibaca.');
   }
+  // Apply the same known-demo cleanup used by the normal application loader before
+  // offering a local-to-cloud import. Do not silently migrate known sample rows.
+  const same = (item: Record<string, unknown>, checks: Record<string, unknown>) =>
+    Object.keys(checks).every(key => item[key] === checks[key]);
+  const filterRows = (key: string, predicate: (row: Record<string, unknown>) => boolean) => {
+    const value = operational[key];
+    if (Array.isArray(value)) operational[key] = value.filter(row => !isObject(row) || !predicate(row));
+  };
+  filterRows('stok', row =>
+    same(row, { id: 'STK-001', kode: 'BB-001', nama: 'Semen Portland 50kg', stok_awal: 100, masuk: 50, keluar: 80, harga_pokok: 65000 }) ||
+    same(row, { id: 'STK-002', kode: 'BB-002', nama: 'Pasir Pasang', stok_awal: 10, masuk: 5, keluar: 8, harga_pokok: 800000 }) ||
+    same(row, { id: 'STK-003', kode: 'BB-003', nama: 'Besi Beton 10mm', stok_awal: 200, masuk: 100, keluar: 150, harga_pokok: 85000 }) ||
+    same(row, { id: 'STK-004', kode: 'BJ-001', nama: 'Rumah Type 36', stok_awal: 0, masuk: 2, keluar: 1, harga_pokok: 250000000 }) ||
+    same(row, { id: 'STK-005', kode: 'BD-001', nama: 'Keramik 40x40', stok_awal: 50, masuk: 30, keluar: 40, harga_pokok: 120000 })
+  );
+  filterRows('produksi', row =>
+    same(row, { id: 'PRD-001', no_produksi: 'SPK-2024-001', tanggal: '2024-01-10', produk: 'Rumah Type 36' }) ||
+    same(row, { id: 'PRD-002', no_produksi: 'SPK-2024-002', tanggal: '2024-02-01', produk: 'Rumah Type 36' })
+  );
+  filterRows('penjualan', row =>
+    same(row, { id: 'PJ-001', no_invoice: 'INV-2024-001', pelanggan: 'Budi Santoso', tanggal: '2024-02-15' }) ||
+    same(row, { id: 'PJ-002', no_invoice: 'INV-2024-002', pelanggan: 'Ahmad Wijaya', tanggal: '2024-03-01' })
+  );
+  filterRows('pembelian', row =>
+    same(row, { id: 'PB-001', no_po: 'PO-2024-001', supplier: 'PT Semen Indonesia', tanggal: '2024-01-05' }) ||
+    same(row, { id: 'PB-002', no_po: 'PO-2024-002', supplier: 'Toko Besi Jaya', tanggal: '2024-01-20' })
+  );
+  filterRows('penggajian', row =>
+    same(row, { id: 'GJ-001', nip: 'EMP-001', nama: 'Budi Hermawan', periode: '2024-03' }) ||
+    same(row, { id: 'GJ-002', nip: 'EMP-002', nama: 'Sri Wahyuni', periode: '2024-03' }) ||
+    same(row, { id: 'GJ-003', nip: 'EMP-003', nama: 'Agus Prasetyo', periode: '2024-03' })
+  );
+  filterRows('anggaran', row =>
+    same(row, { id: 'AG-001', periode: '2024', kategori: 'Pembebasan Tanah', anggaran: 500000000, realisasi: 309400000 }) ||
+    same(row, { id: 'AG-002', periode: '2024', kategori: 'Cut & Fill (Beko)', anggaran: 200000000, realisasi: 71350000 }) ||
+    same(row, { id: 'AG-003', periode: '2024', kategori: 'Material & Perlengkapan', anggaran: 150000000, realisasi: 13596000 }) ||
+    same(row, { id: 'AG-004', periode: '2024', kategori: 'Tenaga Kerja', anggaran: 120000000, realisasi: 22820000 })
+  );
+  filterRows('ocr', row =>
+    same(row, { id: 'OCR-001' }) && /drive\\.google\\.com\\/file\\/d\\/xxx1/.test(String(row.image_url || '')) ||
+    same(row, { id: 'OCR-002' }) && /drive\\.google\\.com\\/file\\/d\\/xxx2/.test(String(row.image_url || '')) ||
+    same(row, { id: 'OCR-003', confidence: 45, status: 'Pending' })
+  );
+  filterRows('whatsapp', row => ['WA-001', 'WA-002', 'WA-003'].includes(String(row.id || '')));
+  filterRows('auditLog', row => same(row, { id: 'LOG-001', record_id: 'AR-001', aksi: 'CREATE' }));
+  if (Array.isArray(operational.arusKas) &&
+      operational.arusKas.every((row, index) => isObject(row) && row.id === 'AK-0' + (index + 1))) {
+    operational.arusKas = [];
+  }
   return { operational, accounting };
 }
