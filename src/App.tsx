@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { AppProvider } from './store';
 import CloudAuthGate from './components/CloudAuthGate';
-import { LoginUser } from './components/GoogleLoginPage';
-import { CloudStatus, getCloudStatus, subscribeCloudStatus, WorkspaceSnapshot } from './lib/googleBackend';
+import type { LoginUser } from './components/GoogleLoginPage';
+import { getCloudStatus, subscribeCloudStatus } from './lib/googleBackend';
+import type { CloudStatus, WorkspaceSnapshot } from './lib/googleBackend';
 import { AlertTriangle, Cloud, CheckCircle2, LoaderCircle, RefreshCw } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
