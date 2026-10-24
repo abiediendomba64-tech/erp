@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useReducer, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useRef, ReactNode } from 'react';
+import { getCloudWorkspaceSession, persistCloudSlice } from '../lib/googleWorkspaceSync';
 import { Akun, JurnalUmum, Invoice, PurchaseOrder, RAB, Schedule } from '../types/accounting';
 import { initialAkun } from '../data/accounting';
 
@@ -108,12 +109,26 @@ const AccountingContext = createContext<{
 export function AccountingProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(accountingReducer, undefined, loadInitialState);
 
+  const previousSerialized = useRef<string | null>(null);
+
   useEffect(() => {
+    const serialized = JSON.stringify(state);
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      window.localStorage.setItem(STORAGE_KEY, serialized);
     } catch (error) {
-      console.error('Gagal menyimpan data akuntansi ke browser. Export backup data sesegera mungkin.', error);
+      console.error('Cache browser akuntansi tidak dapat ditulis. Cloud tetap menjadi sumber data utama.', error);
     }
+
+    if (previousSerialized.current === null) {
+      // First render was hydrated from the selected cloud snapshot. Do not push it back
+      // immediately; only later user changes create a new server version.
+      previousSerialized.current = serialized;
+      return;
+    }
+    if (previousSerialized.current === serialized) return;
+    previousSerialized.current = serialized;
+    if (!getCloudWorkspaceSession()) return; // local-only development mode
+    void persistCloudSlice('accounting', state).catch(() => undefined);
   }, [state]);
   return (
     <AccountingContext.Provider value={{ state, dispatch }}>
