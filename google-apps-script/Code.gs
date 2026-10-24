@@ -1578,7 +1578,7 @@ function saveWorkspace_(snapshot, expectedVersion, actor) {
 
 function allowedModulesForRole_(role) {
   role = String(role || '').toUpperCase();
-  if (role === 'ADMIN') return ERP_OPERATIONAL_MODULES_.map(m => 'operational.' + m).concat(ERP_ACCOUNTING_MODULES_.map(m => 'accounting.' + m));
+  if (role === 'ADMIN') return ERP_OPERATIONAL_MODULES_.filter(m => m !== 'auditLog').map(m => 'operational.' + m).concat(ERP_ACCOUNTING_MODULES_.map(m => 'accounting.' + m));
   if (role === 'KEUANGAN') return [
     'operational.bukuKas', 'operational.arsipBukti', 'operational.posKewajiban',
     'operational.anggaran', 'operational.arusKas',
