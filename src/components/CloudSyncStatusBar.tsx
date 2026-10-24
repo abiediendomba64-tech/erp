@@ -20,11 +20,11 @@ export default function CloudSyncStatusBar() {
     <div
       role={urgent ? 'alert' : 'status'}
       aria-live={urgent ? 'assertive' : 'polite'}
-      className={\`border-b px-4 py-2 text-sm \${styleFor(state.status)}\`}
+      className={`border-b px-4 py-2 text-sm ${styleFor(state.status)}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <span aria-hidden="true" className={\`inline-block h-2 w-2 shrink-0 rounded-full \${state.status === 'saved' ? 'bg-emerald-500' : state.status === 'saving' ? 'animate-pulse bg-blue-500' : urgent ? 'bg-red-500' : 'bg-amber-500'}\`} />
+          <span aria-hidden="true" className={`inline-block h-2 w-2 shrink-0 rounded-full ${state.status === 'saved' ? 'bg-emerald-500' : state.status === 'saving' ? 'animate-pulse bg-blue-500' : urgent ? 'bg-red-500' : 'bg-amber-500'}`} />
           <span className="min-w-0">{state.message}</span>
         </div>
         <div className="flex shrink-0 items-center gap-3 text-xs">
