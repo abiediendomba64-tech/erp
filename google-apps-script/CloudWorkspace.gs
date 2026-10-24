@@ -42,13 +42,46 @@ function apiLogin(idToken) {
   return {
     success: true,
     user: user,
-    workspaces: _erpListUserWorkspaces_(user.email)
+    workspaces: _erpListUserWorkspaces_(user.email, user.role)
   };
 }
 
 function apiListWorkspaces(idToken) {
   var user = _erpRequireUser_(idToken);
-  return { success: true, workspaces: _erpListUserWorkspaces_(user.email) };
+  return { success: true, workspaces: _erpListUserWorkspaces_(user.email, user.role) };
+}
+
+function apiListUsers(idToken, workspaceId) {
+  var actor = _erpRequireUser_(idToken);
+  if (actor.role !== 'ADMIN') throw new Error('Hanya ADMIN yang boleh melihat daftar pengguna.');
+  var usersSheet = _erpSheet_('ERP_USERS', [
+    'email', 'display_name', 'role', 'active', 'created_at', 'updated_at'
+  ]);
+  var users = _erpReadObjects_(usersSheet);
+  var membershipByEmail = {};
+  var id = String(workspaceId || '').trim();
+  if (id) {
+    var memberSheet = _erpSheet_('ERP_WORKSPACE_MEMBERS', [
+      'workspace_id', 'email', 'role', 'active', 'added_by', 'created_at', 'updated_at'
+    ]);
+    _erpReadObjects_(memberSheet).filter(function (row) {
+      return String(row.workspace_id) === id && _erpIsTrue_(row.active);
+    }).forEach(function (row) { membershipByEmail[String(row.email).toLowerCase()] = String(row.role).toUpperCase(); });
+  }
+  return {
+    success: true,
+    users: users.map(function (row) {
+      return {
+        email: String(row.email),
+        display_name: String(row.display_name || ''),
+        role: String(row.role).toUpperCase(),
+        active: _erpIsTrue_(row.active),
+        workspace_role: membershipByEmail[String(row.email).toLowerCase()] || '',
+        created_at: String(row.created_at || ''),
+        updated_at: String(row.updated_at || '')
+      };
+    }).sort(function (a, b) { return a.email.localeCompare(b.email); })
+  };
 }
 
 function apiCreateWorkspace(idToken, workspaceName, snapshot) {
@@ -183,7 +216,7 @@ function apiAddWorkspaceMember(idToken, workspaceId, email, role) {
 function apiLoadWorkspace(idToken, workspaceId) {
   var user = _erpRequireUser_(idToken);
   var id = String(workspaceId || '').trim();
-  var member = _erpRequireWorkspaceMember_(user.email, id);
+  var member = _erpRequireWorkspaceMember_(user.email, id, user.role);
   var meta = _erpFindObjectRow_(_erpSheet_('ERP_WORKSPACES', [
     'workspace_id', 'name', 'owner_email', 'version', 'chunk_count',
     'checksum', 'created_at', 'updated_at', 'updated_by'
@@ -203,7 +236,7 @@ function apiLoadWorkspace(idToken, workspaceId) {
 function apiSaveWorkspace(idToken, workspaceId, expectedVersion, snapshot) {
   var user = _erpRequireUser_(idToken);
   var id = String(workspaceId || '').trim();
-  var member = _erpRequireWorkspaceMember_(user.email, id);
+  var member = _erpRequireWorkspaceMember_(user.email, id, user.role);
   if (member.role === 'VIEWER') throw new Error('Role VIEWER hanya boleh membaca data.');
   var validated = _erpValidateSnapshot_(snapshot);
   var serialized = JSON.stringify(validated);
@@ -282,7 +315,7 @@ function apiSaveWorkspace(idToken, workspaceId, expectedVersion, snapshot) {
 function apiGetWorkspaceAudit(idToken, workspaceId, limit) {
   var user = _erpRequireUser_(idToken);
   var id = String(workspaceId || '').trim();
-  _erpRequireWorkspaceMember_(user.email, id);
+  _erpRequireWorkspaceMember_(user.email, id, user.role);
   var sheet = _erpSheet_('ERP_AUDIT_LOG', [
     'event_id', 'timestamp', 'actor_email', 'workspace_id', 'action',
     'previous_version', 'new_version', 'checksum', 'details_json'
@@ -407,7 +440,7 @@ function _erpStableJson_(value) {
   }).join(',') + '}';
 }
 
-function _erpListUserWorkspaces_(email) {
+function _erpListUserWorkspaces_(email, globalRole) {
   var memberSheet = _erpSheet_('ERP_WORKSPACE_MEMBERS', [
     'workspace_id', 'email', 'role', 'active', 'added_by', 'created_at', 'updated_at'
   ]);
@@ -423,13 +456,13 @@ function _erpListUserWorkspaces_(email) {
     var meta = metas.find(function (row) { return String(row.workspace_id) === String(member.workspace_id); });
     if (!meta) return null;
     return {
-      id: String(meta.workspace_id), name: String(meta.name), role: String(member.role),
+      id: String(meta.workspace_id), name: String(meta.name), role: _erpEffectiveWorkspaceRole_(String(globalRole || 'VIEWER').toUpperCase(), String(member.role).toUpperCase()),
       version: Number(meta.version), updated_at: String(meta.updated_at || '')
     };
   }).filter(Boolean);
 }
 
-function _erpRequireWorkspaceMember_(email, workspaceId) {
+function _erpRequireWorkspaceMember_(email, workspaceId, globalRole) {
   var sheet = _erpSheet_('ERP_WORKSPACE_MEMBERS', [
     'workspace_id', 'email', 'role', 'active', 'added_by', 'created_at', 'updated_at'
   ]);
@@ -437,7 +470,15 @@ function _erpRequireWorkspaceMember_(email, workspaceId) {
   if (!found || !_erpIsTrue_(found.record.active)) throw new Error('Anda tidak memiliki akses ke workspace ini.');
   var role = String(found.record.role || '').toUpperCase();
   if (!ERP_WORKSPACE_ROLES_.includes(role)) throw new Error('Role workspace tidak valid.');
-  return { role: role, email: email };
+  return { role: _erpEffectiveWorkspaceRole_(String(globalRole || 'VIEWER').toUpperCase(), role), email: email };
+}
+
+function _erpEffectiveWorkspaceRole_(globalRole, workspaceRole) {
+  if (globalRole === 'ADMIN') return workspaceRole;
+  if (globalRole === 'VIEWER' || workspaceRole === 'VIEWER') return 'VIEWER';
+  if (globalRole === 'KEUANGAN') return 'KEUANGAN';
+  if (globalRole === 'PROYEK') return 'PROYEK';
+  return 'VIEWER';
 }
 
 function _erpLoadSnapshot_(workspaceId, version, expectedChunks, expectedChecksum) {
