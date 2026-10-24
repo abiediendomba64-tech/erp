@@ -82,13 +82,13 @@ export function validateWorkspaceSnapshot(input: unknown): WorkspaceSnapshot {
   const accounting = input.accounting;
   for (const key of OPERATIONAL_ARRAYS) {
     if (!Array.isArray(operational[key])) {
-      throw new Error(\`Data cloud tidak valid: bagian operasional "\${key}" bukan array.\`);
+      throw new Error(`Data cloud tidak valid: bagian operasional "${key}" bukan array.`);
     }
   }
   if (!Array.isArray(operational.menuConfig)) throw new Error('Data cloud tidak valid: konfigurasi menu bukan array.');
   for (const key of ACCOUNTING_ARRAYS) {
     if (!Array.isArray(accounting[key])) {
-      throw new Error(\`Data cloud tidak valid: bagian akuntansi "\${key}" bukan array.\`);
+      throw new Error(`Data cloud tidak valid: bagian akuntansi "${key}" bukan array.`);
     }
   }
   return { operational, accounting };
@@ -111,7 +111,7 @@ export function downloadLocalWorkspaceBackup(snapshot: WorkspaceSnapshot): void 
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = \`erp-local-backup-\${new Date().toISOString().slice(0, 10)}.json\`;
+  link.download = `erp-local-backup-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -205,7 +205,7 @@ export function downloadRawLocalWorkspaceBackup(): boolean {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = \`erp-local-raw-backup-\${new Date().toISOString().slice(0, 10)}.json\`;
+  link.download = `erp-local-raw-backup-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.appendChild(link);
   link.click();
   link.remove();
