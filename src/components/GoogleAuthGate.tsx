@@ -1,5 +1,5 @@
-import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ArrowRight, Cloud, Database, LoaderCircle, LogIn, ShieldCheck } from 'lucide-react';
+import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { AlertCircle, ArrowRight, Cloud, Database, LoaderCircle, ShieldCheck } from 'lucide-react';
 import {
   ApiUser, WorkspaceData, WorkspaceSummary, configureGoogleWorkspace,
   clearGoogleWorkspace, getActiveWorkspaceId, getCloudStatus, googleErpApi,
@@ -55,9 +55,11 @@ export default function GoogleAuthGate({ children }: Props) {
   const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceSummary | null>(null);
   const [workspaceName, setWorkspaceName] = useState('ERP Properti & Konstruksi');
   const [importLocal, setImportLocal] = useState(false);
+  const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
   const [localDataAvailable, setLocalDataAvailable] = useState(false);
   const [signInReady, setSignInReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const loginBusyRef = useRef(false);
   const [error, setError] = useState('');
 
   const finishLogin = useCallback(async (token: string, authenticatedUser: ApiUser) => {
@@ -66,6 +68,7 @@ export default function GoogleAuthGate({ children }: Props) {
     const listResponse = await googleErpApi<{ workspaces: WorkspaceSummary[] }>('workspace.list');
     const list = Array.isArray(listResponse.workspaces) ? listResponse.workspaces : [];
     setWorkspaces(list);
+    setShowCreateWorkspace(false);
 
     const preferredId = getActiveWorkspaceId();
     const preferred = preferredId ? list.find(item => item.workspace_id === preferredId) : undefined;
@@ -127,7 +130,8 @@ export default function GoogleAuthGate({ children }: Props) {
   }, [finishLogin]);
 
   const handleCredential = useCallback((response: GoogleCredentialResponse) => {
-    if (!response.credential || busy) return;
+    if (!response.credential || loginBusyRef.current) return;
+    loginBusyRef.current = true;
     setBusy(true);
     setError('');
     setSessionToken(null);
@@ -140,8 +144,11 @@ export default function GoogleAuthGate({ children }: Props) {
     }).catch(failure => {
       setError(niceError(failure));
       setView('login');
-    }).finally(() => setBusy(false));
-  }, [busy, finishLogin]);
+    }).finally(() => {
+      loginBusyRef.current = false;
+      setBusy(false);
+    });
+  }, [finishLogin]);
 
   useEffect(() => {
     if (view !== 'login' || !GOOGLE_CLIENT_ID) return;
@@ -166,7 +173,7 @@ export default function GoogleAuthGate({ children }: Props) {
       window.clearInterval(timer);
     };
     initialize();
-    timer = window.setInterval(initialize, 250);
+    if (!rendered) timer = window.setInterval(initialize, 250);
     return () => window.clearInterval(timer);
   }, [view, handleCredential]);
 
@@ -264,14 +271,15 @@ export default function GoogleAuthGate({ children }: Props) {
           {view === 'workspace' && user && (
             <div className="space-y-4">
               <div className="text-sm text-slate-600">Login sebagai <strong className="text-slate-900">{user.nama || user.email}</strong> ({user.email}). Pilih workspace untuk membuka data proyek.</div>
-              {workspaces.length > 0 ? (
+              {workspaces.length > 0 && !showCreateWorkspace ? (
                 <div className="space-y-2">
                   {workspaces.map(item => (
-                    <button key={item.workspace_id} disabled={busy} onClick={() => activateWorkspace(item.workspace_id).catch(failure => setError(niceError(failure)))} className="w-full flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-4 text-left hover:border-indigo-400 hover:bg-indigo-50 disabled:opacity-60">
+                    <button key={item.workspace_id} disabled={busy} onClick={() => activateWorkspace(item.workspace_id).catch(failure => { setError(niceError(failure)); setView('workspace'); })} className="w-full flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-4 text-left hover:border-indigo-400 hover:bg-indigo-50 disabled:opacity-60">
                       <div><div className="font-semibold">{item.name}</div><div className="text-xs text-slate-500 mt-1">Role: {item.role} • Versi cloud {item.version}</div></div>
                       <ArrowRight size={18} />
                     </button>
                   ))}
+                  {user.role === 'ADMIN' && <button onClick={() => { setShowCreateWorkspace(true); setError(''); }} className="mt-2 w-full rounded-lg border border-indigo-200 px-4 py-3 text-sm font-semibold text-indigo-700 hover:bg-indigo-50">Buat workspace baru</button>}
                 </div>
               ) : user.role === 'ADMIN' ? (
                 <div className="space-y-3 rounded-xl border border-slate-200 p-4">
@@ -287,6 +295,7 @@ export default function GoogleAuthGate({ children }: Props) {
                   <button disabled={busy} onClick={createWorkspace} className="w-full flex justify-center items-center gap-2 rounded-lg bg-indigo-600 px-4 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
                     <Cloud size={18} /> Buat workspace cloud
                   </button>
+                  {workspaces.length > 0 && <button type="button" onClick={() => { setShowCreateWorkspace(false); setError(''); }} className="w-full rounded-lg bg-gray-100 px-4 py-2 text-sm text-gray-700 hover:bg-gray-200">Kembali ke daftar workspace</button>}
                 </div>
               ) : (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Akun Anda belum menjadi anggota workspace. Minta Admin ERP menambahkan email ini pada Manajemen User dan akses workspace.</div>
