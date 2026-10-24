@@ -287,8 +287,7 @@ function createWorkspace_(user, payload) {
     var workspaceId = Utilities.getUuid();
     var now = new Date().toISOString();
     sheets.workspaces.appendRow([workspaceId, name, 'active', user.email, now]);
-    writeSliceInitial_(workspaceId, 'operational', snapshot.operational, user.email);
-    writeSliceInitial_(workspaceId, 'accounting', snapshot.accounting, user.email);
+    writeSliceInitial_(workspaceId, 'workspace', snapshot, user.email);
     updateRecordByKey_(sheets.users, 'email', user.email, {
       workspace_id: workspaceId, updated_at: now
     });
@@ -306,15 +305,16 @@ function loadWorkspace_(user, workspaceId) {
   var sheets = ensureIdentitySheets_();
   var ws = sheetRecords_(sheets.workspaces).find(function (row) { return String(row.workspace_id) === workspaceId && row.status === 'active'; });
   if (!ws) throw apiError_('workspace_not_found', 'Workspace tidak ditemukan atau tidak aktif.');
-  var operational = readWorkspaceSlice_(workspaceId, 'operational');
-  var accounting = readWorkspaceSlice_(workspaceId, 'accounting');
-  if (!operational || !accounting) throw apiError_('workspace_state_missing', 'Data workspace belum lengkap. Hubungi administrator; data lokal tidak akan dikirim otomatis.');
-  var safeData = redactWorkspaceForUser_(user, operational.data, accounting.data);
+  var canonical = readWorkspaceSlice_(workspaceId, 'workspace');
+  if (!canonical || !canonical.data || !canonical.data.operational || !canonical.data.accounting) {
+    throw apiError_('workspace_state_missing', 'Snapshot cloud workspace belum lengkap. Hubungi administrator; data lokal tidak akan diunggah otomatis.');
+  }
+  var safeData = redactWorkspaceForUser_(user, canonical.data.operational, canonical.data.accounting);
   return {
     workspace: publicWorkspace_(ws),
     operational: safeData.operational,
     accounting: safeData.accounting,
-    versions: { operational: operational.version, accounting: accounting.version }
+    versions: { operational: canonical.version, accounting: canonical.version, workspace: canonical.version }
   };
 }
 
@@ -328,20 +328,33 @@ function saveWorkspaceSlice_(user, payload) {
   var lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
-    var current = readWorkspaceSlice_(workspaceId, slice);
-    if (!current) throw apiError_('workspace_state_missing', 'Data cloud tidak ditemukan. Muat ulang dan hubungi admin.');
+    var current = readWorkspaceSlice_(workspaceId, 'workspace');
+    if (!current || !current.data || !current.data.operational || !current.data.accounting) {
+      throw apiError_('workspace_state_missing', 'Snapshot cloud workspace tidak ditemukan. Muat ulang dan hubungi admin.');
+    }
     var expectedVersion = Number(payload.expectedVersion);
     if (!Number.isInteger(expectedVersion) || expectedVersion !== current.version) {
-      throw apiError_('version_conflict', 'Data diubah dari perangkat lain. Perubahan ini belum tersimpan ke cloud; muat ulang sebelum melanjutkan.');
+      throw apiError_('version_conflict', 'Data workspace diubah dari perangkat lain. Perubahan ini belum tersimpan; buat backup jika diperlukan lalu muat ulang dari cloud.');
     }
-    nextData = preserveRestrictedCollections_(user, slice, current.data, nextData);
-    if (slice === 'accounting') nextData = enforceJournalIntegrity_(user, current.data, nextData);
-    var json = JSON.stringify(nextData);
-    if (json.length > 3000000) throw apiError_('payload_too_large', 'Bagian data terlalu besar untuk satu penyimpanan. Buat arsip terpisah dan lampirkan melalui Drive.');
-    var changedKeys = validateRoleChanges_(user, slice, current.data, nextData);
+    var currentSlice = current.data[slice];
+    nextData = preserveRestrictedCollections_(user, slice, currentSlice, nextData);
+    if (slice === 'accounting') nextData = enforceJournalIntegrity_(user, currentSlice, nextData);
+    var changedKeys = validateRoleChanges_(user, slice, currentSlice, nextData);
     if (!changedKeys.length) return { version: current.version, unchanged: true };
+
+    var candidate = {
+      operational: slice === 'operational' ? nextData : current.data.operational,
+      accounting: slice === 'accounting' ? nextData : current.data.accounting
+    };
+    candidate = validateSnapshot_(candidate);
+    var operationalJson = JSON.stringify(candidate.operational);
+    var accountingJson = JSON.stringify(candidate.accounting);
+    var workspaceJson = JSON.stringify(candidate);
+    if (operationalJson.length > 3000000 || accountingJson.length > 3000000 || workspaceJson.length > 6000000) {
+      throw apiError_('payload_too_large', 'Data workspace melampaui batas penyimpanan. Arsipkan lampiran besar dan pisahkan bukti melalui Drive.');
+    }
     var nextVersion = current.version + 1;
-    replaceWorkspaceSlice_(workspaceId, slice, nextVersion, json, user.email);
+    replaceWorkspaceSlice_(workspaceId, 'workspace', nextVersion, workspaceJson, user.email);
     appendCloudAudit_(workspaceId, user.email, 'WORKSPACE_UPDATE', 'ERP_STATE', slice, JSON.stringify({ version: current.version }), JSON.stringify({ version: nextVersion, changedKeys: changedKeys }), slice, current.version, nextVersion);
     return { version: nextVersion, changedKeys: changedKeys };
   } finally {
@@ -467,8 +480,10 @@ function readWorkspaceSlice_(workspaceId, slice) {
 }
 
 function writeSliceInitial_(workspaceId, slice, data, email) {
-  var json = JSON.stringify(validateSlice_(slice, data));
-  if (json.length > 3000000) throw apiError_('payload_too_large', 'Data awal melebihi batas 3 MB.');
+  var validated = slice === 'workspace' ? validateSnapshot_(data) : validateSlice_(slice, data);
+  var json = JSON.stringify(validated);
+  if (json.length > 6000000) throw apiError_('payload_too_large', 'Data workspace awal melebihi batas 6 MB.');
+  if (slice !== 'workspace' && json.length > 3000000) throw apiError_('payload_too_large', 'Data awal melebihi batas 3 MB.');
   var chunks = splitData_(json, 30000);
   var sheet = ensureIdentitySheets_().state;
   var now = new Date().toISOString();
