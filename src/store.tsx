@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef, ReactNode } from 'react';
+import { persistWorkspaceSlice } from './lib/googleBackend';
 import { BukuKas, ArsipBukti, PosKewajiban, AuditLog, Tanah, Beko, NotaMaterial, StokBarang, Produksi, Penjualan, Pembelian, Penggajian, Anggaran, ArusKas, OCRResult, WhatsAppLog, MenuItem, QCRecord, AssetRecord, TaxRecord, HousingUnit } from './types';
 import {
   initialBukuKas, initialArsipBukti, initialPosKewajiban,
@@ -147,6 +148,16 @@ function hasEvidenceDocument(document: ArsipBukti): boolean {
     document.local_file_key ||
     (document.link_drive && /^https?:\/\//i.test(document.link_drive))
   );
+}
+
+function loadCloudState(saved: Partial<AppState>): AppState {
+  const result = { ...seedState } as AppState;
+  const arrays = Object.keys(seedState) as (keyof AppState)[];
+  for (const key of arrays) {
+    const value = saved[key];
+    if (Array.isArray(value)) (result as any)[key] = value;
+  }
+  return result;
 }
 
 function loadAppState(): AppState {
@@ -308,16 +319,23 @@ const AppContext = createContext<{
   dispatch: React.Dispatch<Action>;
 } | null>(null);
 
-export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(appReducer, undefined, loadAppState);
+export function AppProvider({ children, initialState }: { children: ReactNode; initialState?: Partial<AppState> }) {
+  const [state, dispatch] = useReducer(appReducer, initialState ?? null, initial =>
+    initial ? loadCloudState(initial) : loadAppState()
+  );
+  const previousSerialized = useRef<string | null>(null);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(state));
-    } catch (error) {
-      console.error('Gagal menyimpan data ERP ke browser. Buat backup JSON sesegera mungkin.', error);
+    const serialized = JSON.stringify(state);
+    if (previousSerialized.current === null) {
+      previousSerialized.current = serialized;
+      return;
     }
+    if (previousSerialized.current === serialized) return;
+    previousSerialized.current = serialized;
+    void persistWorkspaceSlice('operational', state).catch(() => undefined);
   }, [state]);
+
   return (
     <AppContext.Provider value={{ state, dispatch }}>
       {children}
