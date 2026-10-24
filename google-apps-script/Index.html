@@ -23,8 +23,7 @@
     (function () {
       'use strict';
       var appFrame = document.getElementById('erp-app');
-      var frontendUrl = <?!= JSON.stringify(frontendUrl) ?>;
-      var trustedOrigin = new URL(frontendUrl).origin;
+      var trustedOrigin = new URL(appFrame.src).origin;
       var allowedMethods = Object.freeze({
         apiGetPublicConfig: true,
         apiLogin: true,
