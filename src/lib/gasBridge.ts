@@ -28,6 +28,7 @@ const TOKEN_KEY = 'erp.google.idToken.session';
 const pending = new Map<string, { resolve: (value: any) => void; reject: (error: Error) => void }>();
 let requestCounter = 0;
 let workspaceId = '';
+let activeRole: CloudUser['role'] | '' = '';
 let idToken = '';
 let versions: Record<Slice, number> = { operational: 0, accounting: 0 };
 let blocked: Record<Slice, boolean> = { operational: false, accounting: false };
@@ -121,10 +122,12 @@ export async function gasRpc<T = any>(action: string, payload: Record<string, un
 export function configureCloudWorkspace(
   token: string,
   id: string,
-  nextVersions: { operational: number; accounting: number }
+  nextVersions: { operational: number; accounting: number },
+  role: CloudUser['role']
 ): void {
   setCloudIdToken(token);
   workspaceId = id;
+  activeRole = role;
   versions = { operational: nextVersions.operational, accounting: nextVersions.accounting };
   blocked = { operational: false, accounting: false };
   failedSnapshots = {};
@@ -142,6 +145,7 @@ export function subscribeCloudStatus(listener: (status: CloudStatus) => void): (
 }
 
 export async function persistWorkspaceSlice(slice: Slice, data: unknown): Promise<void> {
+  if (activeRole === 'VIEWER') return;
   const operation = queues[slice].then(async () => {
     if (!workspaceId || !getCloudIdToken()) throw new Error('Workspace cloud belum aktif. Perubahan belum disimpan.');
     if (blocked[slice]) throw new Error('Penyimpanan diblokir setelah konflik cloud; muat ulang agar data tetap konsisten.');
@@ -188,6 +192,7 @@ export async function retryFailedCloudWrites(): Promise<void> {
 
 export function clearCloudWorkspace(): void {
   workspaceId = '';
+  activeRole = '';
   versions = { operational: 0, accounting: 0 };
   blocked = { operational: false, accounting: false };
   failedSnapshots = {};
