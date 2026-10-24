@@ -34,7 +34,7 @@ function notify(next: CloudSyncState) {
 export function subscribeCloudSync(subscriber: (value: CloudSyncState) => void) {
   subscribers.add(subscriber);
   subscriber(state);
-  return () => subscribers.delete(subscriber);
+  return () => { subscribers.delete(subscriber); };
 }
 export function getCloudSyncState() {
   return state;
