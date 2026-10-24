@@ -280,6 +280,8 @@ export interface OCRResult {
   confidence: number;
   status: 'Pending' | 'Terverifikasi' | 'Ditolak';
   catatan: string;
+  diverifikasi_oleh?: string;
+  waktu_verifikasi?: string;
 }
 
 // WHATSAPP INTEGRATION
