@@ -350,10 +350,16 @@ export default function App() {
     window.sessionStorage.removeItem('erp_session_token');
     clearCloudWorkspace();
     clearWorkspaceBrowserCache();
+    clearCloudWorkspace();
+    setLocalSnapshot(null);
+    setLocalRows(0);
     setUser(null);
     setScreen('login');
     setError('');
     setPassword('');
+    setConfirmPassword('');
+    setBootstrapCode('');
+    setImportLocal(false);
   };
 
   if (screen === 'checking') {
