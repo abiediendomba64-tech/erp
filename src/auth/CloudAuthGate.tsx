@@ -19,6 +19,7 @@ export function useCloudAuth(): AuthContextValue {
 
 type Screen = 'checking' | 'login' | 'creating' | 'choose' | 'blocked' | 'ready';
 const CLIENT_ID = String((import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '').trim();
+const WEB_APP_URL = String((import.meta as any).env?.VITE_ERP_WEB_APP_URL || '').trim();
 
 interface Props { children: ReactNode }
 
@@ -108,6 +109,12 @@ export default function CloudAuthGate({ children }: Props) {
 
   useEffect(() => {
     if (screen !== 'login' || !buttonHost.current) return;
+    if (window.parent === window) {
+      setGisError(WEB_APP_URL
+        ? 'Panel perlu dibuka melalui Web App Google Apps Script.'
+        : 'Panel perlu dibuka melalui URL Web App Google Apps Script (/exec). Isi VITE_ERP_WEB_APP_URL untuk menampilkan tautan langsung di sini.');
+      return;
+    }
     if (!CLIENT_ID) {
       setGisError('Login belum dikonfigurasi: isi VITE_GOOGLE_CLIENT_ID pada environment build dan GOOGLE_CLIENT_ID di Apps Script dengan OAuth client ID yang sama.');
       return;
@@ -219,10 +226,16 @@ export default function CloudAuthGate({ children }: Props) {
         {screen === 'login' && (
           <div className="space-y-4">
             <p className="text-sm text-slate-600">Masuk dengan akun Google yang sudah diizinkan oleh administrator. Data utama akan dimuat dari cloud, bukan dari penyimpanan lokal browser.</p>
-            <div ref={buttonHost} className="min-h-11" />
-            {gisError && <p className="text-xs text-amber-700 bg-amber-50 p-3 rounded-lg">{gisError}</p>}
+            {window.parent === window ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <p className="text-sm text-amber-900">{gisError || 'Login hanya tersedia melalui URL Web App Apps Script.'}</p>
+                {WEB_APP_URL && <a href={WEB_APP_URL} className="mt-3 inline-flex rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white">Buka Panel ERP</a>}
+              </div>
+            ) : (
+              <div ref={buttonHost} className="min-h-11" />
+            )}
+            {gisError && window.parent !== window && <p className="text-xs text-amber-700 bg-amber-50 p-3 rounded-lg">{gisError}</p>}
             {error && <p className="text-sm text-red-700 bg-red-50 p-3 rounded-lg">{error}</p>}
-            {window.parent === window && <p className="text-sm text-red-700 bg-red-50 p-3 rounded-lg">Buka URL Web App Google Apps Script (/exec), bukan alamat hosting frontend secara langsung.</p>}
           </div>
         )}
 
