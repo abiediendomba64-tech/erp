@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, Database, FileWarning, RefreshCw, ShieldCheck } from 'lucide-react';
-import AppWorkspace from '../App';
+import { ReactNode, useCallback, useEffect, useState } from 'react';
+import { Database, FileWarning, RefreshCw } from 'lucide-react';
 import GoogleLoginPage, { LoginUser } from './GoogleLoginPage';
 import {
   callGoogleBackend, clearCloudWorkspace, clearSessionToken, configureCloudWorkspace,
@@ -12,11 +11,12 @@ type State = 'checking' | 'login' | 'bootstrap' | 'app' | 'config' | 'error';
 type SnapshotResponse = { found: boolean; snapshot: WorkspaceSnapshot | null; version: number };
 type UserResponse = { user: LoginUser };
 
-export default function CloudAuthGate() {
+export default function CloudAuthGate({ children }: { children: (props: { initialSnapshot: WorkspaceSnapshot; sessionUser: LoginUser; onLogout: () => void }) => ReactNode }) {
   const [view, setView] = useState<State>(isGoogleBackendConfigured ? 'checking' : 'config');
   const [user, setUser] = useState<LoginUser | null>(null);
   const [token, setToken] = useState('');
   const [legacy, setLegacy] = useState<WorkspaceSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
   const [legacyError, setLegacyError] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -29,6 +29,7 @@ export default function CloudAuthGate() {
     setUser(currentUser);
     setToken(sessionToken);
     if (state.found && state.snapshot) {
+      setSnapshot(state.snapshot);
       configureCloudWorkspace(sessionToken, state.snapshot, state.version);
       setView('app');
       return;
@@ -85,6 +86,7 @@ export default function CloudAuthGate() {
         sessionToken: token,
         snapshot,
       });
+      setSnapshot(result.snapshot);
       configureCloudWorkspace(token, result.snapshot, result.version);
       setView('app');
     } catch (error) {
@@ -161,12 +163,8 @@ export default function CloudAuthGate() {
     return <div className="min-h-screen p-8 text-rose-800">{message}</div>;
   }
 
-  return user && token ? (
-    <AppWorkspace
-      initialSnapshot={undefined}
-      sessionUser={user}
-      onLogout={logout}
-    />
+  return user && token && snapshot ? (
+    <>{children({ initialSnapshot: snapshot, sessionUser: user, onLogout: logout })}</>
   ) : (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-600"><RefreshCw className="mr-2 animate-spin" /> Menghubungkan ke cloud…</div>
   );
