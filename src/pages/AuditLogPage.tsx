@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { History, RefreshCw, LoaderCircle, AlertCircle, ShieldCheck } from 'lucide-react';
+import { History, RefreshCw, Loader2, AlertCircle, ShieldCheck } from 'lucide-react';
 import { gasRpc } from '../lib/gasBridge';
 import { useCloudAuth } from '../auth/CloudAuthGate';
 
@@ -65,7 +65,7 @@ export default function AuditLogPage() {
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         {loading ? (
-          <div className="flex items-center justify-center gap-2 p-10 text-slate-500"><LoaderCircle size={20} className="animate-spin" /> Memuat audit log cloud…</div>
+          <div className="flex items-center justify-center gap-2 p-10 text-slate-500"><Loader2 size={20} className="animate-spin" /> Memuat audit log cloud…</div>
         ) : records.length === 0 ? (
           <div className="p-10 text-center text-slate-500">Belum ada aktivitas server pada workspace ini.</div>
         ) : (
