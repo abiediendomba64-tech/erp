@@ -135,6 +135,8 @@ export function configureCloudWorkspace(
   notifyStatus('saved', 'Terhubung. Data utama dimuat dari Google Sheets.');
 }
 
+export function getActiveWorkspaceId(): string { return workspaceId; }
+
 export function getCloudStatus(): CloudStatus {
   return cloudStatus;
 }
