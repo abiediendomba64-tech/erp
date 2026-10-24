@@ -26,9 +26,12 @@ export const googleClientId = (env.VITE_GOOGLE_CLIENT_ID || '').trim();
 export const isGoogleBackendConfigured = Boolean(gasWebAppUrl && googleClientId);
 export const SESSION_STORAGE_KEY = 'erp.cloud.session.v1';
 const CHANNEL = 'erp-google-apps-script-bridge-v1';
+const TRUSTED_BRIDGE_ORIGINS = new Set(['https://script.google.com', 'https://script.googleusercontent.com']);
 const REQUEST_TIMEOUT_MS = 25000;
 let frame: HTMLIFrameElement | null = null;
 let readyPromise: Promise<void> | null = null;
+let bridgeOrigin: string | null = null;
+let bridgeReadyTimer: number | null = null;
 let sequence = 0;
 const pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: number }>();
 
@@ -55,11 +58,16 @@ function ensureBridge(): Promise<void> {
     frame.src = url.toString();
 
     const onMessage = (event: MessageEvent) => {
-      if (!frame || event.source !== frame.contentWindow || !event.data || event.data.channel !== CHANNEL) return;
+      if (!frame || event.source !== frame.contentWindow || !TRUSTED_BRIDGE_ORIGINS.has(event.origin) ||
+          !event.data || event.data.channel !== CHANNEL) return;
       if (event.data.type === 'ready') {
+        bridgeOrigin = event.origin;
+        if (bridgeReadyTimer !== null) window.clearTimeout(bridgeReadyTimer);
+        bridgeReadyTimer = null;
         resolve();
         return;
       }
+      if (!bridgeOrigin || event.origin !== bridgeOrigin) return;
       const requestId = String(event.data.requestId || '');
       const operation = pending.get(requestId);
       if (!operation) return;
@@ -72,8 +80,9 @@ function ensureBridge(): Promise<void> {
     frame.onerror = () => reject(new Error('Iframe backend Google tidak dapat dimuat. Periksa URL deployment Apps Script.'));
     document.body.appendChild(frame);
 
-    window.setTimeout(() => {
-      if (frame && readyPromise) {
+    bridgeReadyTimer = window.setTimeout(() => {
+      bridgeReadyTimer = null;
+      if (frame && !bridgeOrigin) {
         // If the bridge did not send ready, fail visibly instead of pretending to sync.
         reject(new Error('Backend Google tidak merespons dalam 25 detik. Periksa deployment Apps Script dan daftar origin yang diizinkan.'));
       }
@@ -92,7 +101,8 @@ export async function callGoogleBackend<T>(request: BackendRequest): Promise<T> 
       reject(new Error('Backend Google tidak merespons. Periksa koneksi dan status Apps Script.'));
     }, REQUEST_TIMEOUT_MS);
     pending.set(requestId, { resolve, reject, timer });
-    frame!.contentWindow!.postMessage({ channel: CHANNEL, requestId, payload: request }, '*');
+    if (!bridgeOrigin) { window.clearTimeout(timer); pending.delete(requestId); reject(new Error('Origin backend belum tervalidasi.')); return; }
+    frame!.contentWindow!.postMessage({ channel: CHANNEL, requestId, payload: request }, bridgeOrigin);
   });
   const envelope = response as BackendEnvelope<T>;
   if (!envelope || typeof envelope !== 'object' || !('ok' in envelope)) {
