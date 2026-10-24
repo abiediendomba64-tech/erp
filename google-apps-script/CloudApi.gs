@@ -35,7 +35,9 @@ function ensureCloudSchema_() {
   ensureSheetHeaders_(ss.getSheetByName('ERP_STATE_HEAD') || ss.insertSheet('ERP_STATE_HEAD'),
     ['workspace_id', 'version', 'chunk_count', 'updated_at', 'updated_by']);
   ensureSheetHeaders_(ss.getSheetByName('ERP_RECORDS') || ss.insertSheet('ERP_RECORDS'),
-    ['workspace_id', 'version', 'namespace', 'module', 'record_id', 'payload_json', 'updated_at', 'updated_by', 'deleted']);
+    ['workspace_id', 'version', 'commit_id', 'namespace', 'module', 'record_id', 'payload_json', 'updated_at', 'updated_by', 'deleted']);
+  ensureSheetHeaders_(ss.getSheetByName('ERP_COMMITS') || ss.insertSheet('ERP_COMMITS'),
+    ['workspace_id', 'version', 'commit_id', 'committed_at', 'committed_by']);
 
 }
 
@@ -203,7 +205,8 @@ function createCloudWorkspace_(user, name, data) {
     const now = new Date().toISOString();
     ss.getSheetByName('ERP_WORKSPACES').appendRow([id, workspaceName, user.email, now]);
     ss.getSheetByName('ERP_MEMBERS').appendRow([id, user.email, 'ADMIN', now, 'active']);
-    const recordCount = writeCloudRecords_(id, 1, data, user.email, now);
+    const initialCommitId = Utilities.getUuid();
+    const recordCount = writeCloudRecords_(id, 1, initialCommitId, data, user.email, now);
     ss.getSheetByName('ERP_STATE_HEAD').appendRow([id, 1, recordCount, now, user.email]);
     cloudAudit_(user.email, 'CREATE_WORKSPACE', 'ERP_WORKSPACES', id, '', workspaceName);
     return { success: true, workspace_id: id, name: workspaceName, role: 'ADMIN', version: 1 };
@@ -269,7 +272,8 @@ function saveCloudWorkspaceState_(user, workspaceId, data, expectedVersion) {
     authorizeCloudStateChanges_(current.data, scoped, membership.role);
     const nextVersion = current.version + 1;
     const now = new Date().toISOString();
-    const changes = writeCloudRecordDiff_(String(workspaceId), nextVersion, current.data, scoped, user.email, now);
+    const commitId = Utilities.getUuid();
+    const changes = writeCloudRecordDiff_(String(workspaceId), nextVersion, commitId, current.data, scoped, user.email, now);
     if (changes.total === 0) {
       return { success: true, saved: true, version: current.version, error_code: null, records_changed: 0, records_deleted: 0 };
     }
@@ -410,23 +414,40 @@ function readCloudWorkspaceState_(workspaceId) {
   const version = Number(head[1]);
   if (!Number.isInteger(version) || version < 1) throw new Error('Versi workspace tidak valid.');
 
+  // Only record events whose commit marker is the last marker for that version.
+  // This prevents an interrupted write to an uncommitted version from leaking into data.
+  const committedIds = new Map();
+  const commitRows = ss.getSheetByName('ERP_COMMITS').getDataRange().getValues();
+  for (let i = 1; i < commitRows.length; i++) {
+    const row = commitRows[i];
+    const rowVersion = Number(row[1]);
+    if (String(row[0]) === workspaceId && Number.isInteger(rowVersion) && rowVersion <= version) {
+      committedIds.set(rowVersion, String(row[2] || ''));
+    }
+  }
+  for (let committedVersion = 1; committedVersion <= version; committedVersion++) {
+    if (!committedIds.has(committedVersion) || !committedIds.get(committedVersion)) {
+      throw new Error('Riwayat commit cloud tidak lengkap pada versi ' + committedVersion + '. Jangan menimpa data; minta Admin memeriksa ERP_COMMITS.');
+    }
+  }
+
   const latest = new Map();
   const rows = ss.getSheetByName('ERP_RECORDS').getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     const rowVersion = Number(row[1]);
     if (String(row[0]) !== workspaceId || !Number.isInteger(rowVersion) || rowVersion > version) continue;
-    const namespace = String(row[2] || '');
-    const moduleName = String(row[3] || '');
-    const recordId = String(row[4] || '');
+    if (String(row[2] || '') !== committedIds.get(rowVersion)) continue;
+    const namespace = String(row[3] || '');
+    const moduleName = String(row[4] || '');
+    const recordId = String(row[5] || '');
     const key = [namespace, moduleName, recordId].join('|');
-    // Rows are append-only; later rows for the same key supersede earlier events.
     latest.set(key, {
       namespace: namespace,
       module: moduleName,
       id: recordId,
-      json: String(row[5] || ''),
-      deleted: String(row[8]).toLowerCase() === 'true'
+      json: String(row[6] || ''),
+      deleted: String(row[9]).toLowerCase() === 'true'
     });
   }
 
@@ -454,17 +475,18 @@ function readCloudWorkspaceState_(workspaceId) {
   return { version: version, data: data };
 }
 
-function writeCloudRecords_(workspaceId, version, data, email, timestamp) {
+function writeCloudRecords_(workspaceId, version, commitId, data, email, timestamp) {
   const rows = [];
   flattenCloudRecords_(data).forEach(record => {
-    rows.push([workspaceId, version, record.namespace, record.module, record.id, record.json, timestamp, email, false]);
+    rows.push([workspaceId, version, commitId, record.namespace, record.module, record.id, record.json, timestamp, email, false]);
   });
   const sheet = getErpSpreadsheet_().getSheetByName('ERP_RECORDS');
   if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  getErpSpreadsheet_().getSheetByName('ERP_COMMITS').appendRow([workspaceId, version, commitId, timestamp, email]);
   return rows.length;
 }
 
-function writeCloudRecordDiff_(workspaceId, version, oldData, newData, email, timestamp) {
+function writeCloudRecordDiff_(workspaceId, version, commitId, oldData, newData, email, timestamp) {
   const ss = getErpSpreadsheet_();
   const recordsSheet = ss.getSheetByName('ERP_RECORDS');
   const oldRecords = flattenCloudRecords_(oldData);
@@ -483,6 +505,7 @@ function writeCloudRecordDiff_(workspaceId, version, oldData, newData, email, ti
     if (!old || old.json !== record.json) changes.push({ key, old: old || null, next: record, deleted: false });
   });
 
+  if (changes.length === 0) return { changed: 0, deleted: 0, total: 0, recordCount: newRecords.size };
   if (changes.length > 150) throw new Error('Satu penyimpanan mengubah lebih dari 150 record. Pecah perubahan menjadi beberapa penyimpanan agar Apps Script tetap ringan.');
 
   const auditSheet = ss.getSheetByName('AUDIT_LOG') || ss.insertSheet('AUDIT_LOG');
@@ -493,9 +516,8 @@ function writeCloudRecordDiff_(workspaceId, version, oldData, newData, email, ti
   changes.forEach(change => {
     const [namespace, moduleName, recordId] = change.key.split('|');
     const payload = change.next ? change.next.json : change.old.json;
-    // Keep one cell below Sheets' per-cell text limit. Binary documents must live in Drive.
     if (payload.length > 30000) throw new Error('Record ' + moduleName + '/' + recordId + ' melampaui batas 30.000 karakter.');
-    eventRows.push([workspaceId, version, namespace, moduleName, recordId, payload, timestamp, email, change.deleted]);
+    eventRows.push([workspaceId, version, commitId, namespace, moduleName, recordId, payload, timestamp, email, change.deleted]);
     auditRows.push([
       'LOG-' + Utilities.getUuid(),
       timestamp,
@@ -505,14 +527,15 @@ function writeCloudRecordDiff_(workspaceId, version, oldData, newData, email, ti
       recordId,
       change.old ? change.old.json : '',
       change.next ? change.next.json : '',
-      'ERP cloud versioned save'
+      'ERP cloud versioned save; candidate commit=' + commitId + '; version=' + version
     ]);
   });
 
-  // Append-only writes; the state becomes visible only after the head version is advanced.
-  // If execution fails before the head update, the new event rows are ignored on load.
+  // Append-only record events and per-record audit are staged first. The commit marker and
+  // then the workspace head make them visible. Uncommitted versions are ignored on read.
   if (eventRows.length) recordsSheet.getRange(recordsSheet.getLastRow() + 1, 1, eventRows.length, eventRows[0].length).setValues(eventRows);
   if (auditRows.length) auditSheet.getRange(auditSheet.getLastRow() + 1, 1, auditRows.length, auditRows[0].length).setValues(auditRows);
+  ss.getSheetByName('ERP_COMMITS').appendRow([workspaceId, version, commitId, timestamp, email]);
   return { changed: changes.length - deleted, deleted: deleted, total: changes.length, recordCount: newRecords.size };
 }
 
@@ -556,149 +579,11 @@ function updateCloudStateHead_(workspaceId, version, recordCount, timestamp, ema
   const values = sheet.getDataRange().getValues();
   for (let i = 1; i < values.length; i++) {
     if (String(values[i][0]) === workspaceId) {
-      // Keep the legacy header layout: column C now stores active record count.
       sheet.getRange(i + 1, 2, 1, 4).setValues([[version, recordCount, timestamp, email]]);
       return;
     }
   }
   sheet.appendRow([workspaceId, version, recordCount, timestamp, email]);
-}
-
-function uploadCloudDocument_(user, workspaceId, input) {
-  const membership = findCloudMembership_(String(workspaceId || ''), user.email);
-  if (!membership) throw new Error('Anda tidak memiliki akses ke workspace ini.');
-  if (membership.role === 'VIEWER') throw new Error('Role VIEWER tidak boleh mengunggah dokumen.');
-  if (!input || typeof input !== 'object') throw new Error('Metadata file tidak valid.');
-
-  const folderId = String(PropertiesService.getScriptProperties().getProperty('DOCUMENTS_FOLDER_ID') || '').trim();
-  if (!folderId) throw new Error('DOCUMENTS_FOLDER_ID belum diatur pada Script Properties. Siapkan folder Drive bersama terlebih dahulu.');
-  const name = String(input.name || '').replace(/[\\r\\n\\u0000-\\u001f]/g, ' ').trim();
-  const mimeType = String(input.mimeType || '').toLowerCase().trim();
-  const base64 = String(input.base64 || '').replace(/^data:[^,]*;base64,/i, '').trim();
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-  if (!name || name.length > 160) throw new Error('Nama file wajib diisi dan maksimal 160 karakter.');
-  if (allowedTypes.indexOf(mimeType) === -1) throw new Error('Jenis file yang diizinkan hanya foto JPEG/PNG/WebP dan PDF.');
-  if (!base64 || base64.length > 5600000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
-    throw new Error('Data file kosong atau melebihi batas upload 4 MB.');
-  }
-
-  const bytes = Utilities.base64Decode(base64);
-  if (!bytes.length || bytes.length > 4 * 1024 * 1024) throw new Error('File kosong atau melebihi batas upload 4 MB.');
-  const blob = Utilities.newBlob(bytes, mimeType, name);
-  const folder = DriveApp.getFolderById(folderId);
-  const file = folder.createFile(blob);
-  file.setDescription(
-    'ERP workspace=' + workspaceId +
-    '; uploaded_by=' + user.email +
-    '; uploaded_at=' + new Date().toISOString() +
-    '; source=ERP web panel'
-  );
-  cloudAudit_(user.email, 'UPLOAD_DOCUMENT', 'GOOGLE_DRIVE', file.getId(), '', JSON.stringify({
-    workspace_id: workspaceId, name: name, mime_type: mimeType, size_bytes: bytes.length
-  }));
-
-  return {
-    success: true,
-    file: {
-      id: file.getId(),
-      name: file.getName(),
-      mimeType: file.getMimeType(),
-      size: bytes.length,
-      url: file.getUrl(),
-      createdAt: file.getDateCreated().toISOString()
-    },
-    message: 'File tersimpan di Google Drive. Akses mengikuti izin folder Drive yang dikonfigurasi.'
-  };
-}
-
-function processCloudOcr_(user, workspaceId, fileId, documentType) {
-  const membership = findCloudMembership_(String(workspaceId || ''), user.email);
-  if (!membership) throw new Error('Anda tidak memiliki akses ke workspace ini.');
-  if (membership.role === 'VIEWER') throw new Error('Role VIEWER tidak boleh memproses OCR.');
-  const folderId = String(PropertiesService.getScriptProperties().getProperty('DOCUMENTS_FOLDER_ID') || '').trim();
-  if (!folderId) throw new Error('DOCUMENTS_FOLDER_ID belum diatur pada Script Properties.');
-  const id = String(fileId || '').trim();
-  if (!id || id.length > 200) throw new Error('ID file Drive tidak valid.');
-  const kind = String(documentType || 'Kwitansi');
-  if (['Kwitansi', 'Nota', 'Invoice', 'Transfer_Bank', 'Lainnya'].indexOf(kind) === -1) {
-    throw new Error('Jenis dokumen OCR tidak dikenal.');
-  }
-
-  const file = DriveApp.getFileById(id);
-  const parents = file.getParents();
-  let insideFolder = false;
-  while (parents.hasNext()) {
-    if (parents.next().getId() === folderId) insideFolder = true;
-  }
-  if (!insideFolder) throw new Error('File tidak berada pada folder bukti ERP yang diizinkan.');
-
-  const mimeType = file.getMimeType().toLowerCase();
-  if (['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].indexOf(mimeType) === -1) {
-    throw new Error('OCR hanya menerima JPEG/PNG/WebP atau PDF.');
-  }
-  if (file.getSize() > 4 * 1024 * 1024) throw new Error('OCR dibatasi 4 MB per file agar sesuai limit request dan runtime Apps Script.');
-
-  const apiKey = String(PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '').trim();
-  if (!apiKey) throw new Error('GEMINI_API_KEY belum diatur pada Script Properties.');
-  const blob = file.getBlob();
-  const requestBody = {
-    contents: [{
-      parts: [
-        { text:
-          'Ekstrak data dokumen biaya proyek properti/konstruksi berbahasa Indonesia. ' +
-          'Kembalikan hanya JSON dengan skema: ' +
-          '{"vendor":string|null,"tanggal":"YYYY-MM-DD"|null,"total":number|null,' +
-          '"kategori":"tanah"|"cut_fill"|"material"|"marketing"|"operasional"|"lain_lain"|null,' +
-          '"nomor_bukti":string|null,"keterangan":string|null,"confidence":number,' +
-          '"items":[{"deskripsi":string,"jumlah":number|null}],"perlu_konfirmasi":string[]}. ' +
-          'Jangan menebak nominal/tanggal/nama yang tidak terbaca. Jika ragu, isi null dan beri alasan di perlu_konfirmasi. ' +
-          'OCR hanyalah draft. Jangan menyatakan transaksi telah dibayar atau disetujui. Jenis dokumen: ' + kind + '.'
-        },
-        { inline_data: { mime_type: mimeType, data: Utilities.base64Encode(blob.getBytes()) } }
-      ]
-    }],
-    generationConfig: {
-      temperature: 0.1,
-      responseMimeType: 'application/json',
-      maxOutputTokens: 2048
-    }
-  };
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=' + encodeURIComponent(apiKey);
-  const response = UrlFetchApp.fetch(url, {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify(requestBody),
-    muteHttpExceptions: true
-  });
-  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
-    throw new Error('Gemini OCR gagal (HTTP ' + response.getResponseCode() + '). Periksa quota, model access, dan API key pada AI Studio.');
-  }
-
-  const result = JSON.parse(response.getContentText());
-  const candidateText = result && result.candidates && result.candidates[0] &&
-    result.candidates[0].content && result.candidates[0].content.parts &&
-    result.candidates[0].content.parts[0] && result.candidates[0].content.parts[0].text;
-  if (!candidateText) throw new Error('Gemini tidak mengembalikan hasil OCR terstruktur.');
-  const extracted = JSON.parse(candidateText);
-  const confidence = Math.max(0, Math.min(100, Number(extracted.confidence) || 0));
-  cloudAudit_(user.email, 'OCR_DRAFT', 'GOOGLE_DRIVE', id, '', JSON.stringify({
-    workspace_id: workspaceId, document_type: kind, confidence: confidence
-  }));
-  return {
-    success: true,
-    draft: {
-      file_id: file.getId(),
-      file_name: file.getName(),
-      file_url: file.getUrl(),
-      mime_type: mimeType,
-      jenis_dokumen: kind,
-      data_ekstrak: extracted,
-      confidence: confidence,
-      status: 'Pending',
-      catatan: 'Hasil OCR belum menjadi transaksi. Verifikasi gambar/asli, koreksi kolom, lalu setujui secara manual.'
-    },
-    message: 'Draft OCR siap diperiksa. Tidak ada Buku Kas atau jurnal yang dibuat otomatis.'
-  };
 }
 
 function findCloudMembership_(workspaceId, email) {
