@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Users, Plus, Edit, Shield, Save, X, RefreshCw, UserCheck, UserX } from 'lucide-react';
 import type { UserRole } from '../types';
 import { callGoogleAppsScript } from '../lib/googleAppsScriptBridge';
@@ -91,7 +91,7 @@ export default function UserManagementPage() {
     setMessage('');
   };
 
-  const handleSave = async (event: React.FormEvent) => {
+  const handleSave = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
     setError('');
