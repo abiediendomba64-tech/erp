@@ -38,8 +38,16 @@ jobs:
       - name: Check Apps Script syntax
         shell: bash
         run: |
-          node --check < google-apps-script/Code.gs
-          node --check < google-apps-script/CloudWorkspace.gs
+          shopt -s nullglob
+          files=(google-apps-script/*.gs)
+          if (( ${#files[@]} == 0 )); then
+            echo "No Apps Script source files found."
+            exit 1
+          fi
+          for file in "${files[@]}"; do
+            echo "Checking $file"
+            node --check < "$file"
+          done
 
       - name: TypeScript typecheck
         run: npm run typecheck
