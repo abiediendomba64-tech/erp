@@ -1279,11 +1279,21 @@ function writeWorkspaceSnapshot_(snapshot, nextVersion, context) {
     existingMeta ? existingMeta.workspace_name : 'ERP Properti & Konstruksi',
     nextVersion, now, context && context.user ? String(context.user.id) : 'SYSTEM'
   ];
+  // Commit the active version only after every chunk is written. Keep the new version
+  // intact; older snapshot versions are not the audit log and would grow without bound.
   if (metaSheet.getLastRow() < 2) {
     metaSheet.getRange(2, 1, 1, metaRow.length).setValues([metaRow]);
   } else {
     metaSheet.getRange(2, 1, 1, metaRow.length).setValues([metaRow]);
   }
+
+  // Best-effort cleanup occurs only after ERP_META points to the complete new version.
+  // If cleanup is interrupted, the canonical version still remains valid; the next save retries it.
+  const obsoleteRows = sheetRecordsWithRows_('ERP_STATE')
+    .filter(item => Number(item.version) !== Number(nextVersion))
+    .map(item => Number(item.__rowNumber))
+    .sort((a, b) => b - a);
+  obsoleteRows.forEach(rowNumber => sheet.deleteRow(rowNumber));
 }
 
 function cloneSnapshot_(snapshot) {
