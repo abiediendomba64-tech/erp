@@ -29,7 +29,7 @@ Branch `feat/erp-google-cloud-ssot-20261024` menambahkan login Google yang diver
 
 Panduan konfigurasi yang benar: [docs/GOOGLE_BACKEND_SETUP.md](docs/GOOGLE_BACKEND_SETUP.md).
 
-**Batas penting:** branch ini belum di-deploy ke akun Google/Cloudflare pemilik aplikasi. OCR, WhatsApp/Telegram, dan upload Drive tetap dinonaktifkan di gateway baru. Model penyimpanan saat ini adalah snapshot JSON berversi per bagian pada Google Sheets (maksimum 3 MB per bagian), belum tabel relasional per modul, dan perubahan yang melibatkan store operasional + akuntansi belum merupakan satu transaksi atomik. Jangan memakai ini untuk transaksi produksi sebelum uji end-to-end dan rekonsiliasi berhasil.
+**Batas penting:** branch ini belum di-deploy ke akun Google/Cloudflare pemilik aplikasi. OCR, WhatsApp/Telegram, dan upload Drive tetap dinonaktifkan di gateway baru. Model penyimpanan saat ini adalah satu snapshot JSON workspace berversi global di Google Sheets (bagian operasional dan akuntansi masing-masing maksimum 3 MB, snapshot total maksimum 6 MB), belum tabel relasional per modul; satu proses bisnis lintas modul juga belum dijamin sebagai satu transaksi atomik. Jangan memakai ini untuk transaksi produksi sebelum uji end-to-end dan rekonsiliasi berhasil.
 
 
 ### Fungsi yang tersedia pada aplikasi
