@@ -6,14 +6,14 @@ import {
   UserCog, Plus, ClipboardList, ClipboardCheck, Building2, Calculator, Home
 } from 'lucide-react';
 import { Page } from '../App';
+import { UserRole } from '../types';
 
 interface SidebarProps {
   currentPage: Page;
   setCurrentPage: (page: Page) => void;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-  currentRole: 'ADMIN' | 'VIEWER';
-  setCurrentRole: (role: 'ADMIN' | 'VIEWER') => void;
+  currentRole: UserRole;
 }
 
 // Menu untuk ADMIN (full access)
@@ -58,8 +58,22 @@ const clientMenu: { id: Page; label: string; icon: React.ReactNode; section: str
   { id: 'beko', label: 'Progress Beko', icon: <Truck size={20} />, section: 'Info' },
 ];
 
-export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen, currentRole, setCurrentRole }: SidebarProps) {
-  const menuItems = currentRole === 'ADMIN' ? adminMenu : clientMenu;
+const financePages = new Set<Page>([
+  'dashboard', 'auditrekap', 'laporan', 'tanah', 'beko', 'bukukas', 'arsipbukti',
+  'poskewajiban', 'anggaran', 'alokasi', 'ocr', 'auditlog', 'accounting',
+  'inputtransaksi', 'laporankeuangan', 'invoicepo', 'rab', 'pajak', 'surat'
+]);
+const projectPages = new Set<Page>([
+  'dashboard', 'tanah', 'beko', 'nota', 'stok', 'produksi', 'penjualan',
+  'pembelian', 'anggaran', 'qc', 'aset', 'surat', 'unit', 'ocr', 'arsipbukti'
+]);
+
+export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen, currentRole }: SidebarProps) {
+  const menuItems = currentRole === 'ADMIN'
+    ? adminMenu
+    : currentRole === 'VIEWER'
+      ? clientMenu
+      : adminMenu.filter(item => (currentRole === 'KEUANGAN' ? financePages : projectPages).has(item.id));
   let currentSection = '';
 
   return (
@@ -81,33 +95,11 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
             {isOpen && (
               <div className="overflow-hidden">
                 <h1 className="font-bold text-sm whitespace-nowrap">Audit System</h1>
-                <p className="text-xs text-slate-400 whitespace-nowrap">Data lokal • Belum cloud sync</p>
+                <p className="text-xs text-slate-400 whitespace-nowrap">Google Sheets • Cloud ERP</p>
               </div>
             )}
           </div>
         </div>
-
-        {/* Role Switcher */}
-        {isOpen && (
-          <div className="px-4 py-3 border-b border-slate-700">
-            <p className="text-xs text-amber-300 mb-2">Mode tampilan (bukan autentikasi):</p>
-            <div className="flex gap-1">
-              <button
-                onClick={() => { setCurrentRole('ADMIN'); setCurrentPage('dashboard'); }}
-                className={`flex-1 text-xs py-1.5 rounded font-medium transition-colors ${currentRole === 'ADMIN' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
-              >
-                🔑 Admin
-              </button>
-              <button
-                onClick={() => { setCurrentRole('VIEWER'); setCurrentPage('dashboard'); }}
-                className={`flex-1 text-xs py-1.5 rounded font-medium transition-colors ${currentRole === 'VIEWER' ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
-              >
-                👁 Client
-              </button>
-            </div>
-            <p className="mt-2 text-[10px] leading-4 text-amber-300">Pergantian Admin/Client hanya memfilter menu browser. Ini belum mengamankan data atau API.</p>
-          </div>
-        )}
 
         {/* Toggle */}
         <button onClick={() => setIsOpen(!isOpen)} className="absolute top-4 right-2 text-slate-400 hover:text-white hidden lg:block">
@@ -115,7 +107,7 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
         </button>
 
         {/* Navigation */}
-        <nav className="mt-2 px-2 space-y-0.5 overflow-y-auto h-[calc(100%-180px)]">
+        <nav className="mt-2 px-2 space-y-0.5 overflow-y-auto h-[calc(100%-120px)]">
           {menuItems.map((item) => {
             const showSection = item.section !== currentSection;
             if (showSection) currentSection = item.section;
@@ -144,12 +136,12 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
         {isOpen && (
           <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-700">
             <div className="flex items-center gap-2">
-              <div className={`w-8 h-8 ${currentRole === 'ADMIN' ? 'bg-indigo-500' : 'bg-emerald-500'} rounded-full flex items-center justify-center text-xs font-bold`}>
-                {currentRole === 'ADMIN' ? 'A' : 'C'}
+              <div className={`w-8 h-8 ${currentRole === 'ADMIN' ? 'bg-indigo-500' : currentRole === 'VIEWER' ? 'bg-emerald-500' : 'bg-blue-500'} rounded-full flex items-center justify-center text-xs font-bold`}>
+                {currentRole === 'ADMIN' ? 'A' : currentRole === 'KEUANGAN' ? 'K' : currentRole === 'PROYEK' ? 'P' : 'V'}
               </div>
               <div>
-                <p className="text-xs font-medium">{currentRole === 'ADMIN' ? 'Administrator' : 'Client / Viewer'}</p>
-                <p className="text-xs text-slate-400">Mode tampilan saja; izin server belum aktif</p>
+                <p className="text-xs font-medium">{currentRole === 'ADMIN' ? 'Administrator' : currentRole === 'KEUANGAN' ? 'Keuangan' : currentRole === 'PROYEK' ? 'Tim Proyek' : 'Viewer'}</p>
+                <p className="text-xs text-slate-400">Role dari autentikasi server</p>
               </div>
             </div>
           </div>
