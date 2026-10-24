@@ -22,7 +22,7 @@ Tambahkan:
 
 ### `CLASPRC_JSON`
 
-Isi dengan seluruh isi file autentikasi lokal `~/.clasprc.json), yang dibuat
+Isi dengan seluruh isi file autentikasi lokal `~/.clasprc.json`, yang dibuat
 setelah Anda login memakai `clasp`. File ini mengandung refresh token sensitif.
 Jangan pernah commit file atau menempelkan isinya di issue/chat.
 
