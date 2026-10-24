@@ -111,8 +111,8 @@ export function readCurrentBrowserData(): WorkspaceData | null {
     same(row, { id: 'AG-004', periode: '2024', kategori: 'Tenaga Kerja', anggaran: 120000000, realisasi: 22820000 })
   );
   filterRows('ocr', row =>
-    same(row, { id: 'OCR-001' }) && /drive\\.google\\.com\\/file\\/d\\/xxx1/.test(String(row.image_url || '')) ||
-    same(row, { id: 'OCR-002' }) && /drive\\.google\\.com\\/file\\/d\\/xxx2/.test(String(row.image_url || '')) ||
+    same(row, { id: 'OCR-001' }) && String(row.image_url || '').includes('drive.google.com/file/d/xxx1') ||
+    same(row, { id: 'OCR-002' }) && String(row.image_url || '').includes('drive.google.com/file/d/xxx2') ||
     same(row, { id: 'OCR-003', confidence: 45, status: 'Pending' })
   );
   filterRows('whatsapp', row => ['WA-001', 'WA-002', 'WA-003'].includes(String(row.id || '')));
