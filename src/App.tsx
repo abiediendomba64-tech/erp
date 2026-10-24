@@ -32,6 +32,7 @@ import AssetsPage from './pages/AssetsPage';
 import TaxesPage from './pages/TaxesPage';
 import SuratPage from './pages/SuratPage';
 import HousingUnitsPage from './pages/HousingUnitsPage';
+import ViewerDashboard from './pages/ViewerDashboard';
 import { AccountingProvider } from './store/accounting';
 import CloudAccessGate from './components/CloudAccessGate';
 import CloudSyncStatusBar from './components/CloudSyncStatusBar';
@@ -67,7 +68,7 @@ function AppContent() {
 
   const renderPage = () => {
     switch (currentPage) {
-      case 'dashboard': return <Dashboard />;
+      case 'dashboard': return currentRole === 'VIEWER' ? <ViewerDashboard /> : <Dashboard />;
       case 'auditrekap': return <AuditRekapPage />;
       case 'bukukas': return <BukuKasPage />;
       case 'arsipbukti': return <ArsipBuktiPage />;
