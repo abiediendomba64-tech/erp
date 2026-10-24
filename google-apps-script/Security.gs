@@ -85,16 +85,20 @@ function apiDispatch(request) {
         data = disableUser_(user, String(payload.email || ''));
         break;
       case 'audit.list':
+        requireRole_(user, ['ADMIN', 'KEUANGAN']);
         data = listCloudAudit_(user, String(payload.workspaceId || user.workspace_id || ''), Number(payload.limit || 100));
         break;
       case 'accounting.accounts.list':
-        data = readSheetRecords_('AKUN');
+        requireWorkspaceAccess_(user, String(payload.workspaceId || user.workspace_id || ''));
+        data = loadWorkspace_(user, String(payload.workspaceId || user.workspace_id || '')).accounting.akun;
         break;
       case 'accounting.report.profit-loss':
-        data = generateLabaRugi_();
+        requireRole_(user, ['ADMIN', 'KEUANGAN']);
+        data = buildProfitLossFromCloud_(user, String(payload.workspaceId || user.workspace_id || ''), String(payload.period || ''));
         break;
       case 'accounting.report.balance-sheet':
-        data = generateNeraca_();
+        requireRole_(user, ['ADMIN', 'KEUANGAN']);
+        data = buildBalanceSheetFromCloud_(user, String(payload.workspaceId || user.workspace_id || ''), String(payload.asOfDate || ''));
         break;
       case 'accounting.transaction.create':
         requireRole_(user, ['ADMIN', 'KEUANGAN']);
@@ -588,6 +592,155 @@ function disableUser_(actor, email) {
   updateRecordByKey_(ensureIdentitySheets_().users, 'email', email, { status: 'inactive', updated_at: new Date().toISOString() });
   appendCloudAudit_(String(found.workspace_id || ''), actor.email, 'USER_DISABLE', 'ERP_USERS', email, JSON.stringify(found), JSON.stringify({ status: 'inactive' }), '', 0, 0);
   return { disabled: true, email: email };
+}
+
+function buildProfitLossFromCloud_(user, workspaceId, period) {
+  var workspace = loadWorkspace_(user, workspaceId);
+  var selectedPeriod = period || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
+  if (!/^\\d{4}(-\\d{2})?$/.test(selectedPeriod)) {
+    throw apiError_('invalid_period', 'Periode laba rugi harus YYYY-MM atau YYYY.');
+  }
+  var accounts = workspace.accounting.akun || [];
+  var journals = workspace.accounting.jurnal || [];
+  var byCode = {};
+  accounts.forEach(function (account) { byCode[String(account.kode)] = account; });
+  var balances = {};
+  journals.filter(function (journal) {
+    return journal.status === 'Posted' && String(journal.tanggal || '').slice(0, selectedPeriod.length) === selectedPeriod;
+  }).forEach(function (journal) {
+    (journal.entries || []).forEach(function (entry) {
+      var account = byCode[String(entry.akun_kode)];
+      if (!account) throw apiError_('unknown_account', 'Jurnal mengacu akun yang tidak tersedia: ' + entry.akun_kode);
+      var movement = String(account.saldo_normal) === 'Debit'
+        ? Number(entry.debit || 0) - Number(entry.kredit || 0)
+        : Number(entry.kredit || 0) - Number(entry.debit || 0);
+      balances[String(account.kode)] = (balances[String(account.kode)] || 0) + movement;
+    });
+  });
+  function amount(account) {
+    var normal = String(account.saldo_normal) === 'Debit' ? 1 : -1;
+    var statementSign = (account.tipe === 'Aset' || account.tipe === 'Beban')
+      ? (normal === 1 ? 1 : -1)
+      : (normal === -1 ? 1 : -1);
+    return (balances[String(account.kode)] || 0) * statementSign;
+  }
+  var pendapatan = accounts.filter(function (account) { return account.tipe === 'Pendapatan'; })
+    .map(function (account) { return { akun: account.nama, jumlah: amount(account) }; })
+    .filter(function (item) { return item.jumlah !== 0; });
+  var beban = accounts.filter(function (account) { return account.tipe === 'Beban'; })
+    .map(function (account) { return { akun: account.nama, jumlah: amount(account) }; })
+    .filter(function (item) { return item.jumlah !== 0; });
+  var totalPendapatan = pendapatan.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  var totalBeban = beban.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  return {
+    periode: selectedPeriod,
+    pendapatan: pendapatan,
+    total_pendapatan: totalPendapatan,
+    beban: beban,
+    total_beban: totalBeban,
+    laba_bersih: totalPendapatan - totalBeban
+  };
+}
+
+function buildBalanceSheetFromCloud_(user, workspaceId, asOfDate) {
+  var workspace = loadWorkspace_(user, workspaceId);
+  var cutoff = asOfDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(cutoff)) {
+    throw apiError_('invalid_date', 'Tanggal neraca harus YYYY-MM-DD.');
+  }
+  var accounts = workspace.accounting.akun || [];
+  var journals = workspace.accounting.jurnal || [];
+  var byCode = {};
+  var balances = {};
+  accounts.forEach(function (account) {
+    byCode[String(account.kode)] = account;
+    balances[String(account.kode)] = Number(account.saldo || 0);
+  });
+  journals.filter(function (journal) {
+    return journal.status === 'Posted' && /^\\d{4}-\\d{2}-\\d{2}$/.test(String(journal.tanggal || '').slice(0, 10))
+      && String(journal.tanggal).slice(0, 10) <= cutoff;
+  }).forEach(function (journal) {
+    (journal.entries || []).forEach(function (entry) {
+      var code = String(entry.akun_kode);
+      var account = byCode[code];
+      if (!account) throw apiError_('unknown_account', 'Jurnal mengacu akun yang tidak tersedia: ' + code);
+      var movement = String(account.saldo_normal) === 'Debit'
+        ? Number(entry.debit || 0) - Number(entry.kredit || 0)
+        : Number(entry.kredit || 0) - Number(entry.debit || 0);
+      balances[code] = (balances[code] || 0) + movement;
+    });
+  });
+  function amount(account) {
+    var normalDebit = String(account.saldo_normal) === 'Debit';
+    var sign = (account.tipe === 'Aset' || account.tipe === 'Beban')
+      ? (normalDebit ? 1 : -1)
+      : (normalDebit ? -1 : 1);
+    return (balances[String(account.kode)] || 0) * sign;
+  }
+  function group(type, category) {
+    return accounts.filter(function (account) {
+      return account.tipe === type && (!category || account.kategori === category);
+    }).map(function (account) {
+      return { akun: account.nama, jumlah: amount(account) };
+    }).filter(function (item) { return item.jumlah !== 0; });
+  }
+  var asetLancar = group('Aset', 'Aset Lancar');
+  var asetTetap = group('Aset', 'Aset Tetap');
+  var totalAsetLancar = asetLancar.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  var totalAsetTetap = asetTetap.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  var kewajibanPendek = group('Kewajiban', 'Kewajiban Jangka Pendek');
+  var kewajibanPanjang = group('Kewajiban', 'Kewajiban Jangka Panjang');
+  var totalKewajibanPendek = kewajibanPendek.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  var totalKewajibanPanjang = kewajibanPanjang.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  var equity = group('Ekuitas', null);
+  var cumulative = buildProfitLossFromCloud_(user, workspaceId, cutoff.slice(0, 4));
+  var profitToCutoff = 0;
+  // Calculate year-to-date and prior years cumulatively for balance sheet purposes.
+  var currentPnl = calculateProfitLossCumulative_(accounts, journals, cutoff);
+  profitToCutoff = currentPnl;
+  var retainedIndex = equity.findIndex(function (item) { return item.akun === 'Laba Ditahan'; });
+  if (retainedIndex >= 0) equity[retainedIndex].jumlah += profitToCutoff;
+  else if (profitToCutoff !== 0) equity.push({ akun: 'Laba Bersih Periode Berjalan', jumlah: profitToCutoff });
+  var totalEkuitas = equity.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  var totalAset = totalAsetLancar + totalAsetTetap;
+  var totalKewajiban = totalKewajibanPendek + totalKewajibanPanjang;
+  return {
+    tanggal: cutoff,
+    aset: { aset_lancar: asetLancar, aset_tetap: asetTetap, total_aset_lancar: totalAsetLancar, total_aset_tetap: totalAsetTetap, total_aset: totalAset },
+    kewajiban: { kewajiban_jangka_pendek: kewajibanPendek, kewajiban_jangka_panjang: kewajibanPanjang, total_kewajiban_jangka_pendek: totalKewajibanPendek, total_kewajiban_jangka_panjang: totalKewajibanPanjang, total_kewajiban: totalKewajiban },
+    ekuitas: equity,
+    total_ekuitas: totalEkuitas,
+    total_kewajiban_ekuitas: totalKewajiban + totalEkuitas,
+    balance: Math.abs(totalAset - (totalKewajiban + totalEkuitas)) < 0.005
+  };
+}
+
+function calculateProfitLossCumulative_(accounts, journals, cutoff) {
+  var selected = journals.filter(function (journal) {
+    return journal.status === 'Posted' && String(journal.tanggal || '').slice(0, 10) <= cutoff;
+  });
+  var byCode = {};
+  accounts.forEach(function (account) { byCode[String(account.kode)] = account; });
+  var balances = {};
+  selected.forEach(function (journal) {
+    (journal.entries || []).forEach(function (entry) {
+      var account = byCode[String(entry.akun_kode)];
+      if (!account) return;
+      var movement = String(account.saldo_normal) === 'Debit'
+        ? Number(entry.debit || 0) - Number(entry.kredit || 0)
+        : Number(entry.kredit || 0) - Number(entry.debit || 0);
+      balances[String(account.kode)] = (balances[String(account.kode)] || 0) + movement;
+    });
+  });
+  return accounts.filter(function (account) { return account.tipe === 'Pendapatan' || account.tipe === 'Beban'; })
+    .reduce(function (total, account) {
+      var normalDebit = String(account.saldo_normal) === 'Debit';
+      var sign = (account.tipe === 'Aset' || account.tipe === 'Beban')
+        ? (normalDebit ? 1 : -1)
+        : (normalDebit ? -1 : 1);
+      var value = (balances[String(account.kode)] || 0) * sign;
+      return total + (account.tipe === 'Pendapatan' ? value : -value);
+    }, 0);
 }
 
 function listCloudAudit_(user, workspaceId, limit) {
