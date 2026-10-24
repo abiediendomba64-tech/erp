@@ -6,14 +6,16 @@ import {
   UserCog, Plus, ClipboardList, ClipboardCheck, Building2, Calculator, Home
 } from 'lucide-react';
 import { Page } from '../App';
+import { UserRole } from '../types';
 
 interface SidebarProps {
   currentPage: Page;
   setCurrentPage: (page: Page) => void;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-  currentRole: 'ADMIN' | 'VIEWER';
-  setCurrentRole: (role: 'ADMIN' | 'VIEWER') => void;
+  currentRole: UserRole;
+  userEmail: string;
+  onLogout: () => void;
 }
 
 // Menu untuk ADMIN (full access)
@@ -58,8 +60,14 @@ const clientMenu: { id: Page; label: string; icon: React.ReactNode; section: str
   { id: 'beko', label: 'Progress Beko', icon: <Truck size={20} />, section: 'Info' },
 ];
 
-export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen, currentRole, setCurrentRole }: SidebarProps) {
-  const menuItems = currentRole === 'ADMIN' ? adminMenu : clientMenu;
+export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen, currentRole, userEmail, onLogout }: SidebarProps) {
+  const roleMenus: Record<UserRole, typeof adminMenu> = {
+    ADMIN: adminMenu,
+    KEUANGAN: adminMenu.filter(item => ['dashboard','auditrekap','laporan','bukukas','arsipbukti','poskewajiban','penggajian','anggaran','alokasi','accounting','inputtransaksi','laporankeuangan','invoicepo','rab','pajak','aset','auditlog'].includes(item.id)),
+    PROYEK: adminMenu.filter(item => ['dashboard','tanah','beko','stok','produksi','penjualan','pembelian','anggaran','ocr','qc','aset','surat','unit','auditlog'].includes(item.id)),
+    VIEWER: clientMenu,
+  };
+  const menuItems = roleMenus[currentRole];
   let currentSection = '';
 
   return (
@@ -81,33 +89,11 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
             {isOpen && (
               <div className="overflow-hidden">
                 <h1 className="font-bold text-sm whitespace-nowrap">Audit System</h1>
-                <p className="text-xs text-slate-400 whitespace-nowrap">Data lokal • Belum cloud sync</p>
+                <p className="text-xs text-slate-400 whitespace-nowrap">Google Sheets • Cloud</p>
               </div>
             )}
           </div>
         </div>
-
-        {/* Role Switcher */}
-        {isOpen && (
-          <div className="px-4 py-3 border-b border-slate-700">
-            <p className="text-xs text-amber-300 mb-2">Mode tampilan (bukan autentikasi):</p>
-            <div className="flex gap-1">
-              <button
-                onClick={() => { setCurrentRole('ADMIN'); setCurrentPage('dashboard'); }}
-                className={`flex-1 text-xs py-1.5 rounded font-medium transition-colors ${currentRole === 'ADMIN' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
-              >
-                🔑 Admin
-              </button>
-              <button
-                onClick={() => { setCurrentRole('VIEWER'); setCurrentPage('dashboard'); }}
-                className={`flex-1 text-xs py-1.5 rounded font-medium transition-colors ${currentRole === 'VIEWER' ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
-              >
-                👁 Client
-              </button>
-            </div>
-            <p className="mt-2 text-[10px] leading-4 text-amber-300">Pergantian Admin/Client hanya memfilter menu browser. Ini belum mengamankan data atau API.</p>
-          </div>
-        )}
 
         {/* Toggle */}
         <button onClick={() => setIsOpen(!isOpen)} className="absolute top-4 right-2 text-slate-400 hover:text-white hidden lg:block">
@@ -140,17 +126,18 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
           })}
         </nav>
 
-        {/* Footer */}
+        {/* Authenticated user and server-authoritative role */}
         {isOpen && (
-          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-700">
+          <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-slate-700 bg-slate-900">
             <div className="flex items-center gap-2">
-              <div className={`w-8 h-8 ${currentRole === 'ADMIN' ? 'bg-indigo-500' : 'bg-emerald-500'} rounded-full flex items-center justify-center text-xs font-bold`}>
-                {currentRole === 'ADMIN' ? 'A' : 'C'}
+              <div className={currentRole === 'ADMIN' ? 'w-8 h-8 bg-indigo-500 rounded-full flex items-center justify-center text-xs font-bold shrink-0' : 'w-8 h-8 bg-emerald-600 rounded-full flex items-center justify-center text-xs font-bold shrink-0'}>
+                {currentRole.slice(0, 1)}
               </div>
-              <div>
-                <p className="text-xs font-medium">{currentRole === 'ADMIN' ? 'Administrator' : 'Client / Viewer'}</p>
-                <p className="text-xs text-slate-400">Mode tampilan saja; izin server belum aktif</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold">{currentRole}</p>
+                <p className="text-[10px] text-slate-400 truncate" title={userEmail}>{userEmail}</p>
               </div>
+              <button onClick={onLogout} className="text-xs text-slate-300 hover:text-white rounded px-2 py-1 border border-slate-600" title="Keluar dari sesi ERP">Keluar</button>
             </div>
           </div>
         )}
