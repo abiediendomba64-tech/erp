@@ -1,10 +1,14 @@
-import { ReactNode, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Database, FileWarning, RefreshCw } from 'lucide-react';
-import GoogleLoginPage, { LoginUser } from './GoogleLoginPage';
+import GoogleLoginPage from './GoogleLoginPage';
+import type { LoginUser } from './GoogleLoginPage';
 import {
   callGoogleBackend, clearCloudWorkspace, clearSessionToken, configureCloudWorkspace,
-  getSessionToken, isGoogleBackendConfigured, WorkspaceSnapshot
+  getSessionToken, isGoogleBackendConfigured
+
 } from '../lib/googleBackend';
+import type { WorkspaceSnapshot } from '../lib/googleBackend';
 import { countSnapshotRecords, createEmptyWorkspaceSnapshot, getLegacyLocalSnapshot } from '../lib/emptyWorkspace';
 
 type State = 'checking' | 'login' | 'bootstrap' | 'app' | 'config' | 'error';
