@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      html, body { margin: 0; padding: 0; background: transparent; }
+    </style>
+  </head>
+  <body>
+    <script>
+      // This cross-origin bridge only accepts messages from the configured ERP front-end origin.
+      // The server rechecks authentication and role for every data request.
+      const ALLOWED_ORIGINS = <?!= allowedOrigins ?>;
+      const CHANNEL = 'erp-google-apps-script-bridge-v1';
+
+      function sendReply(origin, requestId, result) {
+        window.parent.postMessage({
+          channel: CHANNEL,
+          requestId: requestId,
+          result: result
+        }, origin);
+      }
+
+      window.addEventListener('message', function (event) {
+        if (!Array.isArray(ALLOWED_ORIGINS) || ALLOWED_ORIGINS.indexOf(event.origin) === -1) return;
+        if (event.source !== window.parent) return;
+        const message = event.data;
+        if (!message || message.channel !== CHANNEL || !message.requestId || !message.payload) return;
+
+        google.script.run
+          .withSuccessHandler(function (result) {
+            sendReply(event.origin, message.requestId, result);
+          })
+          .withFailureHandler(function () {
+            sendReply(event.origin, message.requestId, {
+              ok: false,
+              error: { code: 'backend_failure', message: 'Permintaan backend gagal. Periksa konfigurasi Apps Script dan Google Sheets.' }
+            });
+          })
+          .apiRequest(message.payload);
+      });
+      window.parent.postMessage({ channel: CHANNEL, type: 'ready' }, '*');
+    </script>
+  </body>
+</html>
