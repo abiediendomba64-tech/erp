@@ -371,7 +371,11 @@ export default function ArsipBuktiPage() {
     setError('');
     try {
       if (!item.local_file_key) {
-        setError('Dokumen ini tidak memiliki file Drive. Buka tautan eksternal atau lampirkan file asli.');
+        if (item.link_drive && /^https?:\\/\\//i.test(item.link_drive)) {
+          window.open(item.link_drive, '_blank', 'noopener,noreferrer');
+          return;
+        }
+        setError('Dokumen ini belum memiliki berkas Drive atau lokal. Lampirkan file asli.');
         return;
       }
       await downloadLocalDocumentFile(item.local_file_key, item.nama_file || item.kode_bukti + '.bin');
