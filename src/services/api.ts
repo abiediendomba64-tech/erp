@@ -4,7 +4,6 @@
  * does not fetch public GET/POST endpoints, which are disabled on the backend.
  */
 import { gasRpc, getActiveWorkspaceId, WorkspaceLoad } from '../lib/gasBridge';
-import { generateLabaRugi, generateNeraca } from '../utils/accounting';
 
 async function loadActiveWorkspace(): Promise<WorkspaceLoad> {
   const workspaceId = getActiveWorkspaceId();
@@ -87,14 +86,14 @@ export async function getLabaRugi(): Promise<{
   total_beban: number;
   laba_bersih: number;
 }> {
-  const snapshot = await loadActiveWorkspace();
   const period = new Date().toISOString().slice(0, 7);
-  const report = generateLabaRugi(snapshot.accounting.akun as any[], snapshot.accounting.jurnal as any[], period);
-  return {
-    total_pendapatan: report.total_pendapatan,
-    total_beban: report.total_beban,
-    laba_bersih: report.laba_bersih,
-  };
+  const result = await gasRpc<{
+    total_pendapatan: number; total_beban: number; laba_bersih: number;
+  }>('accounting.report.profit-loss', {
+    workspaceId: getActiveWorkspaceId(),
+    period
+  });
+  return result;
 }
 
 export async function getNeraca(): Promise<{
@@ -103,17 +102,20 @@ export async function getNeraca(): Promise<{
   total_ekuitas: number;
   balance: boolean;
 }> {
-  const snapshot = await loadActiveWorkspace();
-  const report = generateNeraca(
-    snapshot.accounting.akun as any[],
-    snapshot.accounting.jurnal as any[],
-    new Date().toISOString().slice(0, 10)
-  );
+  const result = await gasRpc<{
+    aset: { total_aset: number };
+    kewajiban: { total_kewajiban: number };
+    total_ekuitas: number;
+    balance: boolean;
+  }>('accounting.report.balance-sheet', {
+    workspaceId: getActiveWorkspaceId(),
+    asOfDate: new Date().toISOString().slice(0, 10)
+  });
   return {
-    total_aset: report.aset.total_aset,
-    total_kewajiban: report.kewajiban.total_kewajiban,
-    total_ekuitas: report.total_ekuitas,
-    balance: Math.abs(report.aset.total_aset - report.total_kewajiban_ekuitas) < 0.005,
+    total_aset: result.aset.total_aset,
+    total_kewajiban: result.kewajiban.total_kewajiban,
+    total_ekuitas: result.total_ekuitas,
+    balance: result.balance
   };
 }
 
