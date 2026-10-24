@@ -343,4 +343,59 @@ assert.deepEqual(operational.calculateBudgetVariance(10000000, 12500000), {
 });
 console.log('PASS: rumus RAB, stok, penjualan, pembelian, produksi, payroll, dan realisasi anggaran dari fungsi aktual');
 
+
+const cloudOperationalArrays = [
+  'bukuKas','arsipBukti','posKewajiban','auditLog','tanah','beko','notaMaterial',
+  'stok','produksi','penjualan','pembelian','penggajian','anggaran','arusKas',
+  'ocr','whatsapp','menuConfig','qcRecords','assets','taxRecords','housingUnits'
+];
+const cloudAccountingArrays = ['akun','jurnal','invoice','purchaseOrder','rab','schedule'];
+const cloudSnapshot = { operational: {}, accounting: {} };
+for (const key of cloudOperationalArrays) cloudSnapshot.operational[key] = [];
+for (const key of cloudAccountingArrays) cloudSnapshot.accounting[key] = [];
+cloudSnapshot.operational.tanah = [{
+  id: 'T-CLOUD-1', pemilik: 'Pemilik Rahasia', luas_bt: 10, harga_per_bt: 800000,
+  dp: 2000000, status: 'DP', kode_bukti: 'BUKTI-RAHASIA', url_bukti: 'https://example.test/private',
+  catatan: 'Data sensitif tidak boleh tampil pada viewer.'
+}];
+cloudSnapshot.accounting.akun = [{ kode: '1-1001', tipe: 'Aset', saldo: 123456 }];
+const validatedCloud = runInNewContext(
+  'validateErpSnapshot_(JSON.parse(' + JSON.stringify(JSON.stringify(cloudSnapshot)) + '))',
+  gasContext
+);
+assert.equal(validatedCloud.operational.tanah[0].id, 'T-CLOUD-1');
+assert.equal(validatedCloud.accounting.akun[0].saldo, 123456);
+console.log('PASS: backend menolak struktur snapshot salah dan menerima struktur ERP lengkap');
+
+const viewerCloud = runInNewContext(
+  'snapshotForRole_(JSON.parse(' + JSON.stringify(JSON.stringify(cloudSnapshot)) + '), "VIEWER")',
+  gasContext
+);
+assert.equal(viewerCloud.accounting.akun.length, 0, 'VIEWER tidak boleh menerima chart of accounts');
+assert.equal(viewerCloud.operational.tanah[0].id, 'T-CLOUD-1');
+assert.equal(viewerCloud.operational.tanah[0].pemilik, '', 'nama pemilik harus direduksi untuk viewer');
+assert.equal(viewerCloud.operational.tanah[0].harga_per_bt, 0, 'harga tanah tidak boleh bocor ke viewer');
+assert.equal(viewerCloud.operational.tanah[0].dp, 0, 'nominal DP tidak boleh bocor ke viewer');
+assert.equal(viewerCloud.operational.tanah[0].kode_bukti, '', 'kode bukti tidak boleh bocor ke viewer');
+assert.equal(viewerCloud.operational.tanah[0].url_bukti, '', 'tautan bukti tidak boleh bocor ke viewer');
+console.log('PASS: snapshot VIEWER direduksi pada server dan tidak membawa nominal/kepemilikan/bukti');
+
+const incomingCloud = JSON.parse(JSON.stringify(cloudSnapshot));
+incomingCloud.operational.tanah[0].catatan = 'Perubahan proyek';
+incomingCloud.accounting.akun[0].saldo = 999999;
+const projectMerged = runInNewContext(
+  'mergeSnapshotForRole_(JSON.parse(' + JSON.stringify(JSON.stringify(cloudSnapshot)) + '), JSON.parse(' + JSON.stringify(JSON.stringify(incomingCloud)) + '), "PROYEK")',
+  gasContext
+);
+assert.equal(projectMerged.operational.tanah[0].catatan, 'Perubahan proyek');
+assert.equal(projectMerged.accounting.akun[0].saldo, 123456, 'role PROYEK tidak boleh mengubah array akuntansi dari client');
+assert.throws(
+  () => runInNewContext(
+    'mergeSnapshotForRole_(JSON.parse(' + JSON.stringify(JSON.stringify(cloudSnapshot)) + '), JSON.parse(' + JSON.stringify(JSON.stringify(incomingCloud)) + '), "VIEWER")',
+    gasContext
+  ),
+  /hanya mendapat akses baca/
+);
+console.log('PASS: backend menjaga write scope role PROYEK dan menolak write VIEWER');
+
 console.log('\nALL PRODUCTION ACCOUNTING REGRESSION TESTS PASSED');
