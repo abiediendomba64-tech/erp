@@ -56,7 +56,17 @@ export function getLegacyLocalSnapshot(): WorkspaceSnapshot | null {
 }
 
 export function countSnapshotRecords(snapshot: WorkspaceSnapshot) {
-  const operational = Object.values(snapshot.operational).reduce((count, value) => count + (Array.isArray(value) ? value.length : 0), 0);
-  const accounting = Object.values(snapshot.accounting).reduce((count, value) => count + (Array.isArray(value) ? value.length : 0), 0);
-  return { operational, accounting, total: operational + accounting };
+  const operationalByModule = Object.fromEntries(
+    Object.entries(snapshot.operational)
+      .filter(([key, value]) => key !== 'menuConfig' && Array.isArray(value))
+      .map(([key, value]) => [key, (value as unknown[]).length])
+  ) as Record<string, number>;
+  const accountingByModule = Object.fromEntries(
+    Object.entries(snapshot.accounting)
+      .filter(([, value]) => Array.isArray(value))
+      .map(([key, value]) => [key, (value as unknown[]).length])
+  ) as Record<string, number>;
+  const operational = Object.values(operationalByModule).reduce((count, value) => count + value, 0);
+  const accounting = Object.values(accountingByModule).reduce((count, value) => count + value, 0);
+  return { operational, accounting, total: operational + accounting, operationalByModule, accountingByModule };
 }
