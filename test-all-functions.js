@@ -384,6 +384,9 @@ assert.throws(() => gasContext.validateRoleChanges_(
 
 assert.match(securitySource, /version_conflict/, 'version conflicts must be rejected rather than silently overwriting');
 assert.match(securitySource, /tokeninfo\?id_token=/, 'Google ID tokens must be verified server-side');
+assert.match(securitySource, /claims\.iss/, 'Google ID token issuer must be checked');
+assert.match(securitySource, /readWorkspaceSlice_\(workspaceId, 'workspace'\)/,
+  'operational and accounting data must load from one canonical workspace snapshot');
 const wrapperSource = await readFile(new URL('./google-apps-script/Wrapper.html', import.meta.url), 'utf8');
 assert.match(wrapperSource, /event\.origin !== FRONTEND_ORIGIN/, 'bridge must validate frontend origin');
 assert.match(wrapperSource, /event\.source !== frame\.contentWindow/, 'bridge must validate the calling frame');
