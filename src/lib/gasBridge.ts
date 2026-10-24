@@ -151,7 +151,12 @@ export async function persistWorkspaceSlice(slice: Slice, data: unknown): Promis
   const operation = queues[slice].then(async () => {
     if (!workspaceId || !getCloudIdToken()) throw new Error('Workspace cloud belum aktif. Perubahan belum disimpan.');
     if (blocked[slice]) throw new Error('Penyimpanan diblokir setelah konflik cloud; muat ulang agar data tetap konsisten.');
-    notifyStatus('saving', 'Menyimpan perubahan ke Google Sheets…');
+    const otherFailures = (Object.keys(failedSnapshots) as Slice[]).filter(key => key !== slice && failedSnapshots[key] !== undefined);
+    if (otherFailures.length) {
+      notifyStatus('error', 'Menyimpan bagian ini, tetapi ada perubahan lain yang belum tersimpan. Periksa status cloud setelah proses selesai.');
+    } else {
+      notifyStatus('saving', 'Menyimpan perubahan ke Google Sheets…');
+    }
     try {
       const result = await gasRpc<{ version: number; changedKeys?: string[]; unchanged?: boolean }>('workspace.save', {
         workspaceId,
@@ -162,7 +167,12 @@ export async function persistWorkspaceSlice(slice: Slice, data: unknown): Promis
       if (!Number.isInteger(result.version)) throw new Error('Backend tidak mengembalikan versi penyimpanan yang valid.');
       versions[slice] = result.version;
       delete failedSnapshots[slice];
-      notifyStatus('saved', 'Perubahan berhasil tersimpan di Google Sheets.');
+      const remainingFailures = (Object.keys(failedSnapshots) as Slice[]).filter(key => failedSnapshots[key] !== undefined);
+      if (remainingFailures.length) {
+        notifyStatus('error', 'Bagian ini tersimpan, tetapi ada perubahan di bagian lain yang belum tersimpan. Coba lagi atau buat backup.');
+      } else {
+        notifyStatus('saved', 'Semua perubahan ERP yang tertunda berhasil tersimpan di Google Sheets.');
+      }
     } catch (error) {
       failedSnapshots[slice] = data;
       const code = (error as Error & { code?: string }).code || '';
