@@ -137,7 +137,7 @@ export async function loginGoogleErp(idToken: string): Promise<{
   expiresAt: string;
 }> {
   if (!idToken.trim()) throw new Error('Google Sign-In ID token wajib diisi.');
-  return send('auth.login', { idToken });
+  return send<{\n    success: boolean;\n    sessionToken: string;\n    user: { email: string; nama: string; phone: string; role: string; status: string };\n    expiresAt: string;\n  }>('auth.login', { idToken });
 }
 
 export async function logoutGoogleErp(): Promise<void> {
