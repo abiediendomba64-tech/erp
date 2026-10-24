@@ -1375,10 +1375,12 @@ function apiBootstrapAdmin(bootstrapCode, email, password, name, phone, snapshot
       password_salt: salt, password_hash: passwordHash_(cleanPassword, salt),
       failed_attempts: 0, locked_until: '', created_at: now, last_login: now
     };
-    appendRecord_('USERS', ERP_USER_HEADERS_, user);
-    properties.deleteProperty('ERP_BOOTSTRAP_CODE');
-    const session = createSession_(user);
+    // Persist the validated workspace before consuming the one-time code or creating
+    // an active account. If the cloud snapshot write fails, setup can be retried safely.
     writeWorkspaceSnapshot_(validatedSnapshot, 1, { user: user });
+    appendRecord_('USERS', ERP_USER_HEADERS_, user);
+    const session = createSession_(user);
+    properties.deleteProperty('ERP_BOOTSTRAP_CODE');
     const context = { user: user };
     recordBackendAudit_(context, 'BOOTSTRAP_ADMIN', 'USERS', user.id, { role: 'ADMIN' });
     return {
