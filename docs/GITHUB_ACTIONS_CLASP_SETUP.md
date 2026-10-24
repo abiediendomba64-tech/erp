@@ -1,7 +1,8 @@
 # GitHub Actions CI/CD untuk Google Apps Script ERP
 
-Dokumen ini menjelaskan workflow `.github/workflows/ci.yml` dan
-`.github/workflows/deploy.yml`.
+Dokumen ini menjelaskan quality gate yang sudah ada di `.github/workflows/erp-ci.yml`
+dan `.github/workflows/google-cloud-ssot.yml`, serta workflow baru
+`.github/workflows/deploy.yml`. Repo sudah memiliki CI; workflow CI duplikat tidak ditambahkan.
 
 ## 1. Apa yang dijalankan
 
