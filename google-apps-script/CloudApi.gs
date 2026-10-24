@@ -137,8 +137,9 @@ function verifyGoogleIdentityToken_(idToken) {
   const clientId = String(PropertiesService.getScriptProperties().getProperty('GOOGLE_CLIENT_ID') || '').trim();
   if (!clientId) throw new Error('GOOGLE_CLIENT_ID belum diset pada Apps Script > Project Settings > Script Properties.');
 
-  const url = 'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(token);
-  const response = UrlFetchApp.fetch(url, { method: 'get', muteHttpExceptions: true });
+  const response = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo', {
+    method: 'post', payload: { id_token: token }, muteHttpExceptions: true
+  });
   if (response.getResponseCode() !== 200) throw new Error('Token Google ditolak atau sudah kedaluwarsa. Silakan login kembali.');
   const claims = JSON.parse(response.getContentText());
   const issuer = String(claims.iss || '');
@@ -246,13 +247,12 @@ function loadCloudWorkspace_(user, workspaceId) {
   return {
     success: true,
     workspace: { workspace_id: String(workspace[0]), name: String(workspace[1]), role: membership.role },
-    data: stored.data,
+    data: scopeCloudWorkspaceData_(stored.data, membership.role),
     version: stored.version
   };
 }
 
 function saveCloudWorkspaceState_(user, workspaceId, data, expectedVersion) {
-  validateCloudWorkspaceData_(data);
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -264,14 +264,16 @@ function saveCloudWorkspaceState_(user, workspaceId, data, expectedVersion) {
     if (!Number.isInteger(expected) || expected !== current.version) {
       return { success: true, saved: false, version: current.version, error_code: 'conflict' };
     }
-    authorizeCloudStateChanges_(current.data, data, membership.role);
+    validateCloudWorkspaceData_(data);
+    const scoped = restoreHiddenCloudModules_(current.data, data, membership.role);
+    authorizeCloudStateChanges_(current.data, scoped, membership.role);
     const nextVersion = current.version + 1;
     const now = new Date().toISOString();
-    const changes = writeCloudRecordDiff_(String(workspaceId), nextVersion, current.data, data, user.email, now);
+    const changes = writeCloudRecordDiff_(String(workspaceId), nextVersion, current.data, scoped, user.email, now);
+    if (changes.total === 0) {
+      return { success: true, saved: true, version: current.version, error_code: null, records_changed: 0, records_deleted: 0 };
+    }
     updateCloudStateHead_(String(workspaceId), nextVersion, changes.recordCount, now, user.email);
-    cloudAudit_(user.email, 'SAVE_WORKSPACE_STATE', 'ERP_STATE', String(workspaceId),
-      JSON.stringify({ version: current.version }),
-      JSON.stringify({ version: nextVersion, records_changed: changes.changed, records_deleted: changes.deleted }));
     return { success: true, saved: true, version: nextVersion, error_code: null, records_changed: changes.changed, records_deleted: changes.deleted };
   } finally {
     lock.releaseLock();
@@ -294,7 +296,85 @@ function validateCloudWorkspaceData_(data) {
   if (json.length > CLOUD_MAX_JSON_CHARS_) throw new Error('Snapshot ERP terlalu besar. Pindahkan file/foto ke Google Drive; batas snapshot 1,5 juta karakter.');
 }
 
+function cloudAllowedModules_(role) {
+  if (role === 'ADMIN') {
+    return {
+      operational: CLOUD_OPERATIONAL_KEYS_.slice(),
+      accounting: CLOUD_ACCOUNTING_KEYS_.slice()
+    };
+  }
+  if (role === 'KEUANGAN') {
+    return {
+      operational: ['bukuKas', 'arsipBukti', 'posKewajiban', 'auditLog', 'tanah', 'beko', 'notaMaterial', 'anggaran', 'arusKas', 'ocr', 'whatsapp', 'taxRecords'],
+      accounting: CLOUD_ACCOUNTING_KEYS_.slice()
+    };
+  }
+  if (role === 'PROYEK') {
+    return {
+      operational: ['tanah', 'beko', 'notaMaterial', 'stok', 'produksi', 'penjualan', 'pembelian', 'anggaran', 'auditLog', 'arsipBukti', 'ocr', 'qcRecords', 'assets', 'housingUnits', 'whatsapp'],
+      accounting: []
+    };
+  }
+  if (role === 'VIEWER') {
+    return {
+      operational: ['tanah', 'beko'],
+      accounting: []
+    };
+  }
+  throw new Error('Role workspace tidak dikenal.');
+}
+
+function scopeCloudWorkspaceData_(fullData, role) {
+  const allowed = cloudAllowedModules_(role);
+  const result = { operational: {}, accounting: {} };
+  CLOUD_OPERATIONAL_KEYS_.forEach(key => {
+    result.operational[key] = allowed.operational.indexOf(key) >= 0
+      ? fullData.operational[key]
+      : [];
+  });
+  CLOUD_ACCOUNTING_KEYS_.forEach(key => {
+    result.accounting[key] = allowed.accounting.indexOf(key) >= 0
+      ? fullData.accounting[key]
+      : [];
+  });
+  return result;
+}
+
+function restoreHiddenCloudModules_(currentData, incomingData, role) {
+  const allowed = cloudAllowedModules_(role);
+  const result = { operational: {}, accounting: {} };
+  CLOUD_OPERATIONAL_KEYS_.forEach(key => {
+    result.operational[key] = allowed.operational.indexOf(key) >= 0
+      ? incomingData.operational[key]
+      : currentData.operational[key];
+  });
+  CLOUD_ACCOUNTING_KEYS_.forEach(key => {
+    result.accounting[key] = allowed.accounting.indexOf(key) >= 0
+      ? incomingData.accounting[key]
+      : currentData.accounting[key];
+  });
+  validateCloudWorkspaceData_(result);
+  return result;
+}
+
+function validateAppendOnlyAuditLog_(oldRows, newRows) {
+  const next = new Map();
+  newRows.forEach(row => {
+    const id = String(row && row.id || '');
+    if (!id) throw new Error('Setiap entri audit wajib memiliki ID.');
+    if (next.has(id)) throw new Error('ID audit duplikat: ' + id);
+    next.set(id, JSON.stringify(row));
+  });
+  oldRows.forEach(row => {
+    const id = String(row && row.id || '');
+    if (!id || !next.has(id) || next.get(id) !== JSON.stringify(row)) {
+      throw new Error('Audit log bersifat append-only. Entri lama tidak boleh diubah/dihapus. Buat entri koreksi dengan alasan dan sumber.');
+    }
+  });
+}
+
 function authorizeCloudStateChanges_(oldData, newData, role) {
+  validateAppendOnlyAuditLog_(oldData.operational.auditLog, newData.operational.auditLog);
   if (role === 'ADMIN') return;
   const financialOps = [
     'bukuKas', 'arsipBukti', 'posKewajiban', 'auditLog', 'tanah', 'beko',
@@ -433,7 +513,7 @@ function writeCloudRecordDiff_(workspaceId, version, oldData, newData, email, ti
   // If execution fails before the head update, the new event rows are ignored on load.
   if (eventRows.length) recordsSheet.getRange(recordsSheet.getLastRow() + 1, 1, eventRows.length, eventRows[0].length).setValues(eventRows);
   if (auditRows.length) auditSheet.getRange(auditSheet.getLastRow() + 1, 1, auditRows.length, auditRows[0].length).setValues(auditRows);
-  return { changed: changes.length - deleted, deleted: deleted, recordCount: newRecords.size };
+  return { changed: changes.length - deleted, deleted: deleted, total: changes.length, recordCount: newRecords.size };
 }
 
 function flattenCloudRecords_(data) {
