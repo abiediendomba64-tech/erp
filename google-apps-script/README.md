@@ -42,7 +42,7 @@ Sheet backend `ERP_USERS`, `ERP_WORKSPACES`, `ERP_WORKSPACE_MEMBERS`, `ERP_STATE
 1. Buka Google Cloud Console project yang sesuai.
 2. Konfigurasi OAuth consent screen/Google Auth platform sesuai penggunaan internal atau eksternal.
 3. Buat OAuth Client ID dengan tipe **Web application**.
-4. Masukkan origin frontend React (tanpa path) di “Authorized JavaScript origins”; contohnya `https://contoh.pages.dev`.
+4. Masukkan origin frontend React (tanpa path) di “Authorized JavaScript origins”; contohnya `https://contoh.pages.dev`. Set build variable `VITE_GOOGLE_APPS_SCRIPT_WEBAPP_URL` ke URL deployment Apps Script `/exec` yang tepat. Bridge menolak deployment Apps Script lain agar parent yang tidak dipercaya tidak dapat menangkap token login.
 5. Salin Client ID ke Script Property `GOOGLE_OAUTH_CLIENT_ID`.
 6. Gunakan Google Identity Services pada frontend; ID token dikirim ke Apps Script dan diverifikasi server. Jangan gunakan email dari input user sebagai bukti identitas.
 
