@@ -38,6 +38,8 @@ function ensureCloudSchema_() {
     ['workspace_id', 'version', 'commit_id', 'namespace', 'module', 'record_id', 'payload_json', 'updated_at', 'updated_by', 'deleted']);
   ensureSheetHeaders_(ss.getSheetByName('ERP_COMMITS') || ss.insertSheet('ERP_COMMITS'),
     ['workspace_id', 'version', 'commit_id', 'committed_at', 'committed_by']);
+  ensureSheetHeaders_(ss.getSheetByName('AUDIT_LOG') || ss.insertSheet('AUDIT_LOG'),
+    ['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan', 'workspace_id']);
 
 }
 
@@ -60,6 +62,8 @@ function handleCloudApi_(request) {
       return createCloudWorkspace_(session.user, request.name, request.data);
     case 'workspace.load':
       return loadCloudWorkspace_(session.user, request.workspaceId);
+    case 'audit.list':
+      return listWorkspaceAudit_(session.user, request.workspaceId, request.limit);
     case 'state.save':
       return saveCloudWorkspaceState_(session.user, request.workspaceId, request.data, request.expectedVersion);
     case 'users.list':
@@ -509,7 +513,7 @@ function writeCloudRecordDiff_(workspaceId, version, commitId, oldData, newData,
   if (changes.length > 150) throw new Error('Satu penyimpanan mengubah lebih dari 150 record. Pecah perubahan menjadi beberapa penyimpanan agar Apps Script tetap ringan.');
 
   const auditSheet = ss.getSheetByName('AUDIT_LOG') || ss.insertSheet('AUDIT_LOG');
-  ensureSheetHeaders_(auditSheet, ['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan']);
+  ensureSheetHeaders_(auditSheet, ['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan', 'workspace_id']);
   const eventRows = [];
   const auditRows = [];
 
@@ -527,7 +531,8 @@ function writeCloudRecordDiff_(workspaceId, version, commitId, oldData, newData,
       recordId,
       change.old ? change.old.json : '',
       change.next ? change.next.json : '',
-      'ERP cloud versioned save; candidate commit=' + commitId + '; version=' + version
+      'ERP cloud versioned save; candidate commit=' + commitId + '; version=' + version,
+      workspaceId
     ]);
   });
 
@@ -735,11 +740,63 @@ function addCloudWorkspaceMember_(actor, workspaceId, emailValue, role) {
 function cloudAudit_(email, action, table, recordId, oldValue, newValue) {
   const ss = getErpSpreadsheet_();
   const sheet = ss.getSheetByName('AUDIT_LOG') || ss.insertSheet('AUDIT_LOG');
-  ensureSheetHeaders_(sheet, ['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan']);
+  ensureSheetHeaders_(sheet, ['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan', 'workspace_id']);
+  let workspaceId = '';
+  if (table === 'ERP_WORKSPACES') workspaceId = String(recordId || '');
+  else if (table === 'ERP_MEMBERS') workspaceId = String(recordId || '').split(':')[0];
+  else if (table === 'ERP_STATE') workspaceId = String(recordId || '');
+  else {
+    try {
+      const parsed = JSON.parse(String(newValue || ''));
+      workspaceId = String(parsed.workspace_id || '');
+    } catch (_) {
+      workspaceId = '';
+    }
+  }
   sheet.appendRow([
     'LOG-' + Utilities.getUuid(), new Date().toISOString(), email, action, table,
-    recordId, String(oldValue || ''), String(newValue || ''), 'Google Cloud API'
+    recordId, String(oldValue || ''), String(newValue || ''), 'Google Apps Script server action', workspaceId
   ]);
+}
+
+function listWorkspaceAudit_(user, workspaceId, requestedLimit) {
+  const id = String(workspaceId || '').trim();
+  const membership = findCloudMembership_(id, user.email);
+  if (!membership) throw new Error('Anda tidak memiliki akses audit ke workspace ini.');
+  const allowed = cloudAllowedModules_(membership.role);
+  const maxRows = Math.max(10, Math.min(500, Number(requestedLimit) || 200));
+  const ss = getErpSpreadsheet_();
+  const sheet = ss.getSheetByName('AUDIT_LOG');
+  if (!sheet || sheet.getLastRow() < 2) return { success: true, audit: [] };
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(String);
+  const result = [];
+  for (let i = values.length - 1; i >= 1 && result.length < maxRows; i--) {
+    const record = cloudRowToObject_(headers, values[i]);
+    if (String(record.workspace_id || '') !== id) continue;
+    const tableName = String(record.tabel || '');
+    const match = /^(operational|accounting)\.(.+)$/.exec(tableName);
+    if (match) {
+      const list = match[1] === 'operational' ? allowed.operational : allowed.accounting;
+      if (list.indexOf(match[2]) < 0) continue;
+    } else if (['ERP_WORKSPACES', 'ERP_MEMBERS'].includes(tableName) && membership.role !== 'ADMIN') {
+      continue;
+    }
+    result.push({
+      id: String(record.id || ''),
+      timestamp: String(record.timestamp || ''),
+      user: String(record.user || ''),
+      aksi: String(record.aksi || ''),
+      tabel: tableName,
+      record_id: String(record.record_id || ''),
+      nilai_lama: String(record.nilai_lama || ''),
+      nilai_baru: String(record.nilai_baru || ''),
+      alasan: String(record.alasan || ''),
+      workspace_id: String(record.workspace_id || '')
+    });
+  }
+  return { success: true, audit: result };
 }
 
 function cloudRowToObject_(headers, row) {
