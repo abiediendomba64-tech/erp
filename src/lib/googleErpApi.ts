@@ -108,7 +108,7 @@ async function send<T>(action: string, params: ApiParams = {}): Promise<T> {
   }
 
   if (action === 'auth.login') {
-    const result = payload as ApiEnvelope<{ sessionToken: string }>;
+    const result = payload as unknown as { sessionToken?: string };
     if (!result.sessionToken) throw new Error('Backend login tidak mengembalikan token sesi.');
     saveSessionToken(result.sessionToken);
   } else if (action === 'auth.logout') {
