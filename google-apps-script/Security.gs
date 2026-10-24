@@ -190,6 +190,9 @@ function verifyGoogleIdToken_(idToken) {
   );
   if (response.getResponseCode() !== 200) throw apiError_('unauthenticated', 'Sesi Google tidak valid atau kedaluwarsa. Silakan masuk ulang.');
   var claims = JSON.parse(response.getContentText() || '{}');
+  if (['accounts.google.com', 'https://accounts.google.com'].indexOf(String(claims.iss || '')) === -1) {
+    throw apiError_('unauthenticated', 'Penerbit token identitas tidak valid.');
+  }
   if (String(claims.aud || '') !== config.googleClientId) throw apiError_('unauthenticated', 'Token Google bukan untuk aplikasi ERP ini.');
   if (String(claims.email_verified || '').toLowerCase() !== 'true') throw apiError_('email_unverified', 'Akun Google harus memiliki email terverifikasi.');
   if (!claims.email || !claims.sub || Number(claims.exp || 0) <= Math.floor(Date.now() / 1000)) {
