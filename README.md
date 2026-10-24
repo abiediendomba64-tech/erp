@@ -23,6 +23,15 @@
 
 Repository berisi aplikasi React untuk akuntansi dan operasional proyek, serta integrasi Google Apps Script yang masih memerlukan konfigurasi.
 
+### Tahap cloud Google terbaru (branch belum production)
+
+Branch `feat/erp-google-cloud-ssot-20261024` menambahkan login Google yang diverifikasi server, role server, workspace cloud, snapshot Google Sheets berversi, konflik antarperangkat yang ditolak alih-alih ditimpa, dan audit log server. UI tidak lagi memakai tombol pergantian role palsu. Implementasi ini tidak menggunakan Supabase.
+
+Panduan konfigurasi yang benar: [docs/GOOGLE_BACKEND_SETUP.md](docs/GOOGLE_BACKEND_SETUP.md).
+
+**Batas penting:** branch ini belum di-deploy ke akun Google/Cloudflare pemilik aplikasi. OCR, WhatsApp/Telegram, dan upload Drive tetap dinonaktifkan di gateway baru. Model penyimpanan saat ini adalah snapshot JSON berversi per bagian pada Google Sheets (maksimum 3 MB per bagian), belum tabel relasional per modul, dan perubahan yang melibatkan store operasional + akuntansi belum merupakan satu transaksi atomik. Jangan memakai ini untuk transaksi produksi sebelum uji end-to-end dan rekonsiliasi berhasil.
+
+
 ### Fungsi yang tersedia pada aplikasi
 - Input transaksi akuntansi dengan preview jurnal dan validasi debit/kredit.
 - Dashboard dan laporan laba rugi, neraca, serta arus kas yang dihitung dari jurnal modul akuntansi.
@@ -187,37 +196,11 @@ LEVEL 5: LAPORAN KEUANGAN (Auto-Generate)
 
 ## 🚀 SETUP FULL GOOGLE STACK
 
-### **Langkah 1: Dapatkan Gemini API Key (10 menit)**
-1. Buka https://aistudio.google.com/app/apikey
-2. Login dengan akun Google
-3. Klik "Create API key"
-4. Copy API key (format: `AIzaSy...`)
+### Setup backend Google (auth + sumber data cloud)
 
-### Langkah 2: Siapkan Google Apps Script
-1. Mulai dari spreadsheet uji dan pilih Extensions → Apps Script.
-2. Salin kode dari google-apps-script/Code.gs.
-3. Pada Project Settings → Script Properties, isi GEMINI_API_KEY hanya jika ingin mengaktifkan OCR. Jangan simpan kunci di source code atau frontend.
-4. Jika project tidak terikat ke spreadsheet, tambahkan Script Property SPREADSHEET_ID.
-5. Jalankan setupDatabase() lalu periksa header semua sheet.
+Ikuti [panduan Google Backend Setup](docs/GOOGLE_BACKEND_SETUP.md) secara berurutan untuk membuat tiga file Apps Script, menyiapkan OAuth Client ID, Script Properties, environment frontend, deployment Web App, dan workspace pertama.
 
-### Langkah 3: Deployment dengan kontrol akses
-- Mulai dengan data uji, bukan data keuangan sensitif.
-- Jangan membuka endpoint tulis keuangan ke publik dengan akses “Anyone”; otentikasi/otorisasi produksi belum tersedia.
-- Webhook provider perlu verifikasi masing-masing. Deployment berhasil tidak berarti integrasinya sudah aktif.
-
-### Langkah 4: Konfigurasi frontend
-- Set environment build VITE_ERP_API_URL ke URL Web App Apps Script.
-- Setelah mengganti environment Cloudflare Pages, jalankan build/deploy baru.
-- Ini hanya mengonfigurasi helper API; komponen UI belum seluruhnya memakai backend dan sebagian state masih localStorage.
-
-### **Langkah 5: Test End-to-End (30 menit)**
-1. Test OCR dengan foto kwitansi
-2. Test input transaksi
-3. Test laporan keuangan
-4. Test reversal journal
-
-**Total Waktu:** 2 jam  
-**Total Biaya:** Rp0
+Gemini OCR, Drive upload, serta webhook WhatsApp/Telegram **belum diaktifkan** pada gateway aman ini. Jangan gunakan petunjuk lama di bawah ini untuk membuka endpoint tulis publik. Data browser tidak otomatis dipindahkan ke cloud; administrator harus memilih impor setelah memeriksa data lama.
 
 **Dokumentasi Detail:** Lihat `IMPLEMENTASI_NYATA.md`
 
