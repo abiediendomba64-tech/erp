@@ -449,7 +449,11 @@ function redactWorkspaceForUser_(user, operational, accounting) {
 }
 
 function preserveRestrictedCollections_(user, slice, before, submitted) {
-  if (user.role === 'ADMIN') return submitted;
+  var next = JSON.parse(JSON.stringify(submitted));
+  // The client cannot create, edit, or delete authoritative audit entries. The
+  // backend appends its own identity-stamped events to AUDIT_LOG.
+  if (slice === 'operational') next.auditLog = before.auditLog;
+  if (user.role === 'ADMIN') return next;
   var allowed = slice === 'operational'
     ? {
         KEUANGAN: ['bukuKas','arsipBukti','posKewajiban','tanah','beko','notaMaterial','penggajian','anggaran','penjualan','pembelian','taxRecords'],
@@ -460,13 +464,9 @@ function preserveRestrictedCollections_(user, slice, before, submitted) {
         PROYEK: ['akun','rab','schedule']
       };
   var mutable = allowed[user.role] || [];
-  var next = JSON.parse(JSON.stringify(submitted));
   Object.keys(before).forEach(function (key) {
     if (mutable.indexOf(key) === -1) next[key] = before[key];
   });
-  // Audit records must be extended by an authorized server action; never accept
-  // edits/deletions of existing rows from non-admin clients.
-  if (slice === 'operational' && user.role !== 'ADMIN') next.auditLog = before.auditLog;
   return next;
 }
 
@@ -693,11 +693,8 @@ function buildBalanceSheetFromCloud_(user, workspaceId, asOfDate) {
   var totalKewajibanPendek = kewajibanPendek.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
   var totalKewajibanPanjang = kewajibanPanjang.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
   var equity = group('Ekuitas', null);
-  var cumulative = buildProfitLossFromCloud_(user, workspaceId, cutoff.slice(0, 4));
-  var profitToCutoff = 0;
-  // Calculate year-to-date and prior years cumulatively for balance sheet purposes.
-  var currentPnl = calculateProfitLossCumulative_(accounts, journals, cutoff);
-  profitToCutoff = currentPnl;
+  // Cumulative profit/loss through the balance-sheet date is part of equity until closing entries transfer it.
+  var profitToCutoff = calculateProfitLossCumulative_(accounts, journals, cutoff);
   var retainedIndex = equity.findIndex(function (item) { return item.akun === 'Laba Ditahan'; });
   if (retainedIndex >= 0) equity[retainedIndex].jumlah += profitToCutoff;
   else if (profitToCutoff !== 0) equity.push({ akun: 'Laba Bersih Periode Berjalan', jumlah: profitToCutoff });
