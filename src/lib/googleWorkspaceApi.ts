@@ -50,6 +50,18 @@ export function getCloudPublicConfig() {
 export function loginWithGoogleIdToken(idToken: string) {
   return callGoogleAppsScript<LoginResponse>('apiLogin', idToken);
 }
+export interface CloudManagedUser {
+  email: string;
+  display_name: string;
+  role: WorkspaceRole;
+  active: boolean;
+  workspace_role: string;
+  created_at: string;
+  updated_at: string;
+}
+export function listCloudUsers(idToken: string, workspaceId: string) {
+  return callGoogleAppsScript<{ success: true; users: CloudManagedUser[] }>('apiListUsers', idToken, workspaceId);
+}
 export function listCloudWorkspaces(idToken: string) {
   return callGoogleAppsScript<{ success: true; workspaces: CloudWorkspace[] }>('apiListWorkspaces', idToken);
 }
