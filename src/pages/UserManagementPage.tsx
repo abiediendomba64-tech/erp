@@ -1,278 +1,222 @@
-import { useState } from 'react';
-import { Users, Plus, Edit, Trash2, Shield, Eye, Save, X } from 'lucide-react';
-import { UserRole } from '../types';
+import { useCallback, useEffect, useState } from 'react';
+import { Users, Plus, Edit, UserX, Shield, Save, X, LoaderCircle, RefreshCw, AlertCircle } from 'lucide-react';
+import { gasRpc, CloudUser } from '../lib/gasBridge';
+import { useCloudAuth } from '../auth/CloudAuthGate';
 
-interface User {
+type UserRole = CloudUser['role'];
+interface ManagedUser {
   id: string;
   nama: string;
   email: string;
-  phone: string;
   role: UserRole;
   status: 'active' | 'inactive';
   createdAt: string;
   lastLogin?: string;
 }
+interface UserForm {
+  nama: string;
+  email: string;
+  role: UserRole;
+  status: 'active' | 'inactive';
+}
+const emptyForm: UserForm = { nama: '', email: '', role: 'VIEWER', status: 'active' };
 
-const initialUsers: User[] = [
-  { id: 'U-001', nama: 'Administrator', email: 'admin@proyek.com', phone: '081234567890', role: 'ADMIN', status: 'active', createdAt: '2026-01-01', lastLogin: '2026-10-21' },
-  { id: 'U-002', nama: 'Keuangan', email: 'keuangan@proyek.com', phone: '081234567891', role: 'KEUANGAN', status: 'active', createdAt: '2026-01-01', lastLogin: '2026-10-20' },
-  { id: 'U-003', nama: 'Proyek Manager', email: 'proyek@proyek.com', phone: '081234567892', role: 'PROYEK', status: 'active', createdAt: '2026-01-01', lastLogin: '2026-10-19' },
-  { id: 'U-004', nama: 'Viewer Client', email: 'client@proyek.com', phone: '081234567893', role: 'VIEWER', status: 'active', createdAt: '2026-06-01', lastLogin: '2026-10-15' },
-];
+const roleInfo: Record<UserRole, string> = {
+  ADMIN: 'Mengatur pengguna dan semua modul ERP.',
+  KEUANGAN: 'Mengelola pencatatan keuangan dan administrasi yang diizinkan server.',
+  PROYEK: 'Mengelola data pekerjaan, RAB, QC, aset, dan unit yang diizinkan server.',
+  VIEWER: 'Hanya membaca ringkasan/progress yang disaring backend.',
+};
 
 export default function UserManagementPage() {
-  const [users, setUsers] = useState<User[]>(initialUsers);
+  const { user, workspace } = useCloudAuth();
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [formData, setFormData] = useState<Partial<User>>({
-    role: 'VIEWER',
-    status: 'active'
-  });
+  const [editing, setEditing] = useState<ManagedUser | null>(null);
+  const [form, setForm] = useState<UserForm>(emptyForm);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
-  const handleSave = () => {
-    if (editingUser) {
-      // Update
-      setUsers(users.map(u => u.id === editingUser.id ? { ...u, ...formData } as User : u));
-    } else {
-      // Create
-      const newUser: User = {
-        id: `U-${String(users.length + 1).padStart(3, '0')}`,
-        nama: formData.nama || '',
-        email: formData.email || '',
-        phone: formData.phone || '',
-        role: formData.role as UserRole,
-        status: formData.status as 'active' | 'inactive',
-        createdAt: new Date().toISOString().split('T')[0],
-      };
-      setUsers([...users, newUser]);
+  const loadUsers = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await gasRpc<ManagedUser[]>('user.list', { workspaceId: workspace.id });
+      setUsers(data);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Daftar pengguna gagal dimuat dari cloud.');
+    } finally {
+      setLoading(false);
     }
-    setShowForm(false);
-    setEditingUser(null);
-    setFormData({ role: 'VIEWER', status: 'active' });
-  };
+  }, [workspace.id]);
 
-  const handleEdit = (user: User) => {
-    setEditingUser(user);
-    setFormData(user);
+  useEffect(() => { void loadUsers(); }, [loadUsers]);
+
+  const openNew = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setError('');
+    setNotice('');
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Yakin hapus user ini?')) {
-      setUsers(users.filter(u => u.id !== id));
+  const openEdit = (target: ManagedUser) => {
+    setEditing(target);
+    setForm({ nama: target.nama, email: target.email, role: target.role, status: target.status });
+    setError('');
+    setNotice('');
+    setShowForm(true);
+  };
+
+  const save = async () => {
+    if (!form.nama.trim() || !form.email.trim()) {
+      setError('Nama dan email Google wajib diisi.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await gasRpc<ManagedUser[]>('user.upsert', {
+        workspaceId: workspace.id,
+        nama: form.nama.trim(),
+        email: form.email.trim().toLowerCase(),
+        role: form.role,
+        status: form.status
+      });
+      setUsers(updated);
+      setShowForm(false);
+      setEditing(null);
+      setForm(emptyForm);
+      setNotice('Data pengguna tersimpan di Google Sheets. Login memakai akun Google pada email terdaftar.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Perubahan pengguna gagal disimpan.');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const roleColor = (role: UserRole) => {
-    switch (role) {
-      case 'ADMIN': return 'bg-red-100 text-red-800';
-      case 'KEUANGAN': return 'bg-blue-100 text-blue-800';
-      case 'PROYEK': return 'bg-emerald-100 text-emerald-800';
-      case 'VIEWER': return 'bg-gray-100 text-gray-800';
+  const disable = async (target: ManagedUser) => {
+    if (target.email === user.email) {
+      setError('Akun yang sedang dipakai tidak dapat dinonaktifkan dari sesi ini.');
+      return;
+    }
+    if (!window.confirm('Nonaktifkan akses ' + target.email + '? Pengguna ini tidak dapat masuk lagi setelah sesi Google divalidasi ulang.')) return;
+    setError('');
+    setNotice('');
+    try {
+      await gasRpc('user.disable', { email: target.email });
+      await loadUsers();
+      setNotice('Akses pengguna dinonaktifkan di backend.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Akses pengguna gagal dinonaktifkan.');
     }
   };
 
-  const rolePermissions: Record<UserRole, string[]> = {
-    'ADMIN': ['Semua akses', 'Kelola user', 'Konfigurasi sistem', 'Approve transaksi', 'Export data'],
-    'KEUANGAN': ['Buku kas', 'Arsip bukti', 'Utang', 'Laporan keuangan', 'Export data'],
-    'PROYEK': ['Register tanah', 'Beko', 'Stok', 'Produksi', 'Laporan proyek'],
-    'VIEWER': ['Dashboard (read-only)', 'Progress tanah', 'Progress beko'],
-  };
+  if (user.role !== 'ADMIN') {
+    return <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">Menu Manajemen User hanya dapat diakses oleh Administrator. Backend tetap memeriksa role meskipun halaman dibuka secara langsung.</div>;
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Users size={24} className="text-indigo-500" />
-            Manajemen User
-          </h1>
-          <p className="text-gray-500 mt-1">Tambah, edit, hapus user dan atur hak akses</p>
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900"><Users size={24} className="text-indigo-600" /> Manajemen User</h1>
+          <p className="mt-1 text-sm text-slate-500">Workspace: {workspace.name}. Daftar ini dibaca dari Google Sheets, bukan seed lokal.</p>
         </div>
-        <button
-          onClick={() => { setShowForm(true); setEditingUser(null); setFormData({ role: 'VIEWER', status: 'active' }); }}
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700"
-        >
-          <Plus size={18} /> Tambah User
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => void loadUsers()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 disabled:opacity-50"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh</button>
+          <button onClick={openNew} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"><Plus size={16} /> Tambah user</button>
+        </div>
       </div>
 
-      {/* Role Permissions Info */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-        <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-          <Shield size={18} className="text-indigo-500" />
-          Hak Akses per Role
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-          {(Object.keys(rolePermissions) as UserRole[]).map(role => (
-            <div key={role} className="p-3 bg-gray-50 rounded-lg">
-              <div className={`inline-block px-2 py-1 rounded text-xs font-bold mb-2 ${roleColor(role)}`}>
-                {role}
-              </div>
-              <ul className="text-xs text-gray-600 space-y-1">
-                {rolePermissions[role].map((perm, i) => (
-                  <li key={i} className="flex items-center gap-1">
-                    <span className="text-emerald-500">✓</span> {perm}
-                  </li>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {(Object.keys(roleInfo) as UserRole[]).map(role => (
+          <div key={role} className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700"><Shield size={13} /> {role}</div>
+            <p className="text-sm text-slate-600">{roleInfo[role]}</p>
+          </div>
+        ))}
+      </div>
+
+      {error && <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><AlertCircle size={17} className="mt-0.5 shrink-0" /> {error}</div>}
+      {notice && <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</div>}
+
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 p-10 text-slate-500"><LoaderCircle className="animate-spin" size={20} /> Mengambil data pengguna dari cloud…</div>
+        ) : users.length === 0 ? (
+          <div className="p-10 text-center text-slate-500">Belum ada pengguna. Tambahkan email Google yang akan digunakan untuk login.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-slate-600">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Nama / Email</th>
+                  <th className="px-4 py-3 font-medium">Role</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Login terakhir</th>
+                  <th className="px-4 py-3 text-right font-medium">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {users.map(target => (
+                  <tr key={target.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3"><p className="font-medium text-slate-900">{target.nama}</p><p className="text-xs text-slate-500">{target.email}</p></td>
+                    <td className="px-4 py-3"><span className="rounded-full bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-800">{target.role}</span></td>
+                    <td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${target.status === 'active' ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{target.status === 'active' ? 'Aktif' : 'Nonaktif'}</span></td>
+                    <td className="px-4 py-3 text-xs text-slate-500">{target.lastLogin ? new Date(target.lastLogin).toLocaleString('id-ID') : 'Belum pernah'}</td>
+                    <td className="px-4 py-3"><div className="flex justify-end gap-2">
+                      <button onClick={() => openEdit(target)} title="Edit user" className="rounded-md border border-slate-200 p-2 text-slate-700 hover:bg-slate-100"><Edit size={15} /></button>
+                      {target.status === 'active' && <button onClick={() => void disable(target)} title="Nonaktifkan akses" className="rounded-md border border-red-200 p-2 text-red-700 hover:bg-red-50"><UserX size={15} /></button>}
+                    </div></td>
+                  </tr>
                 ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* Form */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-            <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-gray-900">
-                {editingUser ? 'Edit User' : 'Tambah User Baru'}
-              </h2>
-              <button onClick={() => { setShowForm(false); setEditingUser(null); }} className="text-gray-400 hover:text-gray-600">
-                <X size={24} />
-              </button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 p-5">
+              <h2 className="text-lg font-bold text-slate-900">{editing ? 'Ubah pengguna' : 'Tambah pengguna'}</h2>
+              <button onClick={() => setShowForm(false)} aria-label="Tutup" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={20} /></button>
             </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700">Nama Lengkap *</label>
-                <input
-                  type="text"
-                  value={formData.nama || ''}
-                  onChange={e => setFormData({ ...formData, nama: e.target.value })}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder="Nama lengkap user"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">Email *</label>
-                <input
-                  type="email"
-                  value={formData.email || ''}
-                  onChange={e => setFormData({ ...formData, email: e.target.value })}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder="email@domain.com"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">No. WhatsApp *</label>
-                <input
-                  type="tel"
-                  value={formData.phone || ''}
-                  onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  placeholder="081234567890"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">Role *</label>
-                <select
-                  value={formData.role}
-                  onChange={e => setFormData({ ...formData, role: e.target.value as UserRole })}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="ADMIN">ADMIN - Full Access</option>
-                  <option value="KEUANGAN">KEUANGAN - Keuangan & Laporan</option>
-                  <option value="PROYEK">PROYEK - Lapangan & Stok</option>
-                  <option value="VIEWER">VIEWER - Read Only</option>
+            <div className="space-y-4 p-5">
+              <label className="block text-sm font-medium text-slate-700">Nama lengkap
+                <input value={form.nama} onChange={event => setForm({ ...form, nama: event.target.value })} maxLength={120} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" autoComplete="name" />
+              </label>
+              <label className="block text-sm font-medium text-slate-700">Email akun Google
+                <input value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} type="email" disabled={Boolean(editing)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" autoComplete="email" />
+              </label>
+              <label className="block text-sm font-medium text-slate-700">Role
+                <select value={form.role} onChange={event => setForm({ ...form, role: event.target.value as UserRole })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+                  <option value="VIEWER">VIEWER — baca ringkasan/progress</option>
+                  <option value="PROYEK">PROYEK — operasional lapangan</option>
+                  <option value="KEUANGAN">KEUANGAN — transaksi &amp; laporan</option>
+                  <option value="ADMIN">ADMIN — semua modul &amp; pengguna</option>
                 </select>
-              </div>
-              <div>
-                <label className="text-sm font-medium text-gray-700">Status</label>
-                <select
-                  value={formData.status}
-                  onChange={e => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
-                  className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
+              </label>
+              <label className="block text-sm font-medium text-slate-700">Status
+                <select value={form.status} onChange={event => setForm({ ...form, status: event.target.value as 'active' | 'inactive' })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+                  <option value="active">Aktif</option><option value="inactive">Nonaktif</option>
                 </select>
-              </div>
-              <div className="flex gap-2 pt-4 border-t border-gray-200">
-                <button
-                  onClick={handleSave}
-                  className="flex-1 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center justify-center gap-2"
-                >
-                  <Save size={18} /> Simpan
-                </button>
-                <button
-                  onClick={() => { setShowForm(false); setEditingUser(null); }}
-                  className="flex-1 bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200"
-                >
-                  Batal
-                </button>
+              </label>
+              <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Pengguna harus masuk dengan akun Google yang emailnya sama persis. Password tidak disimpan di ERP. Hak akses divalidasi di backend pada setiap permintaan.</p>
+              {error && <p className="text-sm text-red-700">{error}</p>}
+              <div className="flex gap-2 border-t border-slate-100 pt-4">
+                <button onClick={() => void save()} disabled={saving} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white disabled:opacity-50"><Save size={16} /> {saving ? 'Menyimpan…' : 'Simpan di cloud'}</button>
+                <button onClick={() => setShowForm(false)} disabled={saving} className="rounded-lg border border-slate-300 px-4 py-2 text-slate-700">Batal</button>
               </div>
             </div>
           </div>
         </div>
       )}
-
-      {/* User List */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">ID</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Nama</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">WhatsApp</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-600">Role</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Last Login</th>
-                <th className="text-center px-4 py-3 font-medium text-gray-600">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {users.map(user => (
-                <tr key={user.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-mono text-xs text-indigo-600">{user.id}</td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{user.nama}</td>
-                  <td className="px-4 py-3 text-gray-600">{user.email}</td>
-                  <td className="px-4 py-3 text-gray-600">{user.phone}</td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${roleColor(user.role)}`}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${user.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'}`}>
-                      {user.status === 'active' ? '● Active' : '○ Inactive'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 text-xs">{user.lastLogin || '-'}</td>
-                  <td className="px-4 py-3 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => handleEdit(user)}
-                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"
-                        title="Edit"
-                      >
-                        <Edit size={16} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(user.id)}
-                        className="p-1.5 text-red-600 hover:bg-red-50 rounded"
-                        title="Hapus"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Info */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-        <p className="text-sm text-amber-800">
-          <strong>Catatan:</strong> Saat ini user management masih disimpan di browser (localStorage). 
-          Untuk produksi, perlu backend API dengan database dan authentication yang proper.
-        </p>
-      </div>
     </div>
   );
 }
