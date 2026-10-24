@@ -460,3 +460,36 @@ assert.equal(cloudBalance.aset.total_aset, 70);
 assert.equal(cloudBalance.total_kewajiban_ekuitas, 70);
 assert.equal(cloudBalance.balance, true);
 console.log('PASS: backend recalculates journal totals, rejects imbalance, and computes cloud reports from the canonical workspace');
+
+
+const immutablePosted = JSON.parse(JSON.stringify(serverValidatedAccounting));
+const tamperedPosted = JSON.parse(JSON.stringify(serverValidatedAccounting));
+tamperedPosted.jurnal[0].keterangan = 'Edited posted journal';
+assert.throws(() => gasContext.enforceJournalIntegrity_(
+  { email: 'finance@example.com' }, immutablePosted, tamperedPosted
+), /tidak boleh diedit/,
+'posted journals must be immutable and corrections must use reversal entries');
+const draftBefore = JSON.parse(JSON.stringify(serverValidatedAccounting));
+draftBefore.jurnal[0].status = 'Draft';
+const draftAfter = JSON.parse(JSON.stringify(draftBefore));
+draftAfter.jurnal[0].status = 'Posted';
+draftAfter.jurnal[0].createdBy = 'spoofed-browser-identity';
+const promoted = gasContext.enforceJournalIntegrity_(
+  { email: 'finance@example.com' }, draftBefore, draftAfter
+);
+assert.equal(promoted.jurnal[0].status, 'Posted', 'balanced drafts can be promoted through a permitted workflow');
+assert.equal(promoted.jurnal[0].createdBy, draftBefore.jurnal[0].createdBy,
+  'the browser cannot rewrite the author of an existing journal');
+const newDraft = JSON.parse(JSON.stringify(serverValidatedAccounting));
+newDraft.jurnal.push({
+  ...JSON.parse(JSON.stringify(journalFixture)),
+  id: 'J-CLOUD-NEW',
+  no_jurnal: 'JU-CLOUD-NEW',
+  createdBy: 'forged',
+});
+const stamped = gasContext.enforceJournalIntegrity_(
+  { email: 'admin@example.com' }, serverValidatedAccounting, newDraft
+);
+assert.equal(stamped.jurnal.find(journal => journal.id === 'J-CLOUD-NEW').createdBy, 'admin@example.com',
+  'new journal author is stamped from verified server identity');
+console.log('PASS: posted-journal immutability, controlled promotion, and server-authenticated authorship');
