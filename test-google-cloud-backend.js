@@ -96,6 +96,8 @@ const tokenClaims = {
 };
 
 const context = {
+  // In production this helper is defined in the sibling Code.gs Apps Script file.
+  getErpSpreadsheet_: () => spreadsheet,
   PropertiesService: {
     getScriptProperties: () => ({ getProperty: (name) => properties.get(name) || null }),
   },
