@@ -1207,6 +1207,11 @@ function loginWithGoogle_(credential) {
       if (matched.status.toUpperCase() !== 'ACTIVE') throw new Error('Akun dinonaktifkan. Hubungi ADMIN.');
       if (!ERP_ALLOWED_ROLES_.includes(matched.role.toUpperCase())) throw new Error('Role pengguna belum valid.');
       if (!matched.sub) {
+        const gmailIdentity = email.endsWith('@gmail.com');
+        const workspaceIdentity = Boolean(String(claims.hd || '').trim());
+        if (!gmailIdentity && !workspaceIdentity) {
+          throw new Error('Untuk keamanan, undangan non-Gmail memerlukan pembuktian tambahan sebelum menautkan akun Google. Gunakan akun Gmail atau minta administrator memverifikasi akun organisasi.');
+        }
         users.getRange(matchedRow, index.google_sub + 1).setValue(sub);
       }
       users.getRange(matchedRow, index.last_login + 1).setValue(new Date().toISOString());
@@ -1334,6 +1339,17 @@ function saveUser_(input, actor) {
     const rows = sheet.getDataRange().getValues();
     const headers = rows[0].map(String);
     const index = Object.fromEntries(headers.map((key, i) => [key, i]));
+    const activeAdmins = rows.slice(1).filter(row =>
+      String(row[index.role] || '').toUpperCase() === 'ADMIN' &&
+      String(row[index.status] || '').toUpperCase() === 'ACTIVE'
+    );
+    const existingTarget = rows.slice(1).find(row => String(row[index.email] || '').trim().toLowerCase() === email);
+    if (activeAdmins.length === 1 && existingTarget &&
+        String(existingTarget[index.role] || '').toUpperCase() === 'ADMIN' &&
+        String(existingTarget[index.status] || '').toUpperCase() === 'ACTIVE' &&
+        (role !== 'ADMIN' || status !== 'ACTIVE')) {
+      throw new Error('Admin aktif terakhir tidak boleh diturunkan role atau dinonaktifkan.');
+    }
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][index.email] || '').trim().toLowerCase() === email) {
         sheet.getRange(i + 1, index.nama + 1).setValue(name || email);
@@ -1459,6 +1475,7 @@ function saveWorkspace_(snapshot, expectedVersion, actor) {
     const allowed = allowedModulesForRole_(actor.role);
     const denied = changed.filter(module => allowed.indexOf(module) < 0);
     if (denied.length) throw new Error('Role ' + actor.role + ' tidak boleh mengubah modul: ' + denied.join(', '));
+    if (changed.length === 0) return { saved: true, version: oldState.version, changedModules: [] };
     const oldAudit = oldState.snapshot.operational.auditLog;
     const nextAudit = next.operational.auditLog;
     if (nextAudit.length < oldAudit.length || oldAudit.some((row, i) => JSON.stringify(row) !== JSON.stringify(nextAudit[i]))) {
