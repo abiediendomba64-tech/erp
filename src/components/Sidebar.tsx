@@ -64,7 +64,7 @@ const financePages = new Set<Page>([
   'inputtransaksi', 'laporankeuangan', 'invoicepo', 'rab', 'pajak', 'surat'
 ]);
 const projectPages = new Set<Page>([
-  'dashboard', 'tanah', 'beko', 'nota', 'stok', 'produksi', 'penjualan',
+  'dashboard', 'tanah', 'beko', 'stok', 'produksi', 'penjualan',
   'pembelian', 'anggaran', 'qc', 'aset', 'surat', 'unit', 'ocr', 'arsipbukti'
 ]);
 
