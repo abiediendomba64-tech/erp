@@ -34,7 +34,7 @@ let versions: Record<Slice, number> = { operational: 0, accounting: 0 };
 let blocked: Record<Slice, boolean> = { operational: false, accounting: false };
 let failedSnapshots: Partial<Record<Slice, unknown>> = {};
 const inFlightSlices = new Set<Slice>();
-let queues: Record<Slice, Promise<void>> = { operational: Promise.resolve(), accounting: Promise.resolve() };
+let writeQueue: Promise<void> = Promise.resolve();
 let cloudStatus: CloudStatus = { state: 'idle', message: 'Belum terhubung ke Google Apps Script.' };
 const listeners = new Set<(status: CloudStatus) => void>();
 
@@ -151,7 +151,7 @@ export function configureCloudWorkspace(
   blocked = { operational: false, accounting: false };
   failedSnapshots = {};
   inFlightSlices.clear();
-  queues = { operational: Promise.resolve(), accounting: Promise.resolve() };
+  writeQueue = Promise.resolve();
   notifyStatus('saved', 'Terhubung. Data utama dimuat dari Google Sheets.');
 }
 
@@ -168,7 +168,7 @@ export function subscribeCloudStatus(listener: (status: CloudStatus) => void): (
 
 export async function persistWorkspaceSlice(slice: Slice, data: unknown): Promise<void> {
   if (activeRole === 'VIEWER') return;
-  const operation = queues[slice].then(async () => {
+  const operation = writeQueue.then(async () => {
     if (!workspaceId || !getCloudIdToken()) throw new Error('Workspace cloud belum aktif. Perubahan belum disimpan.');
     if (blocked[slice]) throw new Error('Penyimpanan diblokir setelah konflik cloud; muat ulang agar data tetap konsisten.');
     inFlightSlices.add(slice);
@@ -181,7 +181,8 @@ export async function persistWorkspaceSlice(slice: Slice, data: unknown): Promis
         expectedVersion: versions[slice]
       });
       if (!Number.isInteger(result.version)) throw new Error('Backend tidak mengembalikan versi penyimpanan yang valid.');
-      versions[slice] = result.version;
+      versions.operational = result.version;
+      versions.accounting = result.version;
       delete failedSnapshots[slice];
       inFlightSlices.delete(slice);
       notifyStatus('saved', 'Perubahan ERP selesai diproses oleh Google Sheets.');
@@ -190,7 +191,8 @@ export async function persistWorkspaceSlice(slice: Slice, data: unknown): Promis
       failedSnapshots[slice] = data;
       const code = (error as Error & { code?: string }).code || '';
       if (code === 'version_conflict') {
-        blocked[slice] = true;
+        blocked.operational = true;
+        blocked.accounting = true;
         notifyStatus('conflict', 'Ada perubahan dari perangkat lain. Perubahan lokal belum sinkron; buat backup lalu muat ulang dari cloud.');
       } else {
         notifyStatus('error', 'Gagal menyimpan ke cloud: ' + (error instanceof Error ? error.message : String(error)));
@@ -198,7 +200,7 @@ export async function persistWorkspaceSlice(slice: Slice, data: unknown): Promis
       throw error;
     }
   });
-  queues[slice] = operation.then(() => undefined, () => undefined);
+  writeQueue = operation.then(() => undefined, () => undefined);
   return operation;
 }
 
@@ -222,7 +224,7 @@ export function clearCloudWorkspace(): void {
   blocked = { operational: false, accounting: false };
   failedSnapshots = {};
   inFlightSlices.clear();
-  queues = { operational: Promise.resolve(), accounting: Promise.resolve() };
+  writeQueue = Promise.resolve();
   clearCloudIdToken();
   notifyStatus('idle', 'Sesi ERP ditutup.');
 }
