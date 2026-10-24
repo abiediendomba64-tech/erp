@@ -1109,7 +1109,15 @@ function apiRequest(request) {
 
     const user = requireUserSession_(String(request.sessionToken || ''));
     if (action === 'auth.me') return { ok: true, data: { user: publicUser_(user), expiresAt: user.exp } };
-    if (action === 'workspace.load') return { ok: true, data: loadWorkspaceForRole_(user) };
+    if (action === 'workspace.load') {
+      const lock = LockService.getScriptLock();
+      lock.waitLock(10000);
+      try {
+        return { ok: true, data: loadWorkspaceForRole_(user) };
+      } finally {
+        lock.releaseLock();
+      }
+    }
     if (action === 'workspace.bootstrap') {
       requireRole_(user, ['ADMIN']);
       return { ok: true, data: bootstrapWorkspace_(request.snapshot, user) };
@@ -1409,14 +1417,15 @@ function validateWorkspaceSnapshot_(snapshot) {
 
 function getCanonicalStateSheet_(ss) {
   let current = ss.getSheetByName('ERP_STATE');
-  const previous = ss.getSheetByName('ERP_STATE_PREVIOUS');
-  const stage = ss.getSheetByName('ERP_STATE_STAGE');
-  if (!current && previous) {
-    previous.setName('ERP_STATE');
-    current = previous;
+  // Recovery only when the canonical sheet is missing. Reads must never delete a
+  // staging sheet while another locked writer is committing a version.
+  if (!current) {
+    const previous = ss.getSheetByName('ERP_STATE_PREVIOUS');
+    if (previous) {
+      previous.setName('ERP_STATE');
+      current = previous;
+    }
   }
-  if (current && previous) ss.deleteSheet(previous);
-  if (stage) ss.deleteSheet(stage);
   if (!current) current = ensureNamedSheet_(ss, 'ERP_STATE', ERP_STATE_HEADERS_);
   return current;
 }
@@ -1460,7 +1469,7 @@ function loadWorkspace_() {
 
 function readableModulesForRole_(role) {
   role = String(role || '').toUpperCase();
-  if (role === 'ADMIN') return ERP_OPERATIONAL_MODULES_.map(m => 'operational.' + m).concat(ERP_ACCOUNTING_MODULES_.map(m => 'accounting.' + m));
+  if (role === 'ADMIN') return ERP_OPERATIONAL_MODULES_.filter(m => m !== 'auditLog').map(m => 'operational.' + m).concat(ERP_ACCOUNTING_MODULES_.map(m => 'accounting.' + m));
   if (role === 'KEUANGAN') return allowedModulesForRole_('KEUANGAN').concat(['operational.auditLog']);
   if (role === 'PROYEK') return allowedModulesForRole_('PROYEK').concat(['operational.auditLog']);
   if (role === 'VIEWER') return ['operational.tanah', 'operational.beko'];
@@ -1582,7 +1591,7 @@ function allowedModulesForRole_(role) {
     'operational.stok', 'operational.produksi', 'operational.penjualan',
     'operational.pembelian', 'operational.ocr', 'operational.whatsapp',
     'operational.qcRecords', 'operational.assets', 'operational.housingUnits',
-    'operational.auditLog', 'accounting.rab'
+    'accounting.rab'
   ];
   return [];
 }
