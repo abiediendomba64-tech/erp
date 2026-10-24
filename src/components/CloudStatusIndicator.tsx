@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Cloud, LoaderCircle, RefreshCw, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Cloud, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { CloudStatus, getCloudStatus, retryFailedCloudWrites, subscribeCloudStatus } from '../lib/gasBridge';
 
 export default function CloudStatusIndicator() {
@@ -27,7 +27,7 @@ export default function CloudStatusIndicator() {
   };
 
   const Icon = status.state === 'saved' ? CheckCircle2
-    : status.state === 'saving' || status.state === 'loading' ? LoaderCircle
+    : status.state === 'saving' || status.state === 'loading' ? Loader2
       : status.state === 'conflict' ? AlertTriangle
         : status.state === 'error' ? XCircle : Cloud;
   const style = status.state === 'saved' ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
