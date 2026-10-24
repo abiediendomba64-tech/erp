@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
-import AuthGate from "./components/AuthGate";
+import App from "./App.tsx";
 
-ReactDOM.createRoot(document.getElementById("root")!).render(<AuthGate />);
+ReactDOM.createRoot(document.getElementById("root")!).render(<App />);

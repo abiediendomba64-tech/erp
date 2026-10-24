@@ -1,6 +1,6 @@
 interface ImportMetaEnv {
-  readonly VITE_FIREBASE_API_KEY?: string;
-  readonly VITE_FIREBASE_PROJECT_ID?: string;
+  readonly DEV: boolean;
+  readonly VITE_GOOGLE_APPS_SCRIPT_WEBAPP_URL?: string;
 }
 
 interface ImportMeta {

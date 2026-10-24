@@ -32,11 +32,15 @@ import AssetsPage from './pages/AssetsPage';
 import TaxesPage from './pages/TaxesPage';
 import SuratPage from './pages/SuratPage';
 import HousingUnitsPage from './pages/HousingUnitsPage';
+import ViewerDashboard from './pages/ViewerDashboard';
 import { AccountingProvider } from './store/accounting';
+import CloudAccessGate from './components/CloudAccessGate';
+import CloudSyncStatusBar from './components/CloudSyncStatusBar';
+import { getCloudWorkspaceSession } from './lib/googleWorkspaceSync';
 
 export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat' | 'unit';
 
-function AppContent({ workspaceRole, workspaceId, workspaceName, onSignOut, onSwitchWorkspace }: { workspaceRole: 'owner' | 'admin' | 'editor' | 'viewer'; workspaceId: string; workspaceName: string; onSignOut: () => void; onSwitchWorkspace: () => void }) {
+function AppContent() {
   useEffect(() => {
     // Remove legacy browser-stored integration secrets as early as possible.
     // Integrations require a server-side secret store, which is not configured in this build.
@@ -55,14 +59,16 @@ function AppContent({ workspaceRole, workspaceId, workspaceName, onSignOut, onSw
     }
   }, []);
 
+  const cloudSession = getCloudWorkspaceSession();
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const isViewerRole = workspaceRole === 'viewer';
-  const [currentRole, setCurrentRole] = useState<'ADMIN' | 'VIEWER'>(isViewerRole ? 'VIEWER' : 'ADMIN');
+  const [currentRole] = useState<'ADMIN' | 'KEUANGAN' | 'PROYEK' | 'VIEWER'>(() =>
+    cloudSession?.workspaceRole ?? (import.meta.env.DEV ? 'ADMIN' : 'VIEWER')
+  );
 
   const renderPage = () => {
     switch (currentPage) {
-      case 'dashboard': return <Dashboard />;
+      case 'dashboard': return currentRole === 'VIEWER' ? <ViewerDashboard /> : <Dashboard />;
       case 'auditrekap': return <AuditRekapPage />;
       case 'bukukas': return <BukuKasPage />;
       case 'arsipbukti': return <ArsipBuktiPage />;
@@ -81,7 +87,7 @@ function AppContent({ workspaceRole, workspaceId, workspaceName, onSignOut, onSw
       case 'ocr': return <OCRPage />;
       case 'whatsapp': return <WhatsAppPage />;
       case 'menuconfig': return <MenuConfigPage />;
-      case 'users': return <UserManagementPage workspaceId={workspaceId} workspaceName={workspaceName} canManageUsers={workspaceRole === 'owner'} />;
+      case 'users': return <UserManagementPage />;
       case 'settings': return <SettingsPage />;
       case 'accounting': return <AccountingDashboard />;
       case 'inputtransaksi': return <InputTransaksiPage />;
@@ -101,22 +107,29 @@ function AppContent({ workspaceRole, workspaceId, workspaceName, onSignOut, onSw
     <AppProvider>
       <AccountingProvider>
       <div className="flex h-screen bg-gray-50 overflow-hidden">
-        <div className="fixed right-3 top-3 z-30 flex max-w-[calc(100vw-5rem)] items-center gap-2 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm">
-          <span className="max-w-40 truncate font-semibold">{workspaceName}</span>
-          <span className="rounded bg-indigo-50 px-1.5 py-1 text-indigo-800">{workspaceRole}</span>
-          <button onClick={onSwitchWorkspace} className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50">Workspace</button>
-          <button onClick={onSignOut} className="rounded bg-slate-800 px-2 py-1 text-white hover:bg-slate-700">Keluar</button>
-        </div>
         <Sidebar
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
           isOpen={sidebarOpen}
           setIsOpen={setSidebarOpen}
-          currentRole={isViewerRole ? 'VIEWER' : currentRole}
-          setCurrentRole={isViewerRole ? () => undefined : setCurrentRole}
-          roleLocked={isViewerRole}
+          currentRole={currentRole}
         />
         <main className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
+          <CloudSyncStatusBar />
+          {cloudSession && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-slate-900">{cloudSession.workspaceName}</p>
+                <p className="truncate text-xs text-slate-500">Workspace cloud aktif · Role {cloudSession.workspaceRole}</p>
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Keluar ERP
+              </button>
+            </div>
+          )}
           <div className="p-6">
             {renderPage()}
           </div>
@@ -127,6 +140,10 @@ function AppContent({ workspaceRole, workspaceId, workspaceName, onSignOut, onSw
   );
 }
 
-export default function App({ workspaceRole = 'owner', workspaceId = '', workspaceName = 'ERP', onSignOut = () => undefined, onSwitchWorkspace = () => undefined }: { workspaceRole?: 'owner' | 'admin' | 'editor' | 'viewer'; workspaceId?: string; workspaceName?: string; onSignOut?: () => void; onSwitchWorkspace?: () => void }) {
-  return <AppContent workspaceRole={workspaceRole} workspaceId={workspaceId} workspaceName={workspaceName} onSignOut={onSignOut} onSwitchWorkspace={onSwitchWorkspace} />;
+export default function App() {
+  return (
+    <CloudAccessGate>
+      <AppContent />
+    </CloudAccessGate>
+  );
 }

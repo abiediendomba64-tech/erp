@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ERP Properti & Konstruksi</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, Arial, sans-serif; color: #172033; background: #f5f7fb; }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; }
+    #erp-app { width: 100%; height: 100%; min-height: 100vh; display: block; border: 0; background: #f5f7fb; }
+    .setup { max-width: 720px; margin: 10vh auto; padding: 28px; background: #fff; border: 1px solid #e1e6ef; border-radius: 14px; line-height: 1.55; }
+    .setup h1 { margin: 0 0 8px; font-size: 23px; }
+    .setup code { background: #f0f3f8; padding: 2px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+    .setup li { margin: 8px 0; }
+  </style>
+</head>
+<body>
+<? if (frontendUrl) { ?>
+  <iframe id="erp-app" title="ERP Properti & Konstruksi" src="<?= frontendUrl ?>" referrerpolicy="unsafe-url"></iframe>
+  <script>
+    (function () {
+      'use strict';
+      var appFrame = document.getElementById('erp-app');
+      var trustedOrigin = new URL(appFrame.src).origin;
+      var allowedMethods = Object.freeze({
+        apiGetPublicConfig: true,
+        apiLogin: true,
+        apiListUsers: true,
+        apiListWorkspaces: true,
+        apiCreateWorkspace: true,
+        apiAddUser: true,
+        apiAddWorkspaceMember: true,
+        apiLoadWorkspace: true,
+        apiSaveWorkspace: true,
+        apiGetWorkspaceAudit: true
+      });
+
+      window.addEventListener('message', function (event) {
+        if (event.source !== appFrame.contentWindow || event.origin !== trustedOrigin) return;
+        var request = event.data;
+        if (!request || request.type !== 'ERP_GAS_REQUEST') return;
+        if (typeof request.id !== 'string' || request.id.length > 100) return;
+        if (typeof request.method !== 'string' || !allowedMethods[request.method]) {
+          appFrame.contentWindow.postMessage({
+            type: 'ERP_GAS_RESPONSE', id: request.id, ok: false,
+            error: 'Metode backend tidak diizinkan.'
+          }, trustedOrigin);
+          return;
+        }
+        if (!Array.isArray(request.args) || request.args.length > 5) {
+          appFrame.contentWindow.postMessage({
+            type: 'ERP_GAS_RESPONSE', id: request.id, ok: false,
+            error: 'Parameter request tidak valid.'
+          }, trustedOrigin);
+          return;
+        }
+
+        var target = appFrame.contentWindow;
+        var runner = google.script.run
+          .withSuccessHandler(function (result) {
+            target.postMessage({
+              type: 'ERP_GAS_RESPONSE', id: request.id, ok: true, result: result
+            }, trustedOrigin);
+          })
+          .withFailureHandler(function (error) {
+            target.postMessage({
+              type: 'ERP_GAS_RESPONSE', id: request.id, ok: false,
+              error: String(error && error.message ? error.message : 'Permintaan backend gagal.').slice(0, 500)
+            }, trustedOrigin);
+          });
+
+        try {
+          runner[request.method].apply(runner, request.args);
+        } catch (error) {
+          target.postMessage({
+            type: 'ERP_GAS_RESPONSE', id: request.id, ok: false,
+            error: String(error && error.message ? error.message : 'Permintaan backend gagal.').slice(0, 500)
+          }, trustedOrigin);
+        }
+      });
+    })();
+  </script>
+<? } else { ?>
+  <main class="setup">
+    <h1>ERP Properti &amp; Konstruksi — konfigurasi belum lengkap</h1>
+    <p>Backend belum menampilkan aplikasi karena alamat frontend React belum ditetapkan. Ini kondisi tertutup secara default, bukan data contoh.</p>
+    <ol>
+      <li>Deploy frontend React ke URL HTTPS yang tetap.</li>
+      <li>Di Apps Script buka <strong>Project Settings → Script Properties</strong>.</li>
+      <li>Isi <code>ERP_FRONTEND_URL</code>, <code>SPREADSHEET_ID</code>, dan <code>GOOGLE_OAUTH_CLIENT_ID</code>.</li>
+      <li>Tambahkan email administrator pertama ke <code>ADMIN_EMAILS</code>, lalu deploy ulang web app.</li>
+    </ol>
+    <p>Jangan bagikan spreadsheet database ke akun pengguna biasa. Seluruh akses data harus melewati autentikasi dan otorisasi backend.</p>
+  </main>
+<? } ?>
+</body>
+</html>
