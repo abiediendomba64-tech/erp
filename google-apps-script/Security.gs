@@ -139,16 +139,17 @@ function getCloudConfig_() {
   var rawUrl = String(props.getProperty('ERP_FRONTEND_URL') || '').trim();
   var frontendOrigin = '';
   if (rawUrl) {
-    try {
-      var parsed = new URL(rawUrl);
-      if (parsed.protocol !== 'https:' || parsed.username || parsed.password ||
-          (parsed.pathname !== '/' && parsed.pathname !== '') || parsed.search || parsed.hash) {
-        throw new Error('Nilai harus berupa origin HTTPS saja, tanpa path, query, atau kredensial.');
-      }
-      frontendOrigin = parsed.origin;
-    } catch (error) {
-      throw apiError_('invalid_config', 'ERP_FRONTEND_URL harus berupa URL HTTPS valid.');
+    // Apps Script server-side runtime does not reliably expose the browser URL API.
+    // Accept only an HTTPS origin; paths, query strings, credentials and fragments
+    // are prohibited because this origin is used as the postMessage trust boundary.
+    var match = rawUrl.match(/^https:\/\/([a-z0-9.-]+)(?::([0-9]{1,5}))?\/?$/i);
+    if (!match || match[1].indexOf('..') !== -1) {
+      throw apiError_('invalid_config', 'ERP_FRONTEND_URL harus berupa origin HTTPS saja, tanpa path, query, atau kredensial.');
     }
+    if (match[2] && (Number(match[2]) < 1 || Number(match[2]) > 65535)) {
+      throw apiError_('invalid_config', 'Port pada ERP_FRONTEND_URL tidak valid.');
+    }
+    frontendOrigin = 'https://' + match[1].toLowerCase() + (match[2] ? ':' + match[2] : '');
   }
   return {
     frontendUrl: frontendOrigin,
@@ -603,6 +604,15 @@ function appendCloudAudit_(workspaceId, actorEmail, action, table, recordId, old
     'id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan',
     'workspace_id', 'actor_email', 'slice', 'changed_keys', 'version_before', 'version_after'
   ]);
+  var changedKeys = '';
+  try {
+    var parsedNewValue = typeof newValue === 'string' ? JSON.parse(newValue) : newValue;
+    if (parsedNewValue && Array.isArray(parsedNewValue.changedKeys)) {
+      changedKeys = JSON.stringify(parsedNewValue.changedKeys);
+    }
+  } catch (ignore) {
+    changedKeys = '';
+  }
   var record = {
     id: 'LOG-' + Utilities.getUuid(),
     timestamp: new Date().toISOString(),
@@ -616,7 +626,7 @@ function appendCloudAudit_(workspaceId, actorEmail, action, table, recordId, old
     workspace_id: workspaceId,
     actor_email: actorEmail,
     slice: slice,
-    changed_keys: newValue && newValue.changedKeys ? JSON.stringify(newValue.changedKeys) : '',
+    changed_keys: changedKeys,
     version_before: oldVersion || '',
     version_after: newVersion || ''
   };
