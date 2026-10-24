@@ -249,6 +249,7 @@ assert.equal(viewerSnapshot.operational.tanah[0].url_bukti, '');
 assert.equal(viewerSnapshot.operational.beko[0].tarif, 0);
 assert.equal(viewerSnapshot.operational.beko[0].status_pembayaran, undefined);
 assert.equal(viewerSnapshot.accounting.invoice.length, 0);
+assert.throws(() => context.apiGetWorkspaceAudit('viewer-token', workspaceId, 20), /ADMIN dan KEUANGAN/);
 assert.throws(() => context.apiLoadWorkspace('outsider-token', workspaceId), /tidak memiliki akses/);
 console.log('PASS: scoped roles receive filtered data, Viewer receives redacted progress only, and unauthorized writes/read access are rejected');
 
