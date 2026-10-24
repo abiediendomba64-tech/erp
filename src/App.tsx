@@ -33,10 +33,12 @@ import TaxesPage from './pages/TaxesPage';
 import SuratPage from './pages/SuratPage';
 import HousingUnitsPage from './pages/HousingUnitsPage';
 import { AccountingProvider } from './store/accounting';
+import GoogleAuthGate, { ActiveCloudSession } from './components/GoogleAuthGate';
+import CloudStatusBanner from './components/CloudStatusBanner';
 
 export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat' | 'unit';
 
-function AppContent() {
+function AppContent({ user, workspace, onSignOut }: ActiveCloudSession) {
   useEffect(() => {
     // Remove legacy browser-stored integration secrets as early as possible.
     // Integrations require a server-side secret store, which is not configured in this build.
@@ -57,7 +59,7 @@ function AppContent() {
 
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [currentRole, setCurrentRole] = useState<'ADMIN' | 'VIEWER'>('ADMIN');
+  const currentRole = workspace.role;
 
   const renderPage = () => {
     switch (currentPage) {
@@ -106,10 +108,17 @@ function AppContent() {
           isOpen={sidebarOpen}
           setIsOpen={setSidebarOpen}
           currentRole={currentRole}
-          setCurrentRole={setCurrentRole}
         />
         <main className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
           <div className="p-6">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+              <div className="min-w-0">
+                <div className="font-semibold text-slate-900">{workspace.name}</div>
+                <div className="text-xs text-slate-500">{user.nama || user.email} • {user.email} • Role {workspace.role}</div>
+              </div>
+              <button onClick={onSignOut} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Keluar</button>
+            </div>
+            <CloudStatusBanner />
             {renderPage()}
           </div>
         </main>
@@ -120,5 +129,5 @@ function AppContent() {
 }
 
 export default function App() {
-  return <AppContent />;
+  return <GoogleAuthGate>{session => <AppContent {...session} />}</GoogleAuthGate>;
 }
