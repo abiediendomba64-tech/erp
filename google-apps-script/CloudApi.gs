@@ -34,8 +34,9 @@ function ensureCloudSchema_() {
     ['workspace_id', 'email', 'role', 'created_at', 'status']);
   ensureSheetHeaders_(ss.getSheetByName('ERP_STATE_HEAD') || ss.insertSheet('ERP_STATE_HEAD'),
     ['workspace_id', 'version', 'chunk_count', 'updated_at', 'updated_by']);
-  ensureSheetHeaders_(ss.getSheetByName('ERP_STATE_VERSIONS') || ss.insertSheet('ERP_STATE_VERSIONS'),
-    ['workspace_id', 'version', 'chunk_index', 'data_chunk', 'created_at', 'created_by']);
+  ensureSheetHeaders_(ss.getSheetByName('ERP_RECORDS') || ss.insertSheet('ERP_RECORDS'),
+    ['workspace_id', 'namespace', 'module', 'record_id', 'payload_json', 'updated_at', 'updated_by', 'deleted']);
+
 }
 
 function handleCloudApi_(request) {
@@ -197,8 +198,8 @@ function createCloudWorkspace_(user, name, data) {
     const now = new Date().toISOString();
     ss.getSheetByName('ERP_WORKSPACES').appendRow([id, workspaceName, user.email, now]);
     ss.getSheetByName('ERP_MEMBERS').appendRow([id, user.email, 'ADMIN', now, 'active']);
-    const initialChunkCount = writeCloudStateVersion_(id, 1, data, user.email, now);
-    ss.getSheetByName('ERP_STATE_HEAD').appendRow([id, 1, initialChunkCount, now, user.email]);
+    const recordCount = writeCloudRecords_(id, data, user.email, now);
+    ss.getSheetByName('ERP_STATE_HEAD').appendRow([id, 1, recordCount, now, user.email]);
     cloudAudit_(user.email, 'CREATE_WORKSPACE', 'ERP_WORKSPACES', id, '', workspaceName);
     return { success: true, workspace_id: id, name: workspaceName, role: 'ADMIN', version: 1 };
   } finally {
@@ -262,10 +263,12 @@ function saveCloudWorkspaceState_(user, workspaceId, data, expectedVersion) {
     authorizeCloudStateChanges_(current.data, data, membership.role);
     const nextVersion = current.version + 1;
     const now = new Date().toISOString();
-    const nextChunkCount = writeCloudStateVersion_(String(workspaceId), nextVersion, data, user.email, now);
-    updateCloudStateHead_(String(workspaceId), nextVersion, nextChunkCount, now, user.email);
-    cloudAudit_(user.email, 'SAVE_WORKSPACE_STATE', 'ERP_STATE', String(workspaceId), String(current.version), String(nextVersion));
-    return { success: true, saved: true, version: nextVersion, error_code: null };
+    const changes = writeCloudRecordDiff_(String(workspaceId), current.data, data, user.email, now);
+    updateCloudStateHead_(String(workspaceId), nextVersion, changes.recordCount, now, user.email);
+    cloudAudit_(user.email, 'SAVE_WORKSPACE_STATE', 'ERP_STATE', String(workspaceId),
+      JSON.stringify({ version: current.version }),
+      JSON.stringify({ version: nextVersion, records_changed: changes.changed, records_deleted: changes.deleted }));
+    return { success: true, saved: true, version: nextVersion, error_code: null, records_changed: changes.changed, records_deleted: changes.deleted };
   } finally {
     lock.releaseLock();
   }
@@ -319,56 +322,175 @@ function readCloudWorkspaceState_(workspaceId) {
   const ss = getErpSpreadsheet_();
   const headRows = ss.getSheetByName('ERP_STATE_HEAD').getDataRange().getValues();
   const head = headRows.slice(1).find(row => String(row[0]) === workspaceId);
-  if (!head) throw new Error('Snapshot workspace belum tersedia.');
+  if (!head) throw new Error('Workspace cloud belum memiliki versi data.');
   const version = Number(head[1]);
-  const chunkCount = Number(head[2]);
-  const rows = ss.getSheetByName('ERP_STATE_VERSIONS').getDataRange().getValues();
-  const chunks = [];
+  if (!Number.isInteger(version) || version < 1) throw new Error('Versi workspace tidak valid.');
+
+  const data = { operational: {}, accounting: {} };
+  CLOUD_OPERATIONAL_KEYS_.forEach(key => data.operational[key] = []);
+  CLOUD_ACCOUNTING_KEYS_.forEach(key => data.accounting[key] = []);
+  const sheet = ss.getSheetByName('ERP_RECORDS');
+  const rows = sheet.getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (String(row[0]) === workspaceId && Number(row[1]) === version) {
-      chunks.push({ index: Number(row[2]), text: String(row[3] || '') });
+    if (String(row[0]) !== workspaceId || String(row[7]).toLowerCase() === 'true') continue;
+    const namespace = String(row[1] || '');
+    const moduleName = String(row[2] || '');
+    if ((namespace !== 'operational' && namespace !== 'accounting') ||
+        !Object.prototype.hasOwnProperty.call(data[namespace], moduleName)) {
+      throw new Error('Database berisi record dengan namespace/modul yang tidak dikenal. Tidak ada perubahan ditulis.');
     }
+    let payload;
+    try {
+      payload = JSON.parse(String(row[4] || 'null'));
+    } catch (error) {
+      throw new Error('Record cloud rusak pada ' + moduleName + '/' + row[3] + '. Periksa backup sebelum melanjutkan.');
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new Error('Record cloud bukan object pada ' + moduleName + '/' + row[3] + '.');
+    }
+    data[namespace][moduleName].push(payload);
   }
-  chunks.sort((a, b) => a.index - b.index);
-  if (chunks.length !== chunkCount || chunks.some((chunk, index) => chunk.index !== index)) {
-    throw new Error('Snapshot cloud tidak lengkap. Data tidak ditimpa; hubungi administrator.');
-  }
-  const data = JSON.parse(chunks.map(chunk => chunk.text).join(''));
   validateCloudWorkspaceData_(data);
   return { version: version, data: data };
 }
 
-function writeCloudStateVersion_(workspaceId, version, data, email, timestamp) {
-  const json = JSON.stringify(data);
-  if (json.length > CLOUD_MAX_JSON_CHARS_) throw new Error('Snapshot ERP terlalu besar.');
-  const chunks = [];
-  for (let start = 0, index = 0; start < json.length; start += CLOUD_CHUNK_CHARS_, index++) {
-    let end = Math.min(start + CLOUD_CHUNK_CHARS_, json.length);
-    if (end < json.length && json.charCodeAt(end - 1) >= 0xD800 && json.charCodeAt(end - 1) <= 0xDBFF) end--;
-    chunks.push([workspaceId, version, index, json.slice(start, end), timestamp, email]);
-    if (end === start) throw new Error('Gagal membagi snapshot cloud.');
-    start = end - CLOUD_CHUNK_CHARS_; // for-loop increment advances to end
+function writeCloudRecords_(workspaceId, data, email, timestamp) {
+  const sheet = getErpSpreadsheet_().getSheetByName('ERP_RECORDS');
+  const rows = [];
+  ['operational', 'accounting'].forEach(namespace => {
+    Object.keys(data[namespace]).forEach(moduleName => {
+      const records = data[namespace][moduleName];
+      if (!Array.isArray(records)) throw new Error('Modul harus berupa array: ' + moduleName);
+      const seen = new Set();
+      records.forEach(record => {
+        const id = cloudRecordId_(moduleName, record);
+        if (seen.has(id)) throw new Error('ID duplikat pada modul ' + moduleName + ': ' + id);
+        seen.add(id);
+        const json = JSON.stringify(record);
+        if (json.length > 30000) throw new Error('Record ' + moduleName + '/' + id + ' lebih dari 30.000 karakter. Simpan foto/PDF di Google Drive dan hanya simpan tautannya.');
+        rows.push([workspaceId, namespace, moduleName, id, json, timestamp, email, false]);
+      });
+    });
+  });
+  if (rows.length) sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, rows[0].length).setValues(rows);
+  return rows.length;
+}
+
+function writeCloudRecordDiff_(workspaceId, oldData, newData, email, timestamp) {
+  const ss = getErpSpreadsheet_();
+  const recordsSheet = ss.getSheetByName('ERP_RECORDS');
+  const values = recordsSheet.getDataRange().getValues();
+  const rowByKey = new Map();
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0]) !== workspaceId) continue;
+    const key = [String(values[i][1]), String(values[i][2]), String(values[i][3])].join('|');
+    rowByKey.set(key, i + 1);
   }
-  const sheet = getErpSpreadsheet_().getSheetByName('ERP_STATE_VERSIONS');
-  if (chunks.length) sheet.getRange(sheet.getLastRow() + 1, 1, chunks.length, chunks[0].length).setValues(chunks);
-  return chunks.length;
+
+  const oldRecords = flattenCloudRecords_(oldData);
+  const newRecords = flattenCloudRecords_(newData);
+  const changes = [];
+  let deleted = 0;
+
+  oldRecords.forEach((record, key) => {
+    if (!newRecords.has(key)) {
+      changes.push({ key, record, next: null, deleted: true });
+      deleted++;
+    }
+  });
+  newRecords.forEach((record, key) => {
+    const old = oldRecords.get(key);
+    if (!old || old.json !== record.json) changes.push({ key, record: old || null, next: record, deleted: false });
+  });
+
+  if (changes.length > 150) throw new Error('Satu penyimpanan mengubah lebih dari 150 record. Pecah perubahan menjadi beberapa penyimpanan agar Apps Script tetap ringan.');
+
+  const auditSheet = ss.getSheetByName('AUDIT_LOG') || ss.insertSheet('AUDIT_LOG');
+  ensureSheetHeaders_(auditSheet, ['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan']);
+
+  const auditRows = [];
+  const updates = [];
+  const inserts = [];
+
+  changes.forEach(change => {
+    const [namespace, moduleName, recordId] = change.key.split('|');
+    const existingRow = rowByKey.get(change.key);
+    const nextPayload = change.next ? change.next.json : (change.record ? change.record.json : '');
+    const nextDeleted = change.deleted;
+    if (nextPayload.length > 30000) throw new Error('Payload record melampaui batas penyimpanan satu sel.');
+
+    const row = [workspaceId, namespace, moduleName, recordId, nextPayload, timestamp, email, nextDeleted];
+    if (existingRow) updates.push({ row: existingRow, values: row });
+    else inserts.push(row);
+
+    auditRows.push([
+      'LOG-' + Utilities.getUuid(),
+      timestamp,
+      email,
+      nextDeleted ? 'DELETE_RECORD' : change.record ? 'UPDATE_RECORD' : 'CREATE_RECORD',
+      namespace + '.' + moduleName,
+      recordId,
+      change.record ? change.record.json : '',
+      change.next ? change.next.json : '',
+      'ERP cloud versioned save'
+    ]);
+  });
+
+  // The database sheet contains latest record values; AUDIT_LOG preserves old/new values append-only.
+  updates.forEach(update => recordsSheet.getRange(update.row, 1, 1, update.values.length).setValues([update.values]));
+  if (inserts.length) recordsSheet.getRange(recordsSheet.getLastRow() + 1, 1, inserts.length, inserts[0].length).setValues(inserts);
+  if (auditRows.length) auditSheet.getRange(auditSheet.getLastRow() + 1, 1, auditRows.length, auditRows[0].length).setValues(auditRows);
+
+  return { changed: changes.length - deleted, deleted: deleted, recordCount: newRecords.size };
 }
 
-function cloudChunkCount_(json) {
-  return Math.max(1, Math.ceil(json.length / CLOUD_CHUNK_CHARS_));
+function flattenCloudRecords_(data) {
+  const map = new Map();
+  ['operational', 'accounting'].forEach(namespace => {
+    Object.keys(data[namespace]).forEach(moduleName => {
+      const records = data[namespace][moduleName];
+      if (!Array.isArray(records)) throw new Error('Modul harus berupa array: ' + moduleName);
+      const seen = new Set();
+      records.forEach(record => {
+        const id = cloudRecordId_(moduleName, record);
+        if (seen.has(id)) throw new Error('ID duplikat pada modul ' + moduleName + ': ' + id);
+        seen.add(id);
+        const json = JSON.stringify(record);
+        if (json.length > 30000) throw new Error('Record ' + moduleName + '/' + id + ' lebih dari 30.000 karakter. Simpan foto/PDF di Google Drive dan hanya simpan tautannya.');
+        map.set([namespace, moduleName, id].join('|'), {
+          namespace: namespace, module: moduleName, id: id, json: json
+        });
+      });
+    });
+  });
+  return map;
 }
 
-function updateCloudStateHead_(workspaceId, version, chunkCount, timestamp, email) {
+function cloudRecordId_(moduleName, record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) {
+    throw new Error('Setiap record pada modul ' + moduleName + ' harus berupa object.');
+  }
+  const candidate = record.id || record.kode || record.kode_unit || record.no_invoice ||
+    record.no_po || record.kode_aset || record.kode_utang || record.nip || record.no_ref;
+  const id = String(candidate || '').trim();
+  if (!id || id.length > 200 || /[|\\r\\n]/.test(id)) {
+    throw new Error('Setiap record pada modul ' + moduleName + ' wajib memiliki ID/kode unik yang stabil.');
+  }
+  return id;
+}
+
+function updateCloudStateHead_(workspaceId, version, recordCount, timestamp, email) {
   const sheet = getErpSpreadsheet_().getSheetByName('ERP_STATE_HEAD');
   const values = sheet.getDataRange().getValues();
   for (let i = 1; i < values.length; i++) {
     if (String(values[i][0]) === workspaceId) {
-      sheet.getRange(i + 1, 2, 1, 4).setValues([[version, chunkCount, timestamp, email]]);
+      // Keep legacy column layout stable: chunk_count now stores live record count.
+      sheet.getRange(i + 1, 2, 1, 4).setValues([[version, recordCount, timestamp, email]]);
       return;
     }
   }
-  sheet.appendRow([workspaceId, version, chunkCount, timestamp, email]);
+  sheet.appendRow([workspaceId, version, recordCount, timestamp, email]);
 }
 
 function findCloudMembership_(workspaceId, email) {
