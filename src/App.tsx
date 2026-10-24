@@ -224,7 +224,7 @@ export default function App() {
     } catch (storageError) {
       throw new Error('Cache browser tidak dapat disiapkan. Bersihkan ruang penyimpanan browser lalu coba lagi; data cloud tidak diubah.');
     }
-    activateCloudWorkspace(token, snapshot, version);
+    activateCloudWorkspace(token, snapshot, version, signedInUser.role);
     window.sessionStorage.setItem('erp_session_token', token);
     setUser(signedInUser);
     setError('');
