@@ -156,6 +156,36 @@ const gasContext = {
 };
 runInNewContext(gasSource, gasContext, { filename: 'Code.gs' });
 
+// Google cloud backend regression guards: these run against the real Apps Script source.
+assert.ok(gasSource.includes('function loginWithGoogle_(credential)'), 'Google identity validation must be implemented server-side');
+assert.ok(gasSource.includes('function requireUserSession_(token)'), 'Every cloud data request must validate a backend-issued session');
+assert.ok(gasSource.includes('function loadWorkspaceForRole_(user)'), 'Cloud reads must be role-scoped server-side');
+assert.ok(gasSource.includes("if (action === 'audit.list')"), 'Audit feed must be read from the server');
+assert.ok(gasSource.includes('function readCloudAuditRows_()'), 'Audit events must come from the server audit sheet');
+assert.ok(!/if \(path === '\/transaksi'\) return jsonResponse\(readSheetRecords/.test(gasSource),
+  'Legacy unauthenticated transaction reads must remain disabled');
+assert.ok(!/if \(path === '\/transaksi'\) return jsonResponse\(handleAddTransaksi/.test(gasSource),
+  'Legacy unauthenticated transaction writes must remain disabled');
+
+const viewerWritableModules = runInNewContext("allowedModulesForRole_('VIEWER')", gasContext);
+assert.equal(viewerWritableModules.length, 0, 'VIEWER has no writable modules');
+const adminWritableModules = runInNewContext("allowedModulesForRole_('ADMIN')", gasContext);
+assert.ok(!adminWritableModules.includes('operational.auditLog'), 'Audit log is never writable by the browser');
+const projectWritableModules = runInNewContext("allowedModulesForRole_('PROYEK')", gasContext);
+assert.ok(!projectWritableModules.includes('operational.auditLog'), 'Project users cannot forge audit records');
+const financeWritableModules = runInNewContext("allowedModulesForRole_('KEUANGAN')", gasContext);
+assert.ok(!financeWritableModules.includes('operational.tanah'), 'Finance users cannot edit land contract master');
+const unauthenticatedRead = runInNewContext("apiRequest({ action: 'auth.me', sessionToken: '' })", gasContext);
+assert.equal(unauthenticatedRead.ok, false, 'unauthenticated user must not read the ERP session');
+assert.equal(unauthenticatedRead.error.code, 'unauthenticated');
+const invalidSnapshotMessage = runInNewContext(`(function () {
+  try { validateWorkspaceSnapshot_({ operational: {}, accounting: {} }); return ''; }
+  catch (error) { return String(error.message || error); }
+})()`, gasContext);
+assert.match(invalidSnapshotMessage, /operational\.bukuKas/, 'Cloud snapshot must validate known module arrays');
+console.log('PASS: Google backend auth, role boundaries, unauthenticated route lockdown, and snapshot validation');
+
+
 const backendCases = [
   ['backend penjualan tunai', { jenis: 'penjualan_tunai', keterangan: 'Penjualan', jumlah: 1000000, ppn: 110000 }],
   ['backend penjualan kredit', { jenis: 'penjualan_kredit', pihak: 'Pelanggan A', keterangan: 'Penjualan kredit', jumlah: 1000000, ppn: 110000 }],
