@@ -1,21 +1,8 @@
 /**
- * GOOGLE APPS SCRIPT - BACKEND LENGKAP
- * 
- * CARA SETUP:
- * 1. Buka Google Sheets Anda
- * 2. Extensions → Apps Script
- * 3. Copy-paste semua kode ini
- * 4. Ganti GEMINI_API_KEY dengan API key Anda dari aistudio.google.com
- * 5. Deploy → New deployment → Web app → Access: Anyone
- * 6. Copy URL deployment untuk digunakan di React frontend
- * 
- * FITUR:
- * ✅ OCR Kwitansi dengan Gemini Vision
- * ✅ Webhook WhatsApp/Telegram
- * ✅ Auto-generate Jurnal Double-Entry
- * ✅ Reversal Journal (koreksi tanpa edit)
- * ✅ Audit Trail otomatis
- * ✅ Integrasi Google Sheets native
+ * ERP backend: Google Apps Script + Google Sheets.
+ * Canonical React workspace data, server-authenticated accounts and version-checked saves
+ * live in ERP_STATE. Legacy OCR/WhatsApp/Telegram/transaction routes remain fail-closed
+ * until they are adapted to the canonical writer. See docs/GOOGLE_APPS_SCRIPT_BACKEND.md.
  */
 
 // ============ KONFIGURASI ============
