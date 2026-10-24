@@ -40,6 +40,38 @@ import { AccountingProvider } from './store/accounting';
 
 export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat' | 'unit';
 
+function CloudStatusGuard() {
+  const [status, setStatus] = useState<CloudStatus>(getCloudStatus());
+
+  useEffect(() => subscribeCloudStatus(setStatus), []);
+
+  if (status.status === 'error' || status.status === 'conflict') {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4">
+        <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+          <div className="flex items-center gap-3 text-rose-700">
+            <AlertTriangle size={26} />
+            <h2 className="text-lg font-bold">Perubahan belum aman tersimpan</h2>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-slate-700">{status.message}</p>
+          <p className="mt-2 text-xs text-slate-500">Jangan lanjut mencatat sampai data terbaru berhasil dimuat dari cloud. Data lokal lama tidak akan ditimpa secara otomatis.</p>
+          <button onClick={() => window.location.reload()} className="mt-5 flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white">
+            <RefreshCw size={16} /> Muat ulang data cloud
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+      {status.status === 'saving' ? <LoaderCircle size={15} className="animate-spin text-indigo-600" /> : status.status === 'saved' ? <CheckCircle2 size={15} className="text-emerald-600" /> : <Cloud size={15} className="text-slate-500" />}
+      <span>{status.message}</span>
+      {status.version !== null && <span className="ml-auto font-mono text-slate-400">versi {status.version}</span>}
+    </div>
+  );
+}
+
 function AppContent({ initialSnapshot, sessionUser, onLogout }: { initialSnapshot: WorkspaceSnapshot; sessionUser: LoginUser; onLogout: () => void }) {
   useEffect(() => {
     // Remove legacy browser-stored integration secrets as early as possible.
