@@ -72,64 +72,72 @@ function ensureSheetHeaders_(sheet, requiredHeaders) {
 /**
  * Handle GET requests (untuk testing)
  */
+/**
+ * Public GET is health-only and never returns financial/user records.
+ * Private operations use POST action routing with a verified session.
+ */
 function doGet(e) {
-  try {
-    const path = e && e.parameter && e.parameter.path ? e.parameter.path : '/health';
+  const params = e && e.parameter ? e.parameter : {};
+  const path = String(params.path || '/health');
 
-    if (path === '/transaksi') return jsonResponse(readSheetRecords('BUKU_KAS'));
-    if (path === '/akun') return jsonResponse(readSheetRecords('AKUN'));
-    if (path === '/laporan/laba-rugi') return jsonResponse(generateLabaRugi());
-    if (path === '/laporan/neraca') return jsonResponse(generateNeraca());
-
-    return jsonResponse({
-      status: 'OK',
-      message: 'ERP Backend API is running',
-      endpoints: [
-        'GET /transaksi',
-        'GET /akun',
-        'GET /laporan/laba-rugi',
-        'GET /laporan/neraca',
-        'POST /transaksi',
-        'POST /reversal',
-        'POST /ocr',
-        'POST /webhook/whatsapp',
-        'POST /webhook/telegram'
-      ]
-    });
-  } catch (error) {
-    return jsonResponse({ success: false, error: String(error && error.message ? error.message : error) });
+  if (params['hub.mode'] === 'subscribe') {
+    const verifyToken = String(PropertiesService.getScriptProperties().getProperty('WHATSAPP_VERIFY_TOKEN') || '');
+    if (verifyToken && params['hub.verify_token'] === verifyToken) {
+      return ContentService.createTextOutput(String(params['hub.challenge'] || ''));
+    }
+    return ContentService.createTextOutput('Forbidden');
   }
+
+  if (path === '/health') {
+    return jsonResponse({
+      success: true,
+      status: 'OK',
+      backend: 'Google Apps Script',
+      database: 'Google Sheets',
+      authenticated_api: true
+    });
+  }
+
+  return jsonResponse({
+    success: false,
+    error: 'GET untuk data ERP dinonaktifkan. Gunakan POST action API dengan sesi login yang valid.'
+  });
 }
 
-
-
 /**
- * Handle POST requests
+ * All private calls use a JSON action body through the same-origin Pages proxy.
+ * Legacy /transaksi, /reversal and /ocr public endpoints are deliberately disabled
+ * until they can be workspace-scoped and use the canonical ERP_STATE snapshot.
  */
 function doPost(e) {
   try {
-    const path = e && e.parameter && e.parameter.path ? e.parameter.path : '';
     const rawBody = e && e.postData && e.postData.contents ? e.postData.contents : '';
-    const data = rawBody ? JSON.parse(rawBody) : {};
+    const request = rawBody ? JSON.parse(rawBody) : {};
+    if (request && request.action) {
+      return jsonResponse(handleCloudApi_(request));
+    }
 
-    if (path === '/ocr') return jsonResponse(handleOCR(data));
-    if (path === '/webhook/whatsapp') return jsonResponse(handleWhatsAppWebhook(data));
-    if (path === '/webhook/telegram') return jsonResponse(handleTelegramWebhook(data));
-    if (path === '/transaksi') return jsonResponse(handleAddTransaksi(data));
-    if (path === '/reversal') return jsonResponse(handleReversal(data));
-
-    if (path.indexOf('/transaksi/') === 0) {
+    const path = e && e.parameter && e.parameter.path ? String(e.parameter.path) : '';
+    if (path === '/webhook/whatsapp' || path === '/webhook/telegram') {
       return jsonResponse({
         success: false,
-        error: 'Update/hapus transaksi posted tidak didukung. Gunakan reversal jurnal agar audit trail tetap utuh.'
+        error: 'Webhook legacy belum diaktifkan pada sumber data cloud tunggal. Gunakan n8n untuk menerima webhook dan aktifkan integrasi yang terautentikasi sebelum produksi.'
       });
     }
-    return jsonResponse({ success: false, error: 'Endpoint tidak dikenal: ' + path });
+    if (path === '/transaksi' || path === '/reversal' || path === '/ocr' || path.indexOf('/transaksi/') === 0) {
+      return jsonResponse({
+        success: false,
+        error: 'Endpoint legacy dinonaktifkan agar tidak menulis ke buku terpisah dari ERP_STATE. Gunakan API workspace yang terautentikasi.'
+      });
+    }
+    return jsonResponse({ success: false, error: 'Endpoint tidak dikenal.' });
   } catch (error) {
-    return jsonResponse({ success: false, error: String(error && error.message ? error.message : error) });
+    return jsonResponse({
+      success: false,
+      error: String(error && error.message ? error.message : error)
+    });
   }
 }
-
 
 
 // ============ OCR FUNCTIONS ============
