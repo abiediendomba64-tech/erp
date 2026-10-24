@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ERP Backend Bridge</title>
+  </head>
+  <body>
+    <script>
+      'use strict';
+      const PARENT_ORIGIN = <?!= JSON.stringify(parentOrigin) ?>;
+      const CHANNEL = 'erp-google-apps-script-bridge-v1';
+      const ALLOWED_METHODS = new Set([
+        'apiHealth',
+        'apiBootstrapAdmin',
+        'apiLogin',
+        'apiGetSession',
+        'apiLoadWorkspace',
+        'apiSaveWorkspace',
+        'apiLogout',
+        'apiListUsers',
+        'apiCreateUser',
+        'apiSetUserStatus',
+        'apiChangePassword'
+      ]);
+
+      window.addEventListener('message', function (event) {
+        // No arbitrary parent or arbitrary server function calls.
+        if (event.source !== window.parent || event.origin !== PARENT_ORIGIN) return;
+        const message = event.data;
+        if (!message || message.channel !== CHANNEL || message.type !== 'request' ||
+            typeof message.id !== 'string' || message.id.length > 100 ||
+            typeof message.method !== 'string' || !ALLOWED_METHODS.has(message.method) ||
+            !Array.isArray(message.args) || message.args.length > 8) return;
+
+        let payloadSize = 0;
+        try { payloadSize = JSON.stringify(message.args).length; } catch (ignored) { return; }
+        if (payloadSize > 5000000) {
+          window.parent.postMessage({
+            channel: CHANNEL, type: 'response', id: message.id, ok: false,
+            error: 'Permintaan terlalu besar. Pecah data atau arsipkan data lama.'
+          }, PARENT_ORIGIN);
+          return;
+        }
+
+        const success = function (result) {
+          window.parent.postMessage({
+            channel: CHANNEL, type: 'response', id: message.id, ok: true, result: result
+          }, PARENT_ORIGIN);
+        };
+        const failure = function (error) {
+          window.parent.postMessage({
+            channel: CHANNEL, type: 'response', id: message.id, ok: false,
+            error: error && error.message ? String(error.message) : 'Permintaan backend gagal.'
+          }, PARENT_ORIGIN);
+        };
+
+        const runner = google.script.run.withSuccessHandler(success).withFailureHandler(failure);
+        try {
+          runner[message.method].apply(runner, message.args);
+        } catch (error) {
+          failure(error);
+        }
+      });
+    </script>
+  </body>
+</html>
