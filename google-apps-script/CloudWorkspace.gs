@@ -452,7 +452,7 @@ function _erpReadableOperationalKeys_(role) {
   if (role === 'KEUANGAN') return [
     'bukuKas', 'arsipBukti', 'posKewajiban', 'auditLog', 'tanah', 'beko',
     'notaMaterial', 'stok', 'produksi', 'penjualan', 'pembelian', 'anggaran',
-    'taxRecords', 'qcRecords', 'assets', 'housingUnits', 'arusKas', 'menuConfig'
+    'taxRecords', 'qcRecords', 'assets', 'arusKas', 'menuConfig'
   ];
   if (role === 'PROYEK') return [
     'tanah', 'beko', 'notaMaterial', 'stok', 'produksi', 'penjualan', 'pembelian',
