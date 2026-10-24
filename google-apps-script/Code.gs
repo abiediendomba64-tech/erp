@@ -112,6 +112,12 @@ function doPost(e) {
     const rawBody = e && e.postData && e.postData.contents ? e.postData.contents : '';
     const data = rawBody ? JSON.parse(rawBody) : {};
 
+    // Cloud ERP API: all authenticated workspace operations are handled by CloudApi.gs.
+    // Keep this before legacy endpoints so cloud actions cannot fall through to public handlers.
+    if (path === '/cloud-api' || (data && data.action)) {
+      return jsonResponse(handleCloudApi_(data));
+    }
+
     if (path === '/ocr') return jsonResponse(handleOCR(data));
     if (path === '/webhook/whatsapp') return jsonResponse(handleWhatsAppWebhook(data));
     if (path === '/webhook/telegram') return jsonResponse(handleTelegramWebhook(data));
