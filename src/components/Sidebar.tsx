@@ -52,9 +52,7 @@ const adminMenu: { id: Page; label: string; icon: React.ReactNode; section: stri
 
 // Menu untuk CLIENT/VIEWER (read-only, tidak ada data sensitif)
 const clientMenu: { id: Page; label: string; icon: React.ReactNode; section: string }[] = [
-  { id: 'dashboard', label: 'Ringkasan', icon: <LayoutDashboard size={20} />, section: 'Info' },
-  { id: 'tanah', label: 'Progress Tanah', icon: <LandPlot size={20} />, section: 'Info' },
-  { id: 'beko', label: 'Progress Beko', icon: <Truck size={20} />, section: 'Info' },
+  { id: 'dashboard', label: 'Ringkasan Progres', icon: <LayoutDashboard size={20} />, section: 'Info' },
 ];
 
 const financeMenu = adminMenu.filter((item) => [
@@ -64,7 +62,7 @@ const financeMenu = adminMenu.filter((item) => [
 ].includes(item.id));
 
 const projectMenu = adminMenu.filter((item) => [
-  'dashboard', 'auditrekap', 'tanah', 'beko', 'stok', 'produksi', 'penjualan',
+  'dashboard', 'tanah', 'beko', 'stok', 'produksi', 'penjualan',
   'pembelian', 'rab', 'qc', 'aset', 'surat', 'unit'
 ].includes(item.id));
 
