@@ -349,7 +349,7 @@ export default function CloudAccessGate({ children }: { children: ReactNode }) {
           {workspaces.map((workspace) => (
             <button
               key={workspace.id}
-              disabled={phase === 'loading' || (localHasRows && !isLocalSnapshotSyncedForWorkspace(localSnapshot, workspace.id) && !backupDownloaded)}
+              disabled={localHasRows && !isLocalSnapshotSyncedForWorkspace(localSnapshot, workspace.id) && !backupDownloaded}
               onClick={() => void activateWorkspace(workspace)}
               className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-4 py-3 text-left hover:border-indigo-300 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
