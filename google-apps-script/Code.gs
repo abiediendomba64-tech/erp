@@ -896,26 +896,27 @@ function getSaldoKas() {
  */
 function logAudit(aksi, tabel, recordId, nilaiLama, nilaiBaru) {
   const ss = getErpSpreadsheet_();
-  let sheet = ss.getSheetByName('AUDIT_LOG');
-  
-  if (!sheet) {
-    sheet = ss.insertSheet('AUDIT_LOG');
-    sheet.appendRow(['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan']);
-  }
-  
-  const user = Session.getActiveUser().getEmail() || 'System';
-  
-  sheet.appendRow([
-    'LOG-' + new Date().getTime(),
-    new Date().toISOString(),
-    user,
-    aksi,
-    tabel,
-    recordId,
-    nilaiLama,
-    nilaiBaru,
-    aksi
+  const sheet = ensureNamedSheet_(ss, 'AUDIT_LOG', [
+    'id', 'timestamp', 'user_sub', 'user_email', 'user', 'aksi',
+    'modul', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan'
   ]);
+  const user = Session.getActiveUser().getEmail() || 'System';
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(value => String(value || '').trim());
+  const record = {
+    id: 'LOG-' + Utilities.getUuid(),
+    timestamp: new Date().toISOString(),
+    user_sub: '',
+    user_email: user,
+    user: user,
+    aksi: aksi,
+    modul: tabel,
+    tabel: tabel,
+    record_id: recordId,
+    nilai_lama: nilaiLama,
+    nilai_baru: nilaiBaru,
+    alasan: aksi
+  };
+  sheet.appendRow(headers.map(header => Object.prototype.hasOwnProperty.call(record, header) ? record[header] : ''));
 }
 
 // ============ SETUP FUNCTIONS ============
@@ -1050,6 +1051,9 @@ function setupErpBackend() {
   props.setProperty('ERP_SPREADSHEET_ID', id);
   if (!props.getProperty('ERP_SESSION_SECRET')) {
     props.setProperty('ERP_SESSION_SECRET', Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid());
+  }
+  if (!props.getProperty('ERP_INGEST_SECRET')) {
+    props.setProperty('ERP_INGEST_SECRET', Utilities.getUuid() + Utilities.getUuid());
   }
 
   const ss = SpreadsheetApp.openById(id);
@@ -1203,9 +1207,14 @@ function loginWithGoogle_(credential) {
       }
       matched = { sub: sub, email: email, nama: String(claims.name || email), role: 'ADMIN', status: 'ACTIVE' };
       matchedRow = users.getLastRow() + 1;
-      users.getRange(matchedRow, 1, 1, ERP_USERS_HEADERS_.length).setValues([[
-        sub, email, matched.nama, matched.role, matched.status, new Date().toISOString(), new Date().toISOString(), ''
-      ]]);
+      const userHeaders = users.getRange(1, 1, 1, users.getLastColumn()).getValues()[0].map(value => String(value || '').trim());
+      const newAdmin = {
+        google_sub: sub, email: email, nama: matched.nama, role: matched.role, status: matched.status,
+        created_at: new Date().toISOString(), last_login: new Date().toISOString(), phone: ''
+      };
+      users.getRange(matchedRow, 1, 1, userHeaders.length).setValues([userHeaders.map(header =>
+        Object.prototype.hasOwnProperty.call(newAdmin, header) ? newAdmin[header] : ''
+      )]);
     } else {
       if (matched.sub && matched.sub !== sub) throw new Error('Alamat email ini terikat ke akun Google yang berbeda.');
       if (matched.status.toUpperCase() !== 'ACTIVE') throw new Error('Akun dinonaktifkan. Hubungi ADMIN.');
@@ -1363,7 +1372,11 @@ function saveUser_(input, actor) {
         return { saved: true, email: email, role: role, status: status };
       }
     }
-    sheet.appendRow(['', email, name || email, role, status, new Date().toISOString(), '', phone]);
+    const newUser = {
+      google_sub: '', email: email, nama: name || email, role: role, status: status,
+      created_at: new Date().toISOString(), last_login: '', phone: phone
+    };
+    sheet.appendRow(headers.map(header => Object.prototype.hasOwnProperty.call(newUser, header) ? newUser[header] : ''));
     return { saved: true, email: email, role: role, status: status, invited: true };
   } finally {
     lock.releaseLock();
