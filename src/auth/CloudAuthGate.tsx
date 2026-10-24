@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, createContext, useContext, ReactNode } from 'react';
 import { LoaderCircle, ShieldCheck, Cloud, LogOut, AlertCircle, Database } from 'lucide-react';
-import { clearCloudWorkspace, gasRpc, setCloudIdToken, CloudUser, CloudWorkspace, WorkspaceLoad } from '../lib/gasBridge';
+import { clearCloudWorkspace, configureCloudWorkspace, gasRpc, setCloudIdToken, CloudUser, CloudWorkspace, WorkspaceLoad } from '../lib/gasBridge';
 import { createEmptyWorkspaceSnapshot, readLocalWorkspaceSnapshot, validateWorkspaceSnapshot, WorkspaceSnapshot } from '../lib/initialWorkspace';
 
 interface AuthContextValue {
@@ -46,7 +46,8 @@ export default function CloudAuthGate({ children }: Props) {
       window.localStorage.setItem('abiedien.erp.app.v1', JSON.stringify(snapshot.operational));
       window.localStorage.setItem('abiedien.erp.accounting.v1', JSON.stringify(snapshot.accounting));
       setCloudIdToken(token);
-      configureWorkspace(token, result);
+      (window as any).__erpCloudRole = user?.role || 'ADMIN';
+      configureCloudWorkspace(token, result.workspace.id, result.versions, user?.role || 'ADMIN');
       setWorkspace(result.workspace);
       setScreen('ready');
     } catch (cause) {
@@ -282,9 +283,3 @@ export default function CloudAuthGate({ children }: Props) {
   );
 }
 
-function configureWorkspace(token: string, result: WorkspaceLoad) {
-  // Kept as a single place so the active workspace and slice versions are updated together.
-  import('../lib/gasBridge').then(({ configureCloudWorkspace }) => {
-    configureCloudWorkspace(token, result.workspace.id, result.versions);
-  });
-}
