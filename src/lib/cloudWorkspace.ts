@@ -93,7 +93,12 @@ export async function persistWorkspaceSlice(
 ): Promise<void> {
   // Read-only and project-only sessions may hydrate a default chart in the UI, but may not
   // upload the hidden accounting arrays back to the canonical snapshot.
-  if (activeRole === 'VIEWER' || (activeRole === 'PROYEK' && slice === 'accounting')) return Promise.resolve();
+  if (activeRole === 'VIEWER') {
+    const error = new Error('Role VIEWER hanya dapat membaca data. Perubahan tidak disimpan.');
+    publish({ status: 'error', message: error.message, version: activeVersion });
+    return Promise.reject(error);
+  }
+  if (activeRole === 'PROYEK' && slice === 'accounting') return Promise.resolve();
   let resolveTask!: () => void;
   let rejectTask!: (error: Error) => void;
   const task = new Promise<void>((resolve, reject) => {
