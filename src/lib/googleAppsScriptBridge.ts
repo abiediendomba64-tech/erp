@@ -1,6 +1,7 @@
 export type GoogleAppsScriptMethod =
   | 'apiGetPublicConfig'
   | 'apiLogin'
+  | 'apiListUsers'
   | 'apiListWorkspaces'
   | 'apiCreateWorkspace'
   | 'apiAddUser'
