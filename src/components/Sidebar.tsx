@@ -12,8 +12,7 @@ interface SidebarProps {
   setCurrentPage: (page: Page) => void;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
-  currentRole: 'ADMIN' | 'VIEWER';
-  setCurrentRole: (role: 'ADMIN' | 'VIEWER') => void;
+  currentRole: 'ADMIN' | 'KEUANGAN' | 'PROYEK' | 'VIEWER';
 }
 
 // Menu untuk ADMIN (full access)
@@ -58,8 +57,22 @@ const clientMenu: { id: Page; label: string; icon: React.ReactNode; section: str
   { id: 'beko', label: 'Progress Beko', icon: <Truck size={20} />, section: 'Info' },
 ];
 
-export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen, currentRole, setCurrentRole }: SidebarProps) {
-  const menuItems = currentRole === 'ADMIN' ? adminMenu : clientMenu;
+const financeMenu = adminMenu.filter((item) => [
+  'dashboard', 'auditrekap', 'laporan', 'bukukas', 'arsipbukti', 'poskewajiban',
+  'anggaran', 'auditlog', 'accounting', 'inputtransaksi', 'laporankeuangan',
+  'invoicepo', 'rab', 'pajak'
+].includes(item.id));
+
+const projectMenu = adminMenu.filter((item) => [
+  'dashboard', 'auditrekap', 'tanah', 'beko', 'stok', 'produksi', 'penjualan',
+  'pembelian', 'rab', 'qc', 'aset', 'surat', 'unit'
+].includes(item.id));
+
+export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen, currentRole }: SidebarProps) {
+  const menuItems = currentRole === 'ADMIN' ? adminMenu
+    : currentRole === 'KEUANGAN' ? financeMenu
+      : currentRole === 'PROYEK' ? projectMenu
+        : clientMenu;
   let currentSection = '';
 
   return (
@@ -81,31 +94,18 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
             {isOpen && (
               <div className="overflow-hidden">
                 <h1 className="font-bold text-sm whitespace-nowrap">Audit System</h1>
-                <p className="text-xs text-slate-400 whitespace-nowrap">Data lokal • Belum cloud sync</p>
+                <p className="text-xs text-slate-400 whitespace-nowrap">Akses workspace cloud</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Role Switcher */}
+        {/* Identity comes from the authenticated backend; roles cannot be switched in the browser. */}
         {isOpen && (
           <div className="px-4 py-3 border-b border-slate-700">
-            <p className="text-xs text-amber-300 mb-2">Mode tampilan (bukan autentikasi):</p>
-            <div className="flex gap-1">
-              <button
-                onClick={() => { setCurrentRole('ADMIN'); setCurrentPage('dashboard'); }}
-                className={`flex-1 text-xs py-1.5 rounded font-medium transition-colors ${currentRole === 'ADMIN' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
-              >
-                🔑 Admin
-              </button>
-              <button
-                onClick={() => { setCurrentRole('VIEWER'); setCurrentPage('dashboard'); }}
-                className={`flex-1 text-xs py-1.5 rounded font-medium transition-colors ${currentRole === 'VIEWER' ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
-              >
-                👁 Client
-              </button>
-            </div>
-            <p className="mt-2 text-[10px] leading-4 text-amber-300">Pergantian Admin/Client hanya memfilter menu browser. Ini belum mengamankan data atau API.</p>
+            <p className="text-[10px] uppercase tracking-wider text-slate-400">Role akses</p>
+            <p className="mt-1 text-sm font-semibold text-white">{currentRole}</p>
+            <p className="mt-1 text-[10px] leading-4 text-slate-400">Menu difilter berdasarkan role. Backend tetap memeriksa izin saat menyimpan.</p>
           </div>
         )}
 
@@ -144,12 +144,12 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
         {isOpen && (
           <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-700">
             <div className="flex items-center gap-2">
-              <div className={`w-8 h-8 ${currentRole === 'ADMIN' ? 'bg-indigo-500' : 'bg-emerald-500'} rounded-full flex items-center justify-center text-xs font-bold`}>
-                {currentRole === 'ADMIN' ? 'A' : 'C'}
+              <div className={`w-8 h-8 ${currentRole === 'ADMIN' ? 'bg-indigo-500' : currentRole === 'VIEWER' ? 'bg-emerald-500' : 'bg-sky-500'} rounded-full flex items-center justify-center text-xs font-bold`}>
+                {currentRole === 'ADMIN' ? 'A' : currentRole === 'KEUANGAN' ? 'K' : currentRole === 'PROYEK' ? 'P' : 'V'}
               </div>
               <div>
-                <p className="text-xs font-medium">{currentRole === 'ADMIN' ? 'Administrator' : 'Client / Viewer'}</p>
-                <p className="text-xs text-slate-400">Mode tampilan saja; izin server belum aktif</p>
+                <p className="text-xs font-medium">{currentRole === 'ADMIN' ? 'Administrator' : currentRole === 'KEUANGAN' ? 'Keuangan' : currentRole === 'PROYEK' ? 'Tim Proyek' : 'Viewer'}</p>
+                <p className="text-xs text-slate-400">Izin diperiksa backend</p>
               </div>
             </div>
           </div>
