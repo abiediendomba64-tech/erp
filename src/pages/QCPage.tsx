@@ -134,7 +134,10 @@ export default function QCPage() {
 
   const downloadEvidence = async (record: QCRecord) => {
     if (!record.local_file_key && record.tautan_bukti) {
-      openDriveDocument(record.tautan_bukti);
+      if (/^https:\\/\\//i.test(record.tautan_bukti)) {
+        if (/^https:\\/\\/drive\\.google\\.com\\//i.test(record.tautan_bukti)) openDriveDocument(record.tautan_bukti);
+        else window.open(record.tautan_bukti, '_blank', 'noopener,noreferrer');
+      }
       return;
     }
     if (!record.local_file_key) return;
