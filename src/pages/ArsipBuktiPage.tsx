@@ -11,8 +11,8 @@ import {
 import {
   downloadLocalDocumentFile,
   previewLocalDocumentFile,
-  saveLocalDocumentFile
 } from '../utils/localDocuments';
+import { uploadDocumentToDrive } from '../utils/googleDriveDocuments';
 import { createCashbookJournal, journalTotalsAreBalanced } from '../utils/cashbookJournal';
 
 type DocumentKind = ArsipBukti['jenis'];
@@ -249,7 +249,8 @@ export default function ArsipBuktiPage() {
 
     setSaving(true);
     try {
-      const localFileKey = selectedFile ? await saveLocalDocumentFile(selectedFile) : existing?.local_file_key;
+      const uploadedDriveFile = selectedFile ? await uploadDocumentToDrive(selectedFile) : null;
+      const localFileKey = selectedFile ? '' : existing?.local_file_key;
       const now = new Date().toISOString();
       const record: ArsipBukti = {
         ...(existing || {}),
@@ -265,12 +266,13 @@ export default function ArsipBuktiPage() {
         penerima: form.penerima.trim(),
         nominal,
         keterangan: form.catatan_audit.trim() || form.judul_dokumen.trim(),
-        link_drive: form.link_drive.trim(),
+        link_drive: uploadedDriveFile?.url || form.link_drive.trim(),
+        drive_file_id: uploadedDriveFile?.id || existing?.drive_file_id,
         tgl_upload: getLocalDateISO(),
-        nama_file: selectedFile?.name || existing?.nama_file || '',
-        mime_type: selectedFile?.type || existing?.mime_type || '',
-        ukuran_bytes: selectedFile?.size || existing?.ukuran_bytes || 0,
-        local_file_key: localFileKey,
+        nama_file: uploadedDriveFile?.name || existing?.nama_file || '',
+        mime_type: uploadedDriveFile?.mimeType || existing?.mime_type || '',
+        ukuran_bytes: uploadedDriveFile?.size || existing?.ukuran_bytes || 0,
+        local_file_key: localFileKey || undefined,
         catatan_audit: form.catatan_audit.trim(),
         terverifikasi: form.terverifikasi,
         diverifikasi_oleh: form.terverifikasi === 'Ya' ? form.diverifikasi_oleh.trim() : '',
@@ -343,7 +345,9 @@ export default function ArsipBuktiPage() {
       if (!verifiedPaymentLink || newMatchRows.length === 0) {
         messages.push('Dokumen disimpan, tetapi tidak ada jurnal yang diposting otomatis. Pastikan jenis dokumen, ID Buku Kas, nominal, dan bukti asli sesuai.');
       }
-      messages.push('File lampiran tersimpan lokal pada browser ini; tautan Google Drive/cloud tidak dibuat otomatis.');
+      if (uploadedDriveFile) messages.push('Lampiran tersimpan di Google Drive. Pastikan folder Drive dibagikan hanya kepada staf/pemilik yang berhak.');
+      else if (existing?.local_file_key && !form.link_drive.trim()) messages.push('Lampiran lama masih tersimpan lokal di browser asal; belum dipindahkan ke Drive. Pilih file lagi untuk upload cloud.');
+      else if (form.link_drive.trim()) messages.push('Metadata menyimpan tautan eksternal yang Anda masukkan; akses file mengikuti izin penyedia tautan.');
       setMessage(messages.join(' '));
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
@@ -367,7 +371,7 @@ export default function ArsipBuktiPage() {
     setError('');
     try {
       if (!item.local_file_key) {
-        setError('Dokumen ini tidak memiliki file lokal. Buka tautan eksternal atau lampirkan file asli.');
+        setError('Dokumen ini tidak memiliki file Drive. Buka tautan eksternal atau lampirkan file asli.');
         return;
       }
       await downloadLocalDocumentFile(item.local_file_key, item.nama_file || item.kode_bukti + '.bin');
