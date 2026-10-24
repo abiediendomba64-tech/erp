@@ -197,8 +197,8 @@ function createCloudWorkspace_(user, name, data) {
     const now = new Date().toISOString();
     ss.getSheetByName('ERP_WORKSPACES').appendRow([id, workspaceName, user.email, now]);
     ss.getSheetByName('ERP_MEMBERS').appendRow([id, user.email, 'ADMIN', now, 'active']);
-    writeCloudStateVersion_(id, 1, data, user.email, now);
-    ss.getSheetByName('ERP_STATE_HEAD').appendRow([id, 1, cloudChunkCount_(JSON.stringify(data)), now, user.email]);
+    const initialChunkCount = writeCloudStateVersion_(id, 1, data, user.email, now);
+    ss.getSheetByName('ERP_STATE_HEAD').appendRow([id, 1, initialChunkCount, now, user.email]);
     cloudAudit_(user.email, 'CREATE_WORKSPACE', 'ERP_WORKSPACES', id, '', workspaceName);
     return { success: true, workspace_id: id, name: workspaceName, role: 'ADMIN', version: 1 };
   } finally {
@@ -262,8 +262,8 @@ function saveCloudWorkspaceState_(user, workspaceId, data, expectedVersion) {
     authorizeCloudStateChanges_(current.data, data, membership.role);
     const nextVersion = current.version + 1;
     const now = new Date().toISOString();
-    writeCloudStateVersion_(String(workspaceId), nextVersion, data, user.email, now);
-    updateCloudStateHead_(String(workspaceId), nextVersion, cloudChunkCount_(JSON.stringify(data)), now, user.email);
+    const nextChunkCount = writeCloudStateVersion_(String(workspaceId), nextVersion, data, user.email, now);
+    updateCloudStateHead_(String(workspaceId), nextVersion, nextChunkCount, now, user.email);
     cloudAudit_(user.email, 'SAVE_WORKSPACE_STATE', 'ERP_STATE', String(workspaceId), String(current.version), String(nextVersion));
     return { success: true, saved: true, version: nextVersion, error_code: null };
   } finally {
@@ -352,6 +352,7 @@ function writeCloudStateVersion_(workspaceId, version, data, email, timestamp) {
   }
   const sheet = getErpSpreadsheet_().getSheetByName('ERP_STATE_VERSIONS');
   if (chunks.length) sheet.getRange(sheet.getLastRow() + 1, 1, chunks.length, chunks[0].length).setValues(chunks);
+  return chunks.length;
 }
 
 function cloudChunkCount_(json) {
