@@ -1105,7 +1105,7 @@ function apiRequest(request) {
 
     const user = requireUserSession_(String(request.sessionToken || ''));
     if (action === 'auth.me') return { ok: true, data: { user: publicUser_(user), expiresAt: user.exp } };
-    if (action === 'workspace.load') return { ok: true, data: loadWorkspace_() };
+    if (action === 'workspace.load') return { ok: true, data: loadWorkspaceForRole_(user) };
     if (action === 'workspace.bootstrap') {
       requireRole_(user, ['ADMIN']);
       return { ok: true, data: bootstrapWorkspace_(request.snapshot, user) };
@@ -1441,6 +1441,49 @@ function loadWorkspace_() {
   return { found: anyRecord, snapshot: snapshot, version: version };
 }
 
+function readableModulesForRole_(role) {
+  role = String(role || '').toUpperCase();
+  if (role === 'ADMIN') return ERP_OPERATIONAL_MODULES_.map(m => 'operational.' + m).concat(ERP_ACCOUNTING_MODULES_.map(m => 'accounting.' + m));
+  if (role === 'KEUANGAN') return allowedModulesForRole_('KEUANGAN');
+  if (role === 'PROYEK') return allowedModulesForRole_('PROYEK');
+  if (role === 'VIEWER') return ['operational.tanah', 'operational.beko'];
+  return [];
+}
+
+function loadWorkspaceForRole_(user) {
+  const state = loadWorkspace_();
+  if (!state.found) return state;
+  const snapshot = JSON.parse(JSON.stringify(state.snapshot));
+  const readable = readableModulesForRole_(user.role);
+  ERP_OPERATIONAL_MODULES_.forEach(module => {
+    if (readable.indexOf('operational.' + module) < 0) snapshot.operational[module] = [];
+  });
+  ERP_ACCOUNTING_MODULES_.forEach(module => {
+    if (readable.indexOf('accounting.' + module) < 0) snapshot.accounting[module] = [];
+  });
+
+  if (String(user.role).toUpperCase() === 'VIEWER') {
+    snapshot.operational.tanah = snapshot.operational.tanah.map((row, index) => ({
+      ...row,
+      pemilik: 'Bidang ' + (index + 1),
+      harga_per_bt: 0,
+      dp: 0,
+      nilai_total_manual: 0,
+      kode_bukti: '',
+      url_bukti: '',
+      catatan: 'Rincian pembayaran disembunyikan untuk role VIEWER.'
+    }));
+    snapshot.operational.beko = snapshot.operational.beko.map(row => ({
+      ...row,
+      tarif: 0,
+      kode_bukti: '',
+      url_bukti: '',
+      catatan: 'Rincian biaya disembunyikan untuk role VIEWER.'
+    }));
+  }
+  return { found: true, snapshot: snapshot, version: state.version };
+}
+
 function bootstrapWorkspace_(snapshot, actor) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
@@ -1464,17 +1507,28 @@ function saveWorkspace_(snapshot, expectedVersion, actor) {
     if (Number(expectedVersion) !== oldState.version) {
       return { saved: false, conflict: true, version: oldState.version, error_code: 'conflict' };
     }
-    const next = validateWorkspaceSnapshot_(snapshot);
+    const requested = validateWorkspaceSnapshot_(snapshot);
+    // Start with the canonical server state and copy back only modules the verified
+    // role may edit. Hidden/unauthorized arrays sent by a browser are never applied.
+    const next = JSON.parse(JSON.stringify(oldState.snapshot));
     const changed = [];
+    const allowed = allowedModulesForRole_(actor.role);
     ERP_OPERATIONAL_MODULES_.forEach(module => {
-      if (JSON.stringify(oldState.snapshot.operational[module]) !== JSON.stringify(next.operational[module])) changed.push('operational.' + module);
+      const path = 'operational.' + module;
+      if (allowed.indexOf(path) < 0) return;
+      if (JSON.stringify(oldState.snapshot.operational[module]) !== JSON.stringify(requested.operational[module])) {
+        next.operational[module] = requested.operational[module];
+        changed.push(path);
+      }
     });
     ERP_ACCOUNTING_MODULES_.forEach(module => {
-      if (JSON.stringify(oldState.snapshot.accounting[module]) !== JSON.stringify(next.accounting[module])) changed.push('accounting.' + module);
+      const path = 'accounting.' + module;
+      if (allowed.indexOf(path) < 0) return;
+      if (JSON.stringify(oldState.snapshot.accounting[module]) !== JSON.stringify(requested.accounting[module])) {
+        next.accounting[module] = requested.accounting[module];
+        changed.push(path);
+      }
     });
-    const allowed = allowedModulesForRole_(actor.role);
-    const denied = changed.filter(module => allowed.indexOf(module) < 0);
-    if (denied.length) throw new Error('Role ' + actor.role + ' tidak boleh mengubah modul: ' + denied.join(', '));
     if (changed.length === 0) return { saved: true, version: oldState.version, changedModules: [] };
     const oldAudit = oldState.snapshot.operational.auditLog;
     const nextAudit = next.operational.auditLog;
@@ -1496,14 +1550,15 @@ function allowedModulesForRole_(role) {
     'operational.bukuKas', 'operational.arsipBukti', 'operational.posKewajiban',
     'operational.auditLog', 'operational.anggaran', 'operational.arusKas',
     'operational.penggajian', 'operational.taxRecords',
-    'accounting.jurnal', 'accounting.invoice', 'accounting.purchaseOrder', 'accounting.schedule'
+    'accounting.akun', 'accounting.jurnal', 'accounting.invoice',
+    'accounting.purchaseOrder', 'accounting.rab', 'accounting.schedule'
   ];
   if (role === 'PROYEK') return [
     'operational.tanah', 'operational.beko', 'operational.notaMaterial',
     'operational.stok', 'operational.produksi', 'operational.penjualan',
     'operational.pembelian', 'operational.ocr', 'operational.whatsapp',
     'operational.qcRecords', 'operational.assets', 'operational.housingUnits',
-    'operational.auditLog'
+    'operational.auditLog', 'accounting.rab'
   ];
   return [];
 }
