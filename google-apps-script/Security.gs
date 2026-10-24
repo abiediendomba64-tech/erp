@@ -364,6 +364,81 @@ function validateSlice_(slice, data) {
   keys.forEach(function (key) {
     if (!Array.isArray(data[key])) throw apiError_('invalid_payload', 'Bagian data ' + slice + ' tidak lengkap: ' + key);
   });
+
+  var normalized = JSON.parse(JSON.stringify(data));
+  if (slice === 'accounting') normalized = validateAccountingSnapshot_(normalized);
+  return normalized;
+}
+
+function validateAccountingSnapshot_(data) {
+  var accountsByCode = {};
+  if (!data.akun.length) throw apiError_('invalid_chart_of_accounts', 'Chart of Accounts tidak boleh kosong.');
+  data.akun.forEach(function (account) {
+    if (!account || typeof account.kode !== 'string' || !account.kode.trim() ||
+        typeof account.nama !== 'string' || !account.nama.trim()) {
+      throw apiError_('invalid_chart_of_accounts', 'Setiap akun wajib memiliki kode dan nama.');
+    }
+    if (accountsByCode[account.kode]) throw apiError_('duplicate_account_code', 'Kode akun duplikat: ' + account.kode);
+    if (['Aset','Kewajiban','Ekuitas','Pendapatan','Beban'].indexOf(account.tipe) === -1 ||
+        ['Debit','Kredit'].indexOf(account.saldo_normal) === -1) {
+      throw apiError_('invalid_chart_of_accounts', 'Tipe atau saldo normal akun tidak valid: ' + account.kode);
+    }
+    var openingBalance = Number(account.saldo || 0);
+    if (!isFinite(openingBalance)) throw apiError_('invalid_chart_of_accounts', 'Saldo awal akun harus berupa angka: ' + account.kode);
+    account.saldo = openingBalance;
+    accountsByCode[account.kode] = account;
+  });
+
+  var seenJournalIds = {};
+  var seenJournalNumbers = {};
+  data.jurnal.forEach(function (journal) {
+    if (!journal || typeof journal.id !== 'string' || !journal.id.trim()) {
+      throw apiError_('invalid_journal', 'Setiap jurnal harus memiliki ID.');
+    }
+    if (seenJournalIds[journal.id]) throw apiError_('duplicate_journal_id', 'ID jurnal duplikat: ' + journal.id);
+    seenJournalIds[journal.id] = true;
+    if (journal.no_jurnal) {
+      if (seenJournalNumbers[journal.no_jurnal]) throw apiError_('duplicate_journal_number', 'Nomor jurnal duplikat: ' + journal.no_jurnal);
+      seenJournalNumbers[journal.no_jurnal] = true;
+    }
+    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(String(journal.tanggal || '')) ||
+        isNaN(Date.parse(String(journal.tanggal) + 'T00:00:00')) ||
+        ['Draft','Posted','Cancelled'].indexOf(journal.status) === -1) {
+      throw apiError_('invalid_journal', 'Tanggal atau status jurnal tidak valid: ' + journal.id);
+    }
+    if (!Array.isArray(journal.entries)) throw apiError_('invalid_journal', 'Baris jurnal tidak valid: ' + journal.id);
+    var debit = 0;
+    var credit = 0;
+    journal.entries.forEach(function (entry) {
+      var code = String(entry && entry.akun_kode || '');
+      var account = accountsByCode[code];
+      if (!account) throw apiError_('unknown_account', 'Jurnal ' + journal.id + ' memakai akun yang tidak ada: ' + code);
+      var entryDebit = Number(entry.debit);
+      var entryCredit = Number(entry.kredit);
+      if (!isFinite(entryDebit) || !isFinite(entryCredit) || entryDebit < 0 || entryCredit < 0 ||
+          (entryDebit > 0 && entryCredit > 0)) {
+        throw apiError_('invalid_journal_entry', 'Nominal debit/kredit tidak valid pada jurnal ' + journal.id);
+      }
+      entry.debit = entryDebit;
+      entry.kredit = entryCredit;
+      // The account master is authoritative for the displayed account name.
+      entry.akun_nama = account.nama;
+      debit += entryDebit;
+      credit += entryCredit;
+    });
+
+    if (journal.entries.length > 0 && Math.abs(debit - credit) > 0.005) {
+      throw apiError_('journal_not_balanced', 'Jurnal ' + journal.id + ' tidak balance. Debit=' + debit + ', kredit=' + credit + '.');
+    }
+    if (journal.status === 'Posted' &&
+        (journal.entries.length < 2 || debit <= 0 || Math.abs(debit - credit) > 0.005)) {
+      throw apiError_('journal_not_postable', 'Jurnal Posted wajib memiliki minimal dua baris dan total debit/kredit seimbang serta lebih besar dari nol.');
+    }
+
+    // Never trust client-supplied derived totals.
+    journal.total_debit = debit;
+    journal.total_kredit = credit;
+  });
   return data;
 }
 
