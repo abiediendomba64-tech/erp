@@ -1,5 +1,5 @@
 import { saveCloudWorkspace, type WorkspaceRole } from './googleWorkspaceApi';
-import { validateWorkspaceSnapshot, type WorkspaceSnapshot } from './initialWorkspace';
+import { setCloudCacheMeta, validateWorkspaceSnapshot, type WorkspaceSnapshot } from './initialWorkspace';
 
 export type CloudSyncStatus = 'inactive' | 'saved' | 'saving' | 'error' | 'conflict' | 'warning';
 export interface CloudSyncState {
@@ -49,6 +49,9 @@ export function configureCloudWorkspaceSession(
 ) {
   session = nextSession;
   currentSnapshot = validateWorkspaceSnapshot(snapshot);
+  try { setCloudCacheMeta(nextSession.workspaceId, nextSession.version, currentSnapshot); } catch (error) {
+    console.warn('Metadata cache cloud tidak dapat disimpan; proteksi backup akan meminta pemeriksaan data lokal.', error);
+  }
   blocked = false;
   queue = Promise.resolve();
   notify({
@@ -120,6 +123,9 @@ export async function persistCloudSlice(slice: Slice, nextValue: unknown) {
 
     currentSnapshot = candidate;
     session = { ...session, version: response.version };
+    try { setCloudCacheMeta(session.workspaceId, response.version, candidate); } catch (error) {
+      console.warn('Snapshot cloud tersimpan tetapi metadata cache lokal tidak dapat diperbarui.', error);
+    }
     if (response.auditWarning) {
       notify({
         status: 'warning',
