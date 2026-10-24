@@ -148,7 +148,17 @@ function AppContent({ initialSnapshot, sessionUser, onLogout }: { initialSnapsho
         <main className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
           <div className="p-6">
             <CloudStatusGuard />
-            {renderPage()}
+            {currentRole === 'VIEWER' && (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                Mode baca saja. Tombol dan input dinonaktifkan untuk role VIEWER; perubahan data membutuhkan akun berizin.
+              </div>
+            )}
+            <div
+              className={currentRole === 'VIEWER' ? 'pointer-events-none select-none opacity-90' : ''}
+              aria-disabled={currentRole === 'VIEWER'}
+            >
+              {renderPage()}
+            </div>
           </div>
         </main>
       </div>
