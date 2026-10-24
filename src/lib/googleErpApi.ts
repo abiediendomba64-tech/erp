@@ -39,6 +39,7 @@ let activeWorkspaceId: string | null = null;
 let cloudData: WorkspaceData | null = null;
 let cloudVersion: number | null = null;
 let writesBlocked = false;
+let sessionEpoch = 0;
 let writeQueue: Promise<void> = Promise.resolve();
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingSlices: Partial<Record<WorkspaceSlice, unknown>> = {};
@@ -129,6 +130,7 @@ export function configureGoogleWorkspace(
   version: number,
 ) {
   cancelPendingWrites('Workspace cloud diperbarui; perubahan yang masih menunggu belum dikirim.');
+  sessionEpoch++;
   activeWorkspaceId = workspaceId;
   cloudData = structuredClone(data);
   cloudVersion = version;
@@ -140,6 +142,7 @@ export function configureGoogleWorkspace(
 
 export function clearGoogleWorkspace() {
   cancelPendingWrites('Sesi cloud berakhir sebelum perubahan tertunda dikirim.');
+  sessionEpoch++;
   activeWorkspaceId = null;
   cloudData = null;
   cloudVersion = null;
@@ -170,6 +173,7 @@ export function persistGoogleWorkspaceSlice(
   }
 
   pendingSlices[slice] = structuredClone(nextSlice);
+  publish({ status: 'saving', message: 'Perubahan menunggu dikirim ke Google Sheets…', version: cloudVersion });
   const task = new Promise<void>((resolve, reject) => {
     pendingWaiters.push({ resolve, reject });
   });
@@ -180,10 +184,12 @@ export function persistGoogleWorkspaceSlice(
     debounceTimer = null;
     const slices = pendingSlices;
     const waiters = pendingWaiters;
+    const queuedEpoch = sessionEpoch;
     pendingSlices = {};
     pendingWaiters = [];
 
     const run = async () => {
+      if (queuedEpoch !== sessionEpoch) throw new Error('Sesi/workspace berubah sebelum penyimpanan dikirim.');
       if (!activeWorkspaceId || !cloudData || cloudVersion === null) {
         throw new Error('Workspace cloud belum siap; perubahan tidak dapat disimpan.');
       }
@@ -191,6 +197,8 @@ export function persistGoogleWorkspaceSlice(
         throw new Error('Penyimpanan diblokir setelah konflik/error. Muat ulang agar mengambil versi cloud terbaru.');
       }
 
+      const targetWorkspaceId = activeWorkspaceId;
+      const targetSessionToken = getSessionToken();
       const candidate: WorkspaceData = { ...cloudData, ...slices };
       publish({ status: 'saving', message: 'Menyimpan perubahan ke Google Sheets…', version: cloudVersion });
       const response = await googleErpApi<{
@@ -199,11 +207,14 @@ export function persistGoogleWorkspaceSlice(
         version?: number;
         error_code?: string | null;
       }>('state.save', {
-        workspaceId: activeWorkspaceId,
+        workspaceId: targetWorkspaceId,
         expectedVersion: cloudVersion,
         data: candidate,
       });
 
+      if (queuedEpoch !== sessionEpoch || activeWorkspaceId !== targetWorkspaceId || getSessionToken() !== targetSessionToken) {
+        throw new Error('Sesi berubah selama penyimpanan. Data cloud tidak diubah pada sesi browser baru; masuk kembali dan muat versi terbaru.');
+      }
       const result = (response as { result?: { saved?: boolean; version?: number; error_code?: string | null } }).result ||
         response as { saved?: boolean; version?: number; error_code?: string | null };
       if (result.saved !== true || typeof result.version !== 'number') {
@@ -229,6 +240,10 @@ export function persistGoogleWorkspaceSlice(
       () => { waiters.forEach(item => item.resolve()); },
       (error: unknown) => {
         const failure = error instanceof Error ? error : new Error(String(error));
+        if (queuedEpoch !== sessionEpoch) {
+          waiters.forEach(item => item.reject(failure));
+          return;
+        }
         if (status.status !== 'conflict') {
           writesBlocked = true;
           publish({
