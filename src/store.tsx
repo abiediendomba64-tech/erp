@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef, ReactNode } from 'react';
+import { getCloudWorkspaceSession, persistCloudSlice } from './lib/googleWorkspaceSync';
 import { BukuKas, ArsipBukti, PosKewajiban, AuditLog, Tanah, Beko, NotaMaterial, StokBarang, Produksi, Penjualan, Pembelian, Penggajian, Anggaran, ArusKas, OCRResult, WhatsAppLog, MenuItem, QCRecord, AssetRecord, TaxRecord, HousingUnit } from './types';
 import {
   initialBukuKas, initialArsipBukti, initialPosKewajiban,
@@ -311,12 +312,26 @@ const AppContext = createContext<{
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, undefined, loadAppState);
 
+  const previousSerialized = useRef<string | null>(null);
+
   useEffect(() => {
+    const serialized = JSON.stringify(state);
     try {
-      window.localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(state));
+      window.localStorage.setItem(APP_STORAGE_KEY, serialized);
     } catch (error) {
-      console.error('Gagal menyimpan data ERP ke browser. Buat backup JSON sesegera mungkin.', error);
+      console.error('Cache browser ERP tidak dapat ditulis. Cloud tetap menjadi sumber data utama.', error);
     }
+
+    if (previousSerialized.current === null) {
+      // First render was hydrated from the selected cloud snapshot. Do not push it back
+      // immediately; only later user changes create a new server version.
+      previousSerialized.current = serialized;
+      return;
+    }
+    if (previousSerialized.current === serialized) return;
+    previousSerialized.current = serialized;
+    if (!getCloudWorkspaceSession()) return; // local-only development mode
+    void persistCloudSlice('operational', state).catch(() => undefined);
   }, [state]);
   return (
     <AppContext.Provider value={{ state, dispatch }}>
