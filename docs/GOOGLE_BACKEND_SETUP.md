@@ -56,6 +56,7 @@ Pada environment build frontend (misalnya Cloudflare Pages) tambahkan:
 | Environment variable | Nilai |
 |---|---|
 | `VITE_GOOGLE_CLIENT_ID` | OAuth Client ID yang sama persis dengan `GOOGLE_CLIENT_ID` di Apps Script |
+| `VITE_ERP_WEB_APP_URL` | URL deployment Apps Script lengkap yang berakhir `/exec`; dipakai untuk menampilkan tautan login jika pengguna membuka frontend langsung |
 
 Lakukan build/deploy ulang setelah environment diisi. `VITE_ERP_API_URL` tidak lagi digunakan untuk akses langsung: request ERP melewati bridge `postMessage` yang dibatasi origin dan `google.script.run`. Buka panel ERP lewat URL Web App Apps Script `/exec`, bukan URL hosting React secara langsung.
 
@@ -81,6 +82,7 @@ Perubahan yang disimpan harus menampilkan status cloud `tersimpan`. Jika terjadi
 ## Batas tahap ini — tidak boleh dianggap sudah aktif
 
 - Data operasional dan akuntansi sekarang dimuat/disimpan sebagai snapshot cloud dengan versi per bagian. Transaksi yang melibatkan dua bagian berbeda belum dijamin sebagai satu transaksi database atomik.
+- Panel dimuat melalui Web App Apps Script. Akses langsung ke URL hosting React sengaja tidak menjalankan login; gunakan tautan `/exec` yang ditampilkan pada halaman tersebut.
 - Endpoint OCR, WhatsApp, dan Telegram sengaja dinonaktifkan pada gateway baru sampai upload Drive, validasi provider, deduplikasi webhook, dan alur approval diuji end-to-end.
 - Upload lampiran Google Drive belum disambungkan; lampiran lokal lama tidak otomatis dipindahkan.
 - API transaksi lama dan endpoint laporan yang membaca tab legacy dinonaktifkan untuk browser. Laporan cloud dihitung dari snapshot workspace.
