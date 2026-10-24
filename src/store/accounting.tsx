@@ -77,9 +77,13 @@ function loadInitialState(): AccountingState {
     const saved = JSON.parse(raw) as Partial<AccountingState>;
     const accountsAreValid = Array.isArray(saved.akun) &&
       saved.akun.every((account) => account && typeof account.kode === 'string' && typeof account.tipe === 'string');
+    const role = getCloudWorkspaceSession()?.workspaceRole;
+    const accountMasterVisible = !role || role === 'ADMIN' || role === 'KEUANGAN';
 
     return {
-      akun: accountsAreValid && saved.akun!.length > 0 ? saved.akun! : initialAkun,
+      // Scoped roles receive no account balances/chart master from the cloud.
+      // Preserve their intentionally empty view instead of re-injecting default accounts locally.
+      akun: accountsAreValid && (saved.akun!.length > 0 || !accountMasterVisible) ? saved.akun! : initialAkun,
       jurnal: Array.isArray(saved.jurnal) ? saved.jurnal : [],
       invoice: Array.isArray(saved.invoice) ? saved.invoice : [],
       purchaseOrder: Array.isArray(saved.purchaseOrder) ? saved.purchaseOrder : [],
