@@ -550,10 +550,12 @@ async function saveModule(workspaceId: string, moduleName: string, nextRows: unk
   }
 }
 
-export function persistWorkspaceSnapshot(
+export function persistWorkspaceSnapshot<T extends object>(
   slice: 'operational' | 'accounting',
-  nextState: Record<string, unknown>,
+  nextState: T,
 ): Promise<void> {
+  // Typed module state interfaces intentionally need not declare a string index signature.
+  const stateRecord = nextState as Record<string, unknown>;
   let resolveTask!: () => void;
   let rejectTask!: (error: Error) => void;
   const task = new Promise<void>((resolve, reject) => { resolveTask = resolve; rejectTask = reject; });
@@ -562,9 +564,9 @@ export function persistWorkspaceSnapshot(
     if (!activeWorkspaceId) throw new Error('Workspace cloud belum siap; perubahan tidak disimpan.');
     if (writesBlocked) throw new Error('Penulisan diblokir setelah konflik. Muat ulang untuk mengambil data cloud terbaru.');
     const workspaceId = activeWorkspaceId;
-    const moduleNames = Object.keys(nextState).filter(key => Array.isArray(nextState[key]));
+    const moduleNames = Object.keys(stateRecord).filter(key => Array.isArray(stateRecord[key]));
     for (const moduleName of moduleNames) {
-      await saveModule(workspaceId, moduleName, nextState[moduleName] as unknown[]);
+      await saveModule(workspaceId, moduleName, stateRecord[moduleName] as unknown[]);
     }
     publish('saved', 'Perubahan tersimpan di Firestore.');
   }).then(resolveTask).catch((error: unknown) => {
