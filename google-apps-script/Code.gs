@@ -26,10 +26,14 @@ const SPREADSHEET_ID = (function () {
 })();
 
 function getErpSpreadsheet_() {
-  if (!SPREADSHEET_ID) {
-    throw new Error('Spreadsheet belum dikonfigurasi. Set Script Property SPREADSHEET_ID atau pasang Apps Script pada Google Sheet.');
+  const props = PropertiesService.getScriptProperties();
+  const configuredId = props.getProperty('ERP_SPREADSHEET_ID') || props.getProperty('SPREADSHEET_ID') || '';
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  const id = configuredId || (active ? active.getId() : '');
+  if (!id) {
+    throw new Error('Spreadsheet belum dikonfigurasi. Jalankan setupErpBackend() atau isi ERP_SPREADSHEET_ID pada Script Properties.');
   }
-  return SpreadsheetApp.openById(SPREADSHEET_ID);
+  return SpreadsheetApp.openById(id);
 }
 
 function getGeminiApiKey_() {
@@ -72,65 +76,65 @@ function ensureSheetHeaders_(sheet, requiredHeaders) {
 /**
  * Handle GET requests (untuk testing)
  */
+/**
+ * Google Apps Script Web App entry points.
+ * All browser-facing data access goes through the authenticated HtmlService bridge.
+ * Legacy anonymous JSON routes are deliberately disabled.
+ */
 function doGet(e) {
-  try {
-    const path = e && e.parameter && e.parameter.path ? e.parameter.path : '/health';
+  const params = e && e.parameter ? e.parameter : {};
+  const props = PropertiesService.getScriptProperties();
 
-    if (path === '/transaksi') return jsonResponse(readSheetRecords('BUKU_KAS'));
-    if (path === '/akun') return jsonResponse(readSheetRecords('AKUN'));
-    if (path === '/laporan/laba-rugi') return jsonResponse(generateLabaRugi());
-    if (path === '/laporan/neraca') return jsonResponse(generateNeraca());
-
-    return jsonResponse({
-      status: 'OK',
-      message: 'ERP Backend API is running',
-      endpoints: [
-        'GET /transaksi',
-        'GET /akun',
-        'GET /laporan/laba-rugi',
-        'GET /laporan/neraca',
-        'POST /transaksi',
-        'POST /reversal',
-        'POST /ocr',
-        'POST /webhook/whatsapp',
-        'POST /webhook/telegram'
-      ]
-    });
-  } catch (error) {
-    return jsonResponse({ success: false, error: String(error && error.message ? error.message : error) });
+  // WhatsApp webhook verification handshake. POST events should be relayed by n8n,
+  // which verifies the provider signature before forwarding to ERP.
+  if (params['hub.mode'] === 'subscribe') {
+    const expected = props.getProperty('ERP_WHATSAPP_VERIFY_TOKEN') || '';
+    if (expected && params['hub.verify_token'] === expected) {
+      return ContentService.createTextOutput(String(params['hub.challenge'] || ''));
+    }
+    return ContentService.createTextOutput('Verification failed');
   }
+
+  const path = String(params.path || '/');
+  if (path === '/health') {
+    return jsonResponse({ status: 'ok', backend: 'Google Apps Script', dataApi: 'authenticated-bridge-only' });
+  }
+
+  const template = HtmlService.createTemplateFromFile('Bridge');
+  template.allowedOrigins = JSON.stringify(getAllowedOrigins_());
+  return template.evaluate()
+    .setTitle('ERP Secure Backend Bridge')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-
-
-/**
- * Handle POST requests
- */
 function doPost(e) {
   try {
-    const path = e && e.parameter && e.parameter.path ? e.parameter.path : '';
+    const params = e && e.parameter ? e.parameter : {};
+    const path = String(params.path || '');
     const rawBody = e && e.postData && e.postData.contents ? e.postData.contents : '';
     const data = rawBody ? JSON.parse(rawBody) : {};
 
-    if (path === '/ocr') return jsonResponse(handleOCR(data));
-    if (path === '/webhook/whatsapp') return jsonResponse(handleWhatsAppWebhook(data));
-    if (path === '/webhook/telegram') return jsonResponse(handleTelegramWebhook(data));
-    if (path === '/transaksi') return jsonResponse(handleAddTransaksi(data));
-    if (path === '/reversal') return jsonResponse(handleReversal(data));
-
-    if (path.indexOf('/transaksi/') === 0) {
-      return jsonResponse({
-        success: false,
-        error: 'Update/hapus transaksi posted tidak didukung. Gunakan reversal jurnal agar audit trail tetap utuh.'
-      });
+    if (path === '/webhook/inbox') {
+      const expected = PropertiesService.getScriptProperties().getProperty('ERP_INGEST_SECRET') || '';
+      if (!expected || !constantTimeEquals_(String(data.ingest_secret || ''), expected)) {
+        return jsonResponse({ success: false, error: 'Webhook authentication failed' });
+      }
+      return jsonResponse(receiveInboxEvent_(data));
     }
-    return jsonResponse({ success: false, error: 'Endpoint tidak dikenal: ' + path });
+
+    // Old public endpoints accepted unauthenticated financial writes. They are no
+    // longer exposed; client UI must use apiRequest through the verified bridge.
+    return jsonResponse({
+      success: false,
+      error: 'Endpoint publik lama dinonaktifkan. Gunakan autentikasi ERP atau webhook n8n yang dilindungi secret.'
+    });
   } catch (error) {
-    return jsonResponse({ success: false, error: String(error && error.message ? error.message : error) });
+    return jsonResponse({
+      success: false,
+      error: String(error && error.message ? error.message : error)
+    });
   }
 }
-
-
 
 // ============ OCR FUNCTIONS ============
 
@@ -1006,4 +1010,654 @@ function jsonResponse(data, statusCode = 200) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// ============================================================================
+// AUTHENTICATION + CLOUD SINGLE SOURCE OF TRUTH
+// ============================================================================
+
+const ERP_OPERATIONAL_MODULES_ = [
+  'bukuKas', 'arsipBukti', 'posKewajiban', 'auditLog', 'tanah', 'beko',
+  'notaMaterial', 'stok', 'produksi', 'penjualan', 'pembelian', 'penggajian',
+  'anggaran', 'arusKas', 'ocr', 'whatsapp', 'menuConfig', 'qcRecords',
+  'assets', 'taxRecords', 'housingUnits'
+];
+const ERP_ACCOUNTING_MODULES_ = ['akun', 'jurnal', 'invoice', 'purchaseOrder', 'rab', 'schedule'];
+const ERP_STATE_HEADERS_ = ['module', 'record_id', 'sort_index', 'payload_json', 'version', 'updated_at', 'updated_by'];
+const ERP_USERS_HEADERS_ = ['google_sub', 'email', 'nama', 'role', 'status', 'created_at', 'last_login'];
+const ERP_ALLOWED_ROLES_ = ['ADMIN', 'KEUANGAN', 'PROYEK', 'VIEWER'];
+
+function getAllowedOrigins_() {
+  const value = PropertiesService.getScriptProperties().getProperty('ERP_ALLOWED_ORIGINS') || '';
+  return value.split(',').map(item => item.trim()).filter(Boolean);
+}
+
+/**
+ * Run once from the Apps Script editor. Existing spreadsheet IDs are preserved.
+ * If ERP_SPREADSHEET_ID / SPREADSHEET_ID is not configured and this is a bound
+ * script, use its spreadsheet. Otherwise create a new Google Sheets database.
+ */
+function setupErpBackend() {
+  const props = PropertiesService.getScriptProperties();
+  let id = props.getProperty('ERP_SPREADSHEET_ID') || props.getProperty('SPREADSHEET_ID') || '';
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (!id && active) id = active.getId();
+  if (!id) {
+    const created = SpreadsheetApp.create('ERP Properti & Konstruksi - Database');
+    id = created.getId();
+  }
+  props.setProperty('ERP_SPREADSHEET_ID', id);
+  if (!props.getProperty('ERP_SESSION_SECRET')) {
+    props.setProperty('ERP_SESSION_SECRET', Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid());
+  }
+
+  const ss = SpreadsheetApp.openById(id);
+  ensureNamedSheet_(ss, 'USERS', ERP_USERS_HEADERS_);
+  ensureNamedSheet_(ss, 'ERP_STATE', ERP_STATE_HEADERS_);
+  ensureNamedSheet_(ss, 'INBOX_OCR', [
+    'id', 'received_at', 'source', 'provider_message_id', 'sender_id',
+    'sender_name', 'text', 'media_id', 'media_mime_type', 'status', 'raw_json'
+  ]);
+  ensureNamedSheet_(ss, 'AUDIT_LOG', [
+    'id', 'timestamp', 'user_sub', 'user_email', 'aksi', 'modul',
+    'record_id', 'nilai_lama', 'nilai_baru', 'alasan'
+  ]);
+  return {
+    success: true,
+    spreadsheetId: id,
+    spreadsheetUrl: ss.getUrl(),
+    tabs: ['USERS', 'ERP_STATE', 'INBOX_OCR', 'AUDIT_LOG'],
+    nextSteps: [
+      'Set ERP_GOOGLE_CLIENT_ID',
+      'Set ERP_BOOTSTRAP_ADMIN_EMAIL',
+      'Set ERP_ALLOWED_ORIGINS',
+      'Deploy web app as owner and use the deployment URL in VITE_GAS_WEB_APP_URL'
+    ]
+  };
+}
+
+function ensureNamedSheet_(ss, name, headers) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } else {
+    const current = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1))
+      .getValues()[0].map(value => String(value || '').trim());
+    headers.forEach(header => {
+      if (current.indexOf(header) < 0) {
+        sheet.getRange(1, sheet.getLastColumn() + 1).setValue(header);
+        current.push(header);
+      }
+    });
+  }
+  sheet.setFrozenRows(1);
+  return sheet;
+}
+
+function apiRequest(request) {
+  try {
+    if (!request || typeof request !== 'object') return apiError_('invalid_request', 'Permintaan tidak valid.');
+    const action = String(request.action || '');
+    if (action === 'bridge.ping') return { ok: true, data: { backend: 'Google Apps Script', version: 1 } };
+    if (action === 'auth.login') return { ok: true, data: loginWithGoogle_(String(request.credential || '')) };
+
+    const user = requireUserSession_(String(request.sessionToken || ''));
+    if (action === 'auth.me') return { ok: true, data: { user: publicUser_(user), expiresAt: user.exp } };
+    if (action === 'workspace.load') return { ok: true, data: loadWorkspace_() };
+    if (action === 'workspace.bootstrap') {
+      requireRole_(user, ['ADMIN']);
+      return { ok: true, data: bootstrapWorkspace_(request.snapshot, user) };
+    }
+    if (action === 'workspace.save') {
+      return { ok: true, data: saveWorkspace_(request.snapshot, request.expectedVersion, user) };
+    }
+    if (action === 'admin.users.list') {
+      requireRole_(user, ['ADMIN']);
+      return { ok: true, data: { users: listUsers_() } };
+    }
+    if (action === 'admin.users.save') {
+      requireRole_(user, ['ADMIN']);
+      return { ok: true, data: saveUser_(request.user, user) };
+    }
+    if (action === 'ocr.parse') {
+      requireRole_(user, ['ADMIN', 'KEUANGAN', 'PROYEK']);
+      return { ok: true, data: parseReceiptWithGemini_(request.file) };
+    }
+    if (action === 'drive.upload') {
+      requireRole_(user, ['ADMIN', 'KEUANGAN', 'PROYEK']);
+      return { ok: true, data: uploadEvidenceToDrive_(request.file, request.folderName) };
+    }
+    return apiError_('unknown_action', 'Operasi backend tidak dikenal.');
+  } catch (error) {
+    const message = String(error && error.message ? error.message : error);
+    const code = /Authentication required|expired|Invalid session/i.test(message) ? 'unauthenticated'
+      : /not authorized|access denied|forbidden|role/i.test(message) ? 'forbidden'
+        : /version conflict/i.test(message) ? 'conflict' : 'request_failed';
+    return apiError_(code, message);
+  }
+}
+
+function apiError_(code, message) {
+  return { ok: false, error: { code: String(code), message: String(message || 'Permintaan gagal.') } };
+}
+
+function loginWithGoogle_(credential) {
+  if (!credential || credential.length < 10000 || credential.length > 20000) {
+    throw new Error('Token Google tidak valid.');
+  }
+  const props = PropertiesService.getScriptProperties();
+  const clientId = props.getProperty('ERP_GOOGLE_CLIENT_ID') || '';
+  if (!clientId) throw new Error('ERP_GOOGLE_CLIENT_ID belum diatur pada Script Properties.');
+  const url = 'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(credential);
+  const response = UrlFetchApp.fetch(url, { method: 'get', muteHttpExceptions: true });
+  if (response.getResponseCode() !== 200) throw new Error('Google menolak token login. Silakan login ulang.');
+  const claims = JSON.parse(response.getContentText());
+  const now = Math.floor(Date.now() / 1000);
+  const audience = String(claims.aud || '');
+  const issuer = String(claims.iss || '');
+  const email = String(claims.email || '').trim().toLowerCase();
+  const sub = String(claims.sub || '');
+  const exp = Number(claims.exp || 0);
+  const verified = claims.email_verified === true || String(claims.email_verified).toLowerCase() === 'true';
+  if (audience !== clientId || !['accounts.google.com', 'https://accounts.google.com'].includes(issuer) ||
+      exp <= now || !sub || !email || !verified) {
+    throw new Error('Identitas Google tidak lolos validasi audience, issuer, masa berlaku, atau email terverifikasi.');
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const users = ensureNamedSheet_(getErpSpreadsheet_(), 'USERS', ERP_USERS_HEADERS_);
+    const rows = users.getDataRange().getValues();
+    const headers = rows[0].map(String);
+    const index = Object.fromEntries(headers.map((key, i) => [key, i]));
+    let matchedRow = -1;
+    let matched = null;
+    for (let i = 1; i < rows.length; i++) {
+      const rowEmail = String(rows[i][index.email] || '').trim().toLowerCase();
+      const rowSub = String(rows[i][index.google_sub] || '');
+      if (rowSub === sub || rowEmail === email) {
+        matchedRow = i + 1;
+        matched = {
+          sub: rowSub, email: rowEmail, nama: String(rows[i][index.nama] || ''),
+          role: String(rows[i][index.role] || ''), status: String(rows[i][index.status] || '')
+        };
+        break;
+      }
+    }
+
+    if (!matched) {
+      const adminEmail = String(props.getProperty('ERP_BOOTSTRAP_ADMIN_EMAIL') || '').trim().toLowerCase();
+      const activeAdmins = rows.slice(1).filter(row =>
+        String(row[index.role] || '').toUpperCase() === 'ADMIN' &&
+        String(row[index.status] || '').toUpperCase() === 'ACTIVE'
+      ).length;
+      if (!adminEmail || email !== adminEmail || activeAdmins > 0) {
+        throw new Error('Akun belum terdaftar. Minta ADMIN menambahkan alamat Google Anda terlebih dahulu.');
+      }
+      matched = { sub: sub, email: email, nama: String(claims.name || email), role: 'ADMIN', status: 'ACTIVE' };
+      matchedRow = users.getLastRow() + 1;
+      users.getRange(matchedRow, 1, 1, ERP_USERS_HEADERS_.length).setValues([[
+        sub, email, matched.nama, matched.role, matched.status, new Date().toISOString(), new Date().toISOString()
+      ]]);
+    } else {
+      if (matched.sub && matched.sub !== sub) throw new Error('Alamat email ini terikat ke akun Google yang berbeda.');
+      if (matched.status.toUpperCase() !== 'ACTIVE') throw new Error('Akun dinonaktifkan. Hubungi ADMIN.');
+      if (!ERP_ALLOWED_ROLES_.includes(matched.role.toUpperCase())) throw new Error('Role pengguna belum valid.');
+      if (!matched.sub) {
+        users.getRange(matchedRow, index.google_sub + 1).setValue(sub);
+      }
+      users.getRange(matchedRow, index.last_login + 1).setValue(new Date().toISOString());
+    }
+
+    const normalized = {
+      sub: sub, email: email, nama: matched.nama || String(claims.name || email),
+      role: matched.role.toUpperCase(), status: 'ACTIVE'
+    };
+    const sessionToken = createSessionToken_(normalized, Math.min(exp, now + 3600));
+    return { sessionToken: sessionToken, user: publicUser_(Object.assign({}, normalized, { exp: Math.min(exp, now + 3600) })) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function createSessionToken_(user, expiresAt) {
+  const props = PropertiesService.getScriptProperties();
+  let secret = props.getProperty('ERP_SESSION_SECRET') || '';
+  if (!secret) throw new Error('Jalankan setupErpBackend() untuk membuat secret sesi.');
+  const header = base64UrlEncodeText_(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const payload = base64UrlEncodeText_(JSON.stringify({
+    sub: user.sub, email: user.email, name: user.nama, role: user.role,
+    iat: Math.floor(Date.now() / 1000), exp: expiresAt, iss: 'erp-gas', jti: Utilities.getUuid()
+  }));
+  const body = header + '.' + payload;
+  const signature = Utilities.computeHmacSha256Signature(body, secret);
+  return body + '.' + Utilities.base64EncodeWebSafe(signature).replace(/=+$/g, '');
+}
+
+function base64UrlEncodeText_(value) {
+  return Utilities.base64EncodeWebSafe(String(value), Utilities.Charset.UTF_8).replace(/=+$/g, '');
+}
+
+function requireUserSession_(token) {
+  if (!token || token.length > 5000) throw new Error('Authentication required.');
+  const parts = token.split('.');
+  if (parts.length !== 3) throw new Error('Invalid session token.');
+  const props = PropertiesService.getScriptProperties();
+  const secret = props.getProperty('ERP_SESSION_SECRET') || '';
+  if (!secret) throw new Error('Jalankan setupErpBackend() terlebih dahulu.');
+  const expected = Utilities.base64EncodeWebSafe(Utilities.computeHmacSha256Signature(parts[0] + '.' + parts[1], secret)).replace(/=+$/g, '');
+  if (!constantTimeEquals_(expected, parts[2])) throw new Error('Invalid session signature.');
+  const payload = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(parts[1])).getDataAsString());
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.iss !== 'erp-gas' || !payload.sub || Number(payload.exp || 0) <= now) {
+    throw new Error('Session expired. Login ulang.');
+  }
+  const active = findUserBySub_(String(payload.sub));
+  if (!active || active.status !== 'ACTIVE' || active.role !== String(payload.role).toUpperCase()) {
+    throw new Error('User not authorized or disabled.');
+  }
+  return { sub: active.google_sub, email: active.email, nama: active.nama, role: active.role, exp: Number(payload.exp) };
+}
+
+function constantTimeEquals_(left, right) {
+  left = String(left || '');
+  right = String(right || '');
+  let result = left.length ^ right.length;
+  const max = Math.max(left.length, right.length);
+  for (let i = 0; i < max; i++) result |= (left.charCodeAt(i % (left.length || 1)) || 0) ^ (right.charCodeAt(i % (right.length || 1)) || 0);
+  return result === 0;
+}
+
+function findUserBySub_(sub) {
+  const sheet = ensureNamedSheet_(getErpSpreadsheet_(), 'USERS', ERP_USERS_HEADERS_);
+  const rows = sheet.getDataRange().getValues();
+  if (rows.length < 2) return null;
+  const headers = rows[0].map(String);
+  const index = Object.fromEntries(headers.map((key, i) => [key, i]));
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][index.google_sub] || '') === sub) {
+      return {
+        google_sub: sub, email: String(rows[i][index.email] || ''),
+        nama: String(rows[i][index.nama] || ''), role: String(rows[i][index.role] || '').toUpperCase(),
+        status: String(rows[i][index.status] || '').toUpperCase()
+      };
+    }
+  }
+  return null;
+}
+
+function publicUser_(user) {
+  return { sub: String(user.sub || ''), email: String(user.email || ''), nama: String(user.nama || ''),
+    role: String(user.role || '').toUpperCase(), exp: Number(user.exp || 0) };
+}
+
+function requireRole_(user, roles) {
+  if (!user || roles.indexOf(String(user.role || '').toUpperCase()) < 0) {
+    throw new Error('Role ' + String(user && user.role || 'unknown') + ' tidak memiliki akses untuk operasi ini.');
+  }
+}
+
+function listUsers_() {
+  const sheet = ensureNamedSheet_(getErpSpreadsheet_(), 'USERS', ERP_USERS_HEADERS_);
+  const rows = sheet.getDataRange().getValues();
+  const headers = rows[0].map(String);
+  const index = Object.fromEntries(headers.map((key, i) => [key, i]));
+  return rows.slice(1).filter(row => String(row[index.email] || '').trim()).map(row => ({
+    email: String(row[index.email] || ''), nama: String(row[index.nama] || ''),
+    role: String(row[index.role] || '').toUpperCase(), status: String(row[index.status] || '').toUpperCase(),
+    created_at: String(row[index.created_at] || ''), last_login: String(row[index.last_login] || ''),
+    google_sub_linked: Boolean(String(row[index.google_sub] || ''))
+  }));
+}
+
+function saveUser_(input, actor) {
+  if (!input || typeof input !== 'object') throw new Error('Data user tidak valid.');
+  const email = String(input.email || '').trim().toLowerCase();
+  const name = String(input.nama || '').trim();
+  const role = String(input.role || 'VIEWER').toUpperCase();
+  const status = String(input.status || 'ACTIVE').toUpperCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Email user tidak valid.');
+  if (name.length > 100) throw new Error('Nama maksimum 100 karakter.');
+  if (!ERP_ALLOWED_ROLES_.includes(role) || !['ACTIVE', 'INACTIVE'].includes(status)) throw new Error('Role atau status tidak valid.');
+  if (email === actor.email && (status !== 'ACTIVE' || role !== 'ADMIN')) throw new Error('Admin tidak boleh menonaktifkan atau menurunkan role dirinya sendiri.');
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = ensureNamedSheet_(getErpSpreadsheet_(), 'USERS', ERP_USERS_HEADERS_);
+    const rows = sheet.getDataRange().getValues();
+    const headers = rows[0].map(String);
+    const index = Object.fromEntries(headers.map((key, i) => [key, i]));
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][index.email] || '').trim().toLowerCase() === email) {
+        sheet.getRange(i + 1, index.nama + 1).setValue(name || email);
+        sheet.getRange(i + 1, index.role + 1).setValue(role);
+        sheet.getRange(i + 1, index.status + 1).setValue(status);
+        return { saved: true, email: email, role: role, status: status };
+      }
+    }
+    sheet.appendRow(['', email, name || email, role, status, new Date().toISOString(), '']);
+    return { saved: true, email: email, role: role, status: status, invited: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function defaultWorkspaceSnapshot_() {
+  const snapshot = { operational: {}, accounting: {} };
+  ERP_OPERATIONAL_MODULES_.forEach(module => snapshot.operational[module] = []);
+  ERP_ACCOUNTING_MODULES_.forEach(module => snapshot.accounting[module] = []);
+  return snapshot;
+}
+
+function validateWorkspaceSnapshot_(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object' || !snapshot.operational || !snapshot.accounting) {
+    throw new Error('Snapshot cloud harus memiliki bagian operational dan accounting.');
+  }
+  const clean = { operational: {}, accounting: {} };
+  ERP_OPERATIONAL_MODULES_.forEach(module => {
+    if (!Array.isArray(snapshot.operational[module])) throw new Error('Modul operational.' + module + ' harus berupa array.');
+    clean.operational[module] = snapshot.operational[module];
+  });
+  ERP_ACCOUNTING_MODULES_.forEach(module => {
+    if (!Array.isArray(snapshot.accounting[module])) throw new Error('Modul accounting.' + module + ' harus berupa array.');
+    clean.accounting[module] = snapshot.accounting[module];
+  });
+  if (JSON.stringify(snapshot).length > 4000000) throw new Error('Snapshot melebihi batas aman 4 MB. Lampiran berkas tidak boleh disimpan sebagai base64 di data state.');
+  return clean;
+}
+
+function getCanonicalStateSheet_(ss) {
+  let current = ss.getSheetByName('ERP_STATE');
+  const previous = ss.getSheetByName('ERP_STATE_PREVIOUS');
+  const stage = ss.getSheetByName('ERP_STATE_STAGE');
+  if (!current && previous) {
+    previous.setName('ERP_STATE');
+    current = previous;
+  }
+  if (current && previous) ss.deleteSheet(previous);
+  if (stage) ss.deleteSheet(stage);
+  if (!current) current = ensureNamedSheet_(ss, 'ERP_STATE', ERP_STATE_HEADERS_);
+  return current;
+}
+
+function loadWorkspace_() {
+  const sheet = getCanonicalStateSheet_(getErpSpreadsheet_());
+  if (sheet.getLastRow() < 2) return { found: false, snapshot: null, version: 0 };
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(String);
+  const index = Object.fromEntries(headers.map((key, i) => [key, i]));
+  const snapshot = defaultWorkspaceSnapshot_();
+  let version = 0;
+  let anyRecord = false;
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    const module = String(row[index.module] || '');
+    const recordId = String(row[index.record_id] || '');
+    if (module === '__meta__' && recordId === 'version') {
+      try { version = Number(JSON.parse(String(row[index.payload_json] || '{}')).version || 0); } catch (ignore) {}
+      anyRecord = true;
+      continue;
+    }
+    const path = module.split('.');
+    if (path.length !== 2 || !['operational', 'accounting'].includes(path[0])) continue;
+    const allowed = path[0] === 'operational' ? ERP_OPERATIONAL_MODULES_ : ERP_ACCOUNTING_MODULES_;
+    if (allowed.indexOf(path[1]) < 0) continue;
+    try {
+      const item = JSON.parse(String(row[index.payload_json] || 'null'));
+      if (item !== null) snapshot[path[0]][path[1]].push({ sort: Number(row[index.sort_index] || 0), item: item });
+      anyRecord = true;
+    } catch (error) {
+      throw new Error('Data cloud rusak pada ' + module + '/' + recordId + '. Hentikan penulisan dan periksa sheet ERP_STATE.');
+    }
+  }
+  Object.keys(snapshot.operational).forEach(module => snapshot.operational[module] =
+    snapshot.operational[module].sort((a, b) => a.sort - b.sort).map(entry => entry.item));
+  Object.keys(snapshot.accounting).forEach(module => snapshot.accounting[module] =
+    snapshot.accounting[module].sort((a, b) => a.sort - b.sort).map(entry => entry.item));
+  return { found: anyRecord, snapshot: snapshot, version: version };
+}
+
+function bootstrapWorkspace_(snapshot, actor) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const loaded = loadWorkspace_();
+    if (loaded.found) throw new Error('Database cloud sudah memiliki state. Tidak akan ditimpa oleh bootstrap.');
+    const initial = validateWorkspaceSnapshot_(snapshot);
+    const result = writeWorkspaceSnapshot_(initial, 1, actor);
+    return { found: true, snapshot: initial, version: result.version, created: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function saveWorkspace_(snapshot, expectedVersion, actor) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const oldState = loadWorkspace_();
+    if (!oldState.found) throw new Error('Database cloud belum diinisialisasi. Bootstrap wajib dilakukan oleh ADMIN.');
+    if (Number(expectedVersion) !== oldState.version) {
+      return { saved: false, conflict: true, version: oldState.version, error_code: 'conflict' };
+    }
+    const next = validateWorkspaceSnapshot_(snapshot);
+    const changed = [];
+    ERP_OPERATIONAL_MODULES_.forEach(module => {
+      if (JSON.stringify(oldState.snapshot.operational[module]) !== JSON.stringify(next.operational[module])) changed.push('operational.' + module);
+    });
+    ERP_ACCOUNTING_MODULES_.forEach(module => {
+      if (JSON.stringify(oldState.snapshot.accounting[module]) !== JSON.stringify(next.accounting[module])) changed.push('accounting.' + module);
+    });
+    const allowed = allowedModulesForRole_(actor.role);
+    const denied = changed.filter(module => allowed.indexOf(module) < 0);
+    if (denied.length) throw new Error('Role ' + actor.role + ' tidak boleh mengubah modul: ' + denied.join(', '));
+    const oldAudit = oldState.snapshot.operational.auditLog;
+    const nextAudit = next.operational.auditLog;
+    if (nextAudit.length < oldAudit.length || oldAudit.some((row, i) => JSON.stringify(row) !== JSON.stringify(nextAudit[i]))) {
+      throw new Error('Audit trail append-only: baris lama tidak boleh diubah atau dihapus.');
+    }
+    const result = writeWorkspaceSnapshot_(next, oldState.version + 1, actor);
+    appendCloudAudit_(actor, 'SAVE_SNAPSHOT', 'workspace', '', JSON.stringify({ changed_modules: changed, version: result.version }));
+    return { saved: true, version: result.version, changedModules: changed };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function allowedModulesForRole_(role) {
+  role = String(role || '').toUpperCase();
+  if (role === 'ADMIN') return ERP_OPERATIONAL_MODULES_.map(m => 'operational.' + m).concat(ERP_ACCOUNTING_MODULES_.map(m => 'accounting.' + m));
+  if (role === 'KEUANGAN') return [
+    'operational.bukuKas', 'operational.arsipBukti', 'operational.posKewajiban',
+    'operational.auditLog', 'operational.anggaran', 'operational.arusKas',
+    'operational.penggajian', 'operational.taxRecords',
+    'accounting.jurnal', 'accounting.invoice', 'accounting.purchaseOrder', 'accounting.schedule'
+  ];
+  if (role === 'PROYEK') return [
+    'operational.tanah', 'operational.beko', 'operational.notaMaterial',
+    'operational.stok', 'operational.produksi', 'operational.penjualan',
+    'operational.pembelian', 'operational.ocr', 'operational.whatsapp',
+    'operational.qcRecords', 'operational.assets', 'operational.housingUnits',
+    'operational.auditLog'
+  ];
+  return [];
+}
+
+function snapshotToRows_(snapshot, version, actor) {
+  const now = new Date().toISOString();
+  const rows = [[
+    '__meta__', 'version', -1, JSON.stringify({ version: version, updatedAt: now, updatedBy: actor.sub }),
+    version, now, actor.email
+  ]];
+  function addModule(scope, module) {
+    const list = snapshot[scope][module];
+    const seen = {};
+    list.forEach((item, index) => {
+      const id = item && typeof item === 'object'
+        ? String(item.id || item.kode || item.kode_unit || item.no_ref || (module + '-' + index))
+        : module + '-' + index;
+      if (seen[id]) throw new Error('ID duplikat pada ' + scope + '.' + module + ': ' + id);
+      seen[id] = true;
+      const payload = JSON.stringify(item);
+      if (payload.length > 45000) throw new Error('Record ' + scope + '.' + module + '/' + id + ' melebihi 45.000 karakter. Pindahkan lampiran ke Drive.');
+      rows.push([scope + '.' + module, id, index, payload, version, now, actor.email]);
+    });
+  }
+  ERP_OPERATIONAL_MODULES_.forEach(module => addModule('operational', module));
+  ERP_ACCOUNTING_MODULES_.forEach(module => addModule('accounting', module));
+  if (rows.length > 10001) throw new Error('Snapshot melebihi batas 10.000 baris records. Arsipkan data historis sebelum melanjutkan.');
+  return rows;
+}
+
+function writeWorkspaceSnapshot_(snapshot, version, actor) {
+  const ss = getErpSpreadsheet_();
+  getCanonicalStateSheet_(ss);
+  let stage = ss.getSheetByName('ERP_STATE_STAGE');
+  if (stage) ss.deleteSheet(stage);
+  stage = ss.insertSheet('ERP_STATE_STAGE');
+  stage.getRange(1, 1, 1, ERP_STATE_HEADERS_.length).setValues([ERP_STATE_HEADERS_]);
+  const rows = snapshotToRows_(snapshot, version, actor);
+  stage.getRange(2, 1, rows.length, ERP_STATE_HEADERS_.length).setValues(rows);
+  SpreadsheetApp.flush();
+
+  const current = ss.getSheetByName('ERP_STATE');
+  const previous = ss.getSheetByName('ERP_STATE_PREVIOUS');
+  if (previous) ss.deleteSheet(previous);
+  if (current) current.setName('ERP_STATE_PREVIOUS');
+  stage.setName('ERP_STATE');
+  const old = ss.getSheetByName('ERP_STATE_PREVIOUS');
+  if (old) ss.deleteSheet(old);
+  SpreadsheetApp.flush();
+  return { version: version };
+}
+
+function appendCloudAudit_(actor, action, module, recordId, details) {
+  const ss = getErpSpreadsheet_();
+  const sheet = ensureNamedSheet_(ss, 'AUDIT_LOG', [
+    'id', 'timestamp', 'user_sub', 'user_email', 'aksi', 'modul',
+    'record_id', 'nilai_lama', 'nilai_baru', 'alasan'
+  ]);
+  sheet.appendRow([
+    'LOG-' + Utilities.getUuid(), new Date().toISOString(), actor.sub, actor.email,
+    action, module, recordId, '', details, 'cloud backend'
+  ]);
+}
+
+function receiveInboxEvent_(data) {
+  const source = String(data.source || '').toLowerCase();
+  if (!['telegram', 'whatsapp', 'web'].includes(source)) throw new Error('Sumber Inbox tidak dikenal.');
+  const id = String(data.provider_message_id || data.message_id || Utilities.getUuid());
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const ss = getErpSpreadsheet_();
+    const sheet = ensureNamedSheet_(ss, 'INBOX_OCR', [
+      'id', 'received_at', 'source', 'provider_message_id', 'sender_id',
+      'sender_name', 'text', 'media_id', 'media_mime_type', 'status', 'raw_json'
+    ]);
+    const rows = sheet.getDataRange().getValues();
+    if (rows.slice(1).some(row => String(row[3] || '') === id && id)) {
+      return { success: true, duplicate: true, status: 'duplicate_ignored' };
+    }
+    const text = String(data.text || data.caption || '').slice(0, 5000);
+    const mediaId = String(data.media_id || data.file_id || '').slice(0, 500);
+    const raw = JSON.stringify(data.raw || {});
+    if (raw.length > 30000) throw new Error('Metadata webhook terlalu besar.');
+    sheet.appendRow([
+      'INBOX-' + Utilities.getUuid(), new Date().toISOString(), source, id,
+      String(data.sender_id || data.from || '').slice(0, 200),
+      String(data.sender_name || '').slice(0, 200), text, mediaId,
+      String(data.media_mime_type || '').slice(0, 100), 'RECEIVED', raw
+    ]);
+    return { success: true, duplicate: false, status: 'RECEIVED' };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function parseReceiptWithGemini_(file) {
+  if (!file || typeof file !== 'object') throw new Error('Lampirkan foto nota atau invoice.');
+  const base64 = String(file.base64 || '');
+  const mimeType = String(file.mimeType || '').toLowerCase();
+  if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(mimeType)) {
+    throw new Error('Format berkas harus JPG, PNG, WEBP, atau PDF.');
+  }
+  if (!base64 || base64.length > 11000000) throw new Error('Berkas kosong atau melebihi 8 MB.');
+  const apiKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '';
+  if (!apiKey) throw new Error('GEMINI_API_KEY belum diatur di Script Properties.');
+  const model = PropertiesService.getScriptProperties().getProperty('ERP_GEMINI_MODEL') || 'gemini-3.8-flash';
+  const prompt = [
+    'Ekstrak data bukti transaksi dalam Bahasa Indonesia. Jangan menebak angka/tanggal yang tidak terbaca.',
+    'Balas hanya JSON object dengan fields tanggal (YYYY-MM-DD atau null), nama_toko, deskripsi, jumlah (angka atau null), kategori (Material, Cut_Fill, Pembebasan_Tanah, Marketing, Operasional, Pajak, Lainnya atau Perlu_Konfirmasi), nomor_bukti, metode_pembayaran, teks_terbaca, confidence (0-100), needs_review (boolean), alasan_konfirmasi.',
+    'Jika nominal, tanggal atau pihak meragukan/terpotong, isi null atau needs_review=true. OCR bukan persetujuan pembayaran.'
+  ].join(' ');
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent?key=' + encodeURIComponent(apiKey);
+  const payload = {
+    contents: [{ parts: [
+      { text: prompt },
+      { inline_data: { mime_type: mimeType, data: base64 } }
+    ] }],
+    generationConfig: { temperature: 0.1, maxOutputTokens: 2048, responseMimeType: 'application/json' }
+  };
+  const response = UrlFetchApp.fetch(url, {
+    method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true
+  });
+  const code = response.getResponseCode();
+  const body = JSON.parse(response.getContentText() || '{}');
+  if (code < 200 || code >= 300) throw new Error('Gemini API gagal (' + code + '). Periksa model, kuota, dan API key.');
+  const text = body.candidates && body.candidates[0] && body.candidates[0].content &&
+    body.candidates[0].content.parts && body.candidates[0].content.parts[0] &&
+    body.candidates[0].content.parts[0].text;
+  if (!text) throw new Error('Gemini tidak mengembalikan hasil OCR yang bisa dibaca.');
+  const parsed = JSON.parse(String(text).replace(/^\uFEFF/, '').trim());
+  const amount = parsed.jumlah === null || parsed.jumlah === '' ? null : Number(parsed.jumlah);
+  if (amount !== null && (!isFinite(amount) || amount < 0)) throw new Error('Nominal OCR bukan angka valid.');
+  const confidence = Math.max(0, Math.min(100, Number(parsed.confidence) || 0));
+  return {
+    draft: {
+      tanggal: /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.tanggal || '')) ? String(parsed.tanggal) : null,
+      nama_toko: String(parsed.nama_toko || ''),
+      deskripsi: String(parsed.deskripsi || ''),
+      jumlah: amount,
+      kategori: String(parsed.kategori || 'Perlu_Konfirmasi'),
+      nomor_bukti: String(parsed.nomor_bukti || ''),
+      metode_pembayaran: String(parsed.metode_pembayaran || ''),
+      teks_terbaca: String(parsed.teks_terbaca || '').slice(0, 5000),
+      confidence: confidence,
+      needs_review: parsed.needs_review !== false || amount === null || !parsed.tanggal,
+      alasan_konfirmasi: String(parsed.alasan_konfirmasi || '')
+    },
+    posted: false,
+    message: 'Hasil OCR hanya draf Inbox. Tidak ada transaksi kas/jurnal yang diposting otomatis.'
+  };
+}
+
+function uploadEvidenceToDrive_(file, requestedFolderName) {
+  if (!file || typeof file !== 'object') throw new Error('File bukti belum dipilih.');
+  const base64 = String(file.base64 || '');
+  const name = String(file.name || 'bukti').replace(/[\\/:*?"<>|#%{}~&]/g, '_').slice(0, 120);
+  const mimeType = String(file.mimeType || 'application/octet-stream');
+  if (!base64 || base64.length > 11000000) throw new Error('Berkas kosong atau melebihi 8 MB.');
+  if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(mimeType)) throw new Error('Format bukti harus JPG, PNG, WEBP, atau PDF.');
+  const bytes = Utilities.base64Decode(base64);
+  const blob = Utilities.newBlob(bytes, mimeType, name);
+  const folderName = String(requestedFolderName || 'ERP Evidence').replace(/[\\/:*?"<>|#%{}~&]/g, '_').slice(0, 80);
+  const props = PropertiesService.getScriptProperties();
+  let folderId = props.getProperty('ERP_DRIVE_FOLDER_ID') || '';
+  let folder = null;
+  if (folderId) {
+    try { folder = DriveApp.getFolderById(folderId); } catch (ignore) { folder = null; }
+  }
+  if (!folder) {
+    const matches = DriveApp.getFoldersByName(folderName);
+    folder = matches.hasNext() ? matches.next() : DriveApp.createFolder(folderName);
+    props.setProperty('ERP_DRIVE_FOLDER_ID', folder.getId());
+  }
+  const created = folder.createFile(blob);
+  created.setDescription('ERP evidence file. Uploaded at ' + new Date().toISOString());
+  return { fileId: created.getId(), name: created.getName(), mimeType: created.getMimeType(), url: created.getUrl(), posted: false };
 }
