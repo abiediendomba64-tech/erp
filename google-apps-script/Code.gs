@@ -111,50 +111,14 @@ function doPost(e) {
   try {
     const params = e && e.parameter ? e.parameter : {};
     const path = String(params.path || '');
-    const rawBody = e && e.postData && e.postData.contents ? e.postData.contents : '';
-    const data = rawBody ? JSON.parse(rawBody) : {};
 
-    // Public provider callbacks must have a dedicated secret. Store it in Script
-    // Properties and append it to the registered webhook URL as ?secret=...
-    if (path === '/webhook/whatsapp') {
-      if (!isValidWebhookSecret_(String(params.secret || ''), 'WHATSAPP_WEBHOOK_SECRET')) {
-        return jsonResponse({ success: false, error: 'Webhook authentication failed.' });
-      }
-      return jsonResponse(handleWhatsAppWebhook(data));
-    }
-    if (path === '/webhook/telegram') {
-      if (!isValidWebhookSecret_(String(params.secret || ''), 'TELEGRAM_WEBHOOK_SECRET')) {
-        return jsonResponse({ success: false, error: 'Webhook authentication failed.' });
-      }
-      return jsonResponse(handleTelegramWebhook(data));
-    }
-
-    // Legacy API paths are kept for compatibility but no longer permit anonymous
-    // transaction, OCR or reversal calls.
-    const session = getSessionContext_(String(data.sessionToken || ''));
-    if (!session) return jsonResponse({ success: false, error: 'Sesi tidak valid. Login ulang.' });
-    if (path === '/ocr') {
-      if (!['ADMIN', 'KEUANGAN', 'PROYEK'].includes(session.user.role)) {
-        return jsonResponse({ success: false, error: 'Akses ditolak.' });
-      }
-      return jsonResponse(handleOCR(data));
-    }
-    if (path === '/transaksi') {
-      if (!['ADMIN', 'KEUANGAN'].includes(session.user.role)) {
-        return jsonResponse({ success: false, error: 'Akses ditolak.' });
-      }
-      return jsonResponse(handleAddTransaksi(data));
-    }
-    if (path === '/reversal') {
-      if (!['ADMIN', 'KEUANGAN'].includes(session.user.role)) {
-        return jsonResponse({ success: false, error: 'Akses ditolak.' });
-      }
-      return jsonResponse(handleReversal(data));
-    }
-    if (path.indexOf('/transaksi/') === 0) {
+    // These legacy routes wrote into separate BUKU_KAS/JURNAL/ARSIP_BUKTI tables,
+    // while the React ERP now stores its canonical state in versioned ERP_STATE.
+    // Fail closed until each integration is adapted to the same canonical writer.
+    if (['/ocr','/transaksi','/reversal','/webhook/whatsapp','/webhook/telegram'].includes(path)) {
       return jsonResponse({
         success: false,
-        error: 'Update/hapus transaksi posted tidak didukung. Gunakan reversal jurnal agar audit trail tetap utuh.'
+        error: 'Endpoint lama sengaja dinonaktifkan agar tidak membuat sumber data ganda. Adapter harus menulis ke ERP_STATE sebelum OCR/webhook diaktifkan.'
       });
     }
     return jsonResponse({ success: false, error: 'Endpoint tidak dikenal: ' + path });
@@ -162,7 +126,6 @@ function doPost(e) {
     return jsonResponse({ success: false, error: String(error && error.message ? error.message : error) });
   }
 }
-
 
 // ============ OCR FUNCTIONS ============
 
