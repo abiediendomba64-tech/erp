@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Users, Plus, Edit, UserX, Shield, Save, X, LoaderCircle, RefreshCw, AlertCircle } from 'lucide-react';
+import { Users, Plus, Edit, UserX, Shield, Save, X, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { gasRpc, CloudUser } from '../lib/gasBridge';
 import { useCloudAuth } from '../auth/CloudAuthGate';
 
@@ -146,7 +146,7 @@ export default function UserManagementPage() {
 
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         {loading ? (
-          <div className="flex items-center justify-center gap-2 p-10 text-slate-500"><LoaderCircle className="animate-spin" size={20} /> Mengambil data pengguna dari cloud…</div>
+          <div className="flex items-center justify-center gap-2 p-10 text-slate-500"><Loader2 className="animate-spin" size={20} /> Mengambil data pengguna dari cloud…</div>
         ) : users.length === 0 ? (
           <div className="p-10 text-center text-slate-500">Belum ada pengguna. Tambahkan email Google yang akan digunakan untuk login.</div>
         ) : (
