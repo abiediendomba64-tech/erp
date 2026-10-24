@@ -104,7 +104,7 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'UPDATE_OCR': return { ...state, ocr: state.ocr.map(i => i.id === action.payload.id ? action.payload : i) };
     case 'ADD_WHATSAPP': return { ...state, whatsapp: [...state.whatsapp, action.payload] };
     case 'UPDATE_MENU': return { ...state, menuConfig: state.menuConfig.map(i => i.id === action.payload.id ? action.payload : i) };
-    case 'ADD_AUDIT_LOG': return { ...state, auditLog: [...state.auditLog, action.payload] };
+    case 'ADD_AUDIT_LOG': return state; // Server-owned audit feed is displayed through audit.list.
     case 'ADD_QC_RECORD': return { ...state, qcRecords: [...state.qcRecords, action.payload] };
     case 'UPDATE_QC_RECORD': return { ...state, qcRecords: state.qcRecords.map(item => item.id === action.payload.id ? action.payload : item) };
     case 'ADD_ASSET': return { ...state, assets: [...state.assets, action.payload] };
