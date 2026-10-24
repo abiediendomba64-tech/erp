@@ -484,6 +484,143 @@ function updateCloudStateHead_(workspaceId, version, recordCount, timestamp, ema
   sheet.appendRow([workspaceId, version, recordCount, timestamp, email]);
 }
 
+function uploadCloudDocument_(user, workspaceId, input) {
+  const membership = findCloudMembership_(String(workspaceId || ''), user.email);
+  if (!membership) throw new Error('Anda tidak memiliki akses ke workspace ini.');
+  if (membership.role === 'VIEWER') throw new Error('Role VIEWER tidak boleh mengunggah dokumen.');
+  if (!input || typeof input !== 'object') throw new Error('Metadata file tidak valid.');
+
+  const folderId = String(PropertiesService.getScriptProperties().getProperty('DOCUMENTS_FOLDER_ID') || '').trim();
+  if (!folderId) throw new Error('DOCUMENTS_FOLDER_ID belum diatur pada Script Properties. Siapkan folder Drive bersama terlebih dahulu.');
+  const name = String(input.name || '').replace(/[\\r\\n\\u0000-\\u001f]/g, ' ').trim();
+  const mimeType = String(input.mimeType || '').toLowerCase().trim();
+  const base64 = String(input.base64 || '').replace(/^data:[^,]*;base64,/i, '').trim();
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+  if (!name || name.length > 160) throw new Error('Nama file wajib diisi dan maksimal 160 karakter.');
+  if (allowedTypes.indexOf(mimeType) === -1) throw new Error('Jenis file yang diizinkan hanya foto JPEG/PNG/WebP dan PDF.');
+  if (!base64 || base64.length > 5600000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(base64)) {
+    throw new Error('Data file kosong atau melebihi batas upload 4 MB.');
+  }
+
+  const bytes = Utilities.base64Decode(base64);
+  if (!bytes.length || bytes.length > 4 * 1024 * 1024) throw new Error('File kosong atau melebihi batas upload 4 MB.');
+  const blob = Utilities.newBlob(bytes, mimeType, name);
+  const folder = DriveApp.getFolderById(folderId);
+  const file = folder.createFile(blob);
+  file.setDescription(
+    'ERP workspace=' + workspaceId +
+    '; uploaded_by=' + user.email +
+    '; uploaded_at=' + new Date().toISOString() +
+    '; source=ERP web panel'
+  );
+  cloudAudit_(user.email, 'UPLOAD_DOCUMENT', 'GOOGLE_DRIVE', file.getId(), '', JSON.stringify({
+    workspace_id: workspaceId, name: name, mime_type: mimeType, size_bytes: bytes.length
+  }));
+
+  return {
+    success: true,
+    file: {
+      id: file.getId(),
+      name: file.getName(),
+      mimeType: file.getMimeType(),
+      size: bytes.length,
+      url: file.getUrl(),
+      createdAt: file.getDateCreated().toISOString()
+    },
+    message: 'File tersimpan di Google Drive. Akses mengikuti izin folder Drive yang dikonfigurasi.'
+  };
+}
+
+function processCloudOcr_(user, workspaceId, fileId, documentType) {
+  const membership = findCloudMembership_(String(workspaceId || ''), user.email);
+  if (!membership) throw new Error('Anda tidak memiliki akses ke workspace ini.');
+  if (membership.role === 'VIEWER') throw new Error('Role VIEWER tidak boleh memproses OCR.');
+  const folderId = String(PropertiesService.getScriptProperties().getProperty('DOCUMENTS_FOLDER_ID') || '').trim();
+  if (!folderId) throw new Error('DOCUMENTS_FOLDER_ID belum diatur pada Script Properties.');
+  const id = String(fileId || '').trim();
+  if (!id || id.length > 200) throw new Error('ID file Drive tidak valid.');
+  const kind = String(documentType || 'Kwitansi');
+  if (['Kwitansi', 'Nota', 'Invoice', 'Transfer_Bank', 'Lainnya'].indexOf(kind) === -1) {
+    throw new Error('Jenis dokumen OCR tidak dikenal.');
+  }
+
+  const file = DriveApp.getFileById(id);
+  const parents = file.getParents();
+  let insideFolder = false;
+  while (parents.hasNext()) {
+    if (parents.next().getId() === folderId) insideFolder = true;
+  }
+  if (!insideFolder) throw new Error('File tidak berada pada folder bukti ERP yang diizinkan.');
+
+  const mimeType = file.getMimeType().toLowerCase();
+  if (['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].indexOf(mimeType) === -1) {
+    throw new Error('OCR hanya menerima JPEG/PNG/WebP atau PDF.');
+  }
+  if (file.getSize() > 4 * 1024 * 1024) throw new Error('OCR dibatasi 4 MB per file agar sesuai limit request dan runtime Apps Script.');
+
+  const apiKey = String(PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '').trim();
+  if (!apiKey) throw new Error('GEMINI_API_KEY belum diatur pada Script Properties.');
+  const blob = file.getBlob();
+  const requestBody = {
+    contents: [{
+      parts: [
+        { text:
+          'Ekstrak data dokumen biaya proyek properti/konstruksi berbahasa Indonesia. ' +
+          'Kembalikan hanya JSON dengan skema: ' +
+          '{"vendor":string|null,"tanggal":"YYYY-MM-DD"|null,"total":number|null,' +
+          '"kategori":"tanah"|"cut_fill"|"material"|"marketing"|"operasional"|"lain_lain"|null,' +
+          '"nomor_bukti":string|null,"keterangan":string|null,"confidence":number,' +
+          '"items":[{"deskripsi":string,"jumlah":number|null}],"perlu_konfirmasi":string[]}. ' +
+          'Jangan menebak nominal/tanggal/nama yang tidak terbaca. Jika ragu, isi null dan beri alasan di perlu_konfirmasi. ' +
+          'OCR hanyalah draft. Jangan menyatakan transaksi telah dibayar atau disetujui. Jenis dokumen: ' + kind + '.'
+        },
+        { inline_data: { mime_type: mimeType, data: Utilities.base64Encode(blob.getBytes()) } }
+      ]
+    }],
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: 'application/json',
+      maxOutputTokens: 2048
+    }
+  };
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=' + encodeURIComponent(apiKey);
+  const response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(requestBody),
+    muteHttpExceptions: true
+  });
+  if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
+    throw new Error('Gemini OCR gagal (HTTP ' + response.getResponseCode() + '). Periksa quota, model access, dan API key pada AI Studio.');
+  }
+
+  const result = JSON.parse(response.getContentText());
+  const candidateText = result && result.candidates && result.candidates[0] &&
+    result.candidates[0].content && result.candidates[0].content.parts &&
+    result.candidates[0].content.parts[0] && result.candidates[0].content.parts[0].text;
+  if (!candidateText) throw new Error('Gemini tidak mengembalikan hasil OCR terstruktur.');
+  const extracted = JSON.parse(candidateText);
+  const confidence = Math.max(0, Math.min(100, Number(extracted.confidence) || 0));
+  cloudAudit_(user.email, 'OCR_DRAFT', 'GOOGLE_DRIVE', id, '', JSON.stringify({
+    workspace_id: workspaceId, document_type: kind, confidence: confidence
+  }));
+  return {
+    success: true,
+    draft: {
+      file_id: file.getId(),
+      file_name: file.getName(),
+      file_url: file.getUrl(),
+      mime_type: mimeType,
+      jenis_dokumen: kind,
+      data_ekstrak: extracted,
+      confidence: confidence,
+      status: 'Pending',
+      catatan: 'Hasil OCR belum menjadi transaksi. Verifikasi gambar/asli, koreksi kolom, lalu setujui secara manual.'
+    },
+    message: 'Draft OCR siap diperiksa. Tidak ada Buku Kas atau jurnal yang dibuat otomatis.'
+  };
+}
+
 function findCloudMembership_(workspaceId, email) {
   const rows = getErpSpreadsheet_().getSheetByName('ERP_MEMBERS').getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
