@@ -1,21 +1,13 @@
 /**
- * GOOGLE APPS SCRIPT - BACKEND LENGKAP
- * 
- * CARA SETUP:
- * 1. Buka Google Sheets Anda
- * 2. Extensions → Apps Script
- * 3. Copy-paste semua kode ini
- * 4. Ganti GEMINI_API_KEY dengan API key Anda dari aistudio.google.com
- * 5. Deploy → New deployment → Web app → Access: Anyone
- * 6. Copy URL deployment untuk digunakan di React frontend
- * 
- * FITUR:
- * ✅ OCR Kwitansi dengan Gemini Vision
- * ✅ Webhook WhatsApp/Telegram
- * ✅ Auto-generate Jurnal Double-Entry
- * ✅ Reversal Journal (koreksi tanpa edit)
- * ✅ Audit Trail otomatis
- * ✅ Integrasi Google Sheets native
+ * ERP legacy service implementations and shared sheet helpers.
+ *
+ * Current web-app entrypoints and the authenticated gateway are in Security.gs.
+ * The HTML Service wrapper is Wrapper.html. All three files must be deployed together.
+ *
+ * Legacy direct GET/POST data routes, OCR, and messaging webhook handlers are
+ * intentionally not public and are not enabled in the new gateway.
+ * Pure calculations may remain available for testing; spreadsheet writes require
+ * the server gateway and its verified Google Identity token.
  */
 
 // ============ KONFIGURASI ============
@@ -38,7 +30,7 @@ function getGeminiApiKey_() {
   return key;
 }
 
-function readSheetRecords(sheetName) {
+function readSheetRecords_(sheetName) {
   const sheet = getErpSpreadsheet_().getSheetByName(sheetName);
   if (!sheet || sheet.getLastRow() < 2) return [];
   const rows = sheet.getDataRange().getValues();
@@ -72,16 +64,16 @@ function ensureSheetHeaders_(sheet, requiredHeaders) {
 /**
  * Handle GET requests (untuk testing)
  */
-function doGet(e) {
+function legacyDoGet_(e) {
   try {
     const path = e && e.parameter && e.parameter.path ? e.parameter.path : '/health';
 
-    if (path === '/transaksi') return jsonResponse(readSheetRecords('BUKU_KAS'));
-    if (path === '/akun') return jsonResponse(readSheetRecords('AKUN'));
-    if (path === '/laporan/laba-rugi') return jsonResponse(generateLabaRugi());
-    if (path === '/laporan/neraca') return jsonResponse(generateNeraca());
+    if (path === '/transaksi') return jsonResponse_(readSheetRecords_('BUKU_KAS'));
+    if (path === '/akun') return jsonResponse_(readSheetRecords_('AKUN'));
+    if (path === '/laporan/laba-rugi') return jsonResponse_(generateLabaRugi_());
+    if (path === '/laporan/neraca') return jsonResponse_(generateNeraca_());
 
-    return jsonResponse({
+    return jsonResponse_({
       status: 'OK',
       message: 'ERP Backend API is running',
       endpoints: [
@@ -97,7 +89,7 @@ function doGet(e) {
       ]
     });
   } catch (error) {
-    return jsonResponse({ success: false, error: String(error && error.message ? error.message : error) });
+    return jsonResponse_({ success: false, error: String(error && error.message ? error.message : error) });
   }
 }
 
@@ -106,33 +98,27 @@ function doGet(e) {
 /**
  * Handle POST requests
  */
-function doPost(e) {
+function legacyDoPost_(e) {
   try {
     const path = e && e.parameter && e.parameter.path ? e.parameter.path : '';
     const rawBody = e && e.postData && e.postData.contents ? e.postData.contents : '';
     const data = rawBody ? JSON.parse(rawBody) : {};
 
-    // Cloud ERP API: all authenticated workspace operations are handled by CloudApi.gs.
-    // Keep this before legacy endpoints so cloud actions cannot fall through to public handlers.
-    if (path === '/cloud-api' || (data && data.action)) {
-      return jsonResponse(handleCloudApi_(data));
-    }
-
-    if (path === '/ocr') return jsonResponse(handleOCR(data));
-    if (path === '/webhook/whatsapp') return jsonResponse(handleWhatsAppWebhook(data));
-    if (path === '/webhook/telegram') return jsonResponse(handleTelegramWebhook(data));
-    if (path === '/transaksi') return jsonResponse(handleAddTransaksi(data));
-    if (path === '/reversal') return jsonResponse(handleReversal(data));
+    if (path === '/ocr') return jsonResponse_(handleOCR_(data));
+    if (path === '/webhook/whatsapp') return jsonResponse_(handleWhatsAppWebhook_(data));
+    if (path === '/webhook/telegram') return jsonResponse_(handleTelegramWebhook_(data));
+    if (path === '/transaksi') return jsonResponse_(handleAddTransaksi_(data));
+    if (path === '/reversal') return jsonResponse_(handleReversal_(data));
 
     if (path.indexOf('/transaksi/') === 0) {
-      return jsonResponse({
+      return jsonResponse_({
         success: false,
         error: 'Update/hapus transaksi posted tidak didukung. Gunakan reversal jurnal agar audit trail tetap utuh.'
       });
     }
-    return jsonResponse({ success: false, error: 'Endpoint tidak dikenal: ' + path });
+    return jsonResponse_({ success: false, error: 'Endpoint tidak dikenal: ' + path });
   } catch (error) {
-    return jsonResponse({ success: false, error: String(error && error.message ? error.message : error) });
+    return jsonResponse_({ success: false, error: String(error && error.message ? error.message : error) });
   }
 }
 
@@ -145,7 +131,7 @@ function doPost(e) {
  * @param {Object} data - { imageUrl: string }
  * @returns {Object} - { vendor, tanggal, total, kategori, confidence }
  */
-function handleOCR(data) {
+function handleOCR_(data) {
   const imageUrl = String(data.imageUrl || '').trim();
   const documentType = String(data.jenisDokumen || 'Kwitansi');
   if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) {
@@ -217,7 +203,7 @@ Jika field tidak ditemukan, isi dengan null. Kembalikan HANYA JSON, tanpa teks l
       const ocrData = JSON.parse(jsonMatch[0]);
       
       // Simpan ke sheet ARSIP_BUKTI
-      saveToArsipBukti(ocrData, imageUrl, documentType);
+      saveToArsipBukti_(ocrData, imageUrl, documentType);
       
       return {
         success: true,
@@ -233,7 +219,7 @@ Jika field tidak ditemukan, isi dengan null. Kembalikan HANYA JSON, tanpa teks l
 /**
  * Simpan hasil OCR ke sheet ARSIP_BUKTI
  */
-function saveToArsipBukti(ocrData, imageUrl, documentType) {
+function saveToArsipBukti_(ocrData, imageUrl, documentType) {
   const ss = getErpSpreadsheet_();
   const sheet = ss.getSheetByName('ARSIP_BUKTI') || ss.insertSheet('ARSIP_BUKTI');
   const headers = ensureSheetHeaders_(sheet, [
@@ -276,7 +262,7 @@ function saveToArsipBukti(ocrData, imageUrl, documentType) {
  * Handle WhatsApp webhook
  * @param {Object} data - WhatsApp webhook payload
  */
-function handleWhatsAppWebhook(data) {
+function handleWhatsAppWebhook_(data) {
   // Extract message data
   const entry = data.entry && data.entry[0];
   if (!entry) return { success: false, message: 'No entry found' };
@@ -301,13 +287,13 @@ function handleWhatsAppWebhook(data) {
     const caption = message.image.caption || '';
     
     // Download image dari WhatsApp
-    const imageUrl = downloadWhatsAppMedia(imageId);
+    const imageUrl = downloadWhatsAppMedia_(imageId);
     
     // OCR gambar
-    const ocrResult = handleOCR({ imageUrl: imageUrl });
+    const ocrResult = handleOCR_({ imageUrl: imageUrl });
     
     // Kirim konfirmasi ke WhatsApp
-    sendWhatsAppMessage(from, `✅ Kwitansi berhasil diproses:\n\nVendor: ${ocrResult.data.vendor}\nTotal: Rp${ocrResult.data.total?.toLocaleString('id-ID')}\nTanggal: ${ocrResult.data.tanggal}\n\nData sudah masuk ke sistem.`);
+    sendWhatsAppMessage_(from, `✅ Kwitansi berhasil diproses:\n\nVendor: ${ocrResult.data.vendor}\nTotal: Rp${ocrResult.data.total?.toLocaleString('id-ID')}\nTanggal: ${ocrResult.data.tanggal}\n\nData sudah masuk ke sistem.`);
     
     return { success: true, message: 'Image processed', ocrResult: ocrResult };
   }
@@ -318,13 +304,13 @@ function handleWhatsAppWebhook(data) {
     
     // Parse command
     if (text.toLowerCase().includes('saldo')) {
-      const saldo = getSaldoKas();
-      sendWhatsAppMessage(from, `💰 Saldo Kas: Rp${saldo.toLocaleString('id-ID')}`);
+      const saldo = getSaldoKas_();
+      sendWhatsAppMessage_(from, `💰 Saldo Kas: Rp${saldo.toLocaleString('id-ID')}`);
     } else if (text.toLowerCase().includes('laporan')) {
-      const laporan = generateLabaRugi();
-      sendWhatsAppMessage(from, `📊 Laba Rugi:\n\nPendapatan: Rp${laporan.total_pendapatan.toLocaleString('id-ID')}\nBeban: Rp${laporan.total_beban.toLocaleString('id-ID')}\nLaba Bersih: Rp${laporan.laba_bersih.toLocaleString('id-ID')}`);
+      const laporan = generateLabaRugi_();
+      sendWhatsAppMessage_(from, `📊 Laba Rugi:\n\nPendapatan: Rp${laporan.total_pendapatan.toLocaleString('id-ID')}\nBeban: Rp${laporan.total_beban.toLocaleString('id-ID')}\nLaba Bersih: Rp${laporan.laba_bersih.toLocaleString('id-ID')}`);
     } else {
-      sendWhatsAppMessage(from, 'Perintah tidak dikenali. Kirim "saldo" atau "laporan".');
+      sendWhatsAppMessage_(from, 'Perintah tidak dikenali. Kirim "saldo" atau "laporan".');
     }
     
     return { success: true, message: 'Text message processed' };
@@ -336,7 +322,7 @@ function handleWhatsAppWebhook(data) {
 /**
  * Download media dari WhatsApp
  */
-function downloadWhatsAppMedia(mediaId) {
+function downloadWhatsAppMedia_(mediaId) {
   // Implementasi ini memerlukan WhatsApp Cloud API access token
   // Untuk saat ini, return placeholder
   // TODO: Implementasi dengan WhatsApp Cloud API
@@ -361,7 +347,7 @@ function downloadWhatsAppMedia(mediaId) {
 /**
  * Kirim pesan WhatsApp
  */
-function sendWhatsAppMessage(to, message) {
+function sendWhatsAppMessage_(to, message) {
   // Implementasi ini memerlukan WhatsApp Cloud API
   // TODO: Implementasi dengan WhatsApp Cloud API
   
@@ -394,7 +380,7 @@ function sendWhatsAppMessage(to, message) {
 /**
  * Handle Telegram webhook
  */
-function handleTelegramWebhook(data) {
+function handleTelegramWebhook_(data) {
   const message = data.message;
   if (!message) return { success: false };
   
@@ -407,13 +393,13 @@ function handleTelegramWebhook(data) {
     const fileId = photo.file_id;
     
     // Download photo dari Telegram
-    const photoUrl = downloadTelegramPhoto(fileId);
+    const photoUrl = downloadTelegramPhoto_(fileId);
     
     // OCR photo
-    const ocrResult = handleOCR({ imageUrl: photoUrl });
+    const ocrResult = handleOCR_({ imageUrl: photoUrl });
     
     // Kirim konfirmasi ke Telegram
-    sendTelegramMessage(chatId, `✅ Kwitansi berhasil diproses:\n\nVendor: ${ocrResult.data.vendor}\nTotal: Rp${ocrResult.data.total?.toLocaleString('id-ID')}\nTanggal: ${ocrResult.data.tanggal}`);
+    sendTelegramMessage_(chatId, `✅ Kwitansi berhasil diproses:\n\nVendor: ${ocrResult.data.vendor}\nTotal: Rp${ocrResult.data.total?.toLocaleString('id-ID')}\nTanggal: ${ocrResult.data.tanggal}`);
     
     return { success: true, ocrResult: ocrResult };
   }
@@ -421,11 +407,11 @@ function handleTelegramWebhook(data) {
   // Handle text command
   if (text) {
     if (text === '/saldo') {
-      const saldo = getSaldoKas();
-      sendTelegramMessage(chatId, `💰 Saldo Kas: Rp${saldo.toLocaleString('id-ID')}`);
+      const saldo = getSaldoKas_();
+      sendTelegramMessage_(chatId, `💰 Saldo Kas: Rp${saldo.toLocaleString('id-ID')}`);
     } else if (text === '/laporan') {
-      const laporan = generateLabaRugi();
-      sendTelegramMessage(chatId, `📊 Laba Rugi:\n\nPendapatan: Rp${laporan.total_pendapatan.toLocaleString('id-ID')}\nBeban: Rp${laporan.total_beban.toLocaleString('id-ID')}\nLaba Bersih: Rp${laporan.laba_bersih.toLocaleString('id-ID')}`);
+      const laporan = generateLabaRugi_();
+      sendTelegramMessage_(chatId, `📊 Laba Rugi:\n\nPendapatan: Rp${laporan.total_pendapatan.toLocaleString('id-ID')}\nBeban: Rp${laporan.total_beban.toLocaleString('id-ID')}\nLaba Bersih: Rp${laporan.laba_bersih.toLocaleString('id-ID')}`);
     }
   }
   
@@ -435,7 +421,7 @@ function handleTelegramWebhook(data) {
 /**
  * Download photo dari Telegram
  */
-function downloadTelegramPhoto(fileId) {
+function downloadTelegramPhoto_(fileId) {
   const botToken = PropertiesService.getScriptProperties().getProperty('TELEGRAM_BOT_TOKEN');
   
   // Get file path
@@ -450,7 +436,7 @@ function downloadTelegramPhoto(fileId) {
 /**
  * Kirim pesan Telegram
  */
-function sendTelegramMessage(chatId, text) {
+function sendTelegramMessage_(chatId, text) {
   const botToken = PropertiesService.getScriptProperties().getProperty('TELEGRAM_BOT_TOKEN');
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
   
@@ -471,7 +457,7 @@ function sendTelegramMessage(chatId, text) {
 /**
  * Tambah transaksi baru + auto-generate jurnal
  */
-function handleAddTransaksi(data) {
+function handleAddTransaksi_(data) {
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -490,7 +476,7 @@ function handleAddTransaksi(data) {
 
     const idempotencyKey = String(data.idempotency_key || data.request_id || '').trim();
     if (idempotencyKey) {
-      const existing = readSheetRecords('BUKU_KAS').find(record =>
+      const existing = readSheetRecords_('BUKU_KAS').find(record =>
         String(record.idempotency_key || '') === idempotencyKey
       );
       if (existing) {
@@ -511,7 +497,7 @@ function handleAddTransaksi(data) {
 
     const accountSheet = ss.getSheetByName('AKUN');
     if (!accountSheet || accountSheet.getLastRow() < 2) {
-      throw new Error('Daftar akun kosong. Jalankan setupDatabase() terlebih dahulu.');
+      throw new Error('Daftar akun kosong. Jalankan setupDatabase_() terlebih dahulu.');
     }
     const accountRows = accountSheet.getDataRange().getValues();
     const accountNames = {};
@@ -530,7 +516,7 @@ function handleAddTransaksi(data) {
     let totalDebit = 0;
     let totalKredit = 0;
     journalEntries.forEach(entry => {
-      if (!accountNames[entry.akun_kode]) throw new Error('Akun tidak ditemukan: ' + entry.akun_kode + '. Jalankan setupDatabase().');
+      if (!accountNames[entry.akun_kode]) throw new Error('Akun tidak ditemukan: ' + entry.akun_kode + '. Jalankan setupDatabase_().');
       if (!isFinite(entry.debit) || !isFinite(entry.kredit) || entry.debit < 0 || entry.kredit < 0 ||
           (entry.debit > 0 && entry.kredit > 0)) {
         throw new Error('Baris jurnal tidak valid untuk akun ' + entry.akun_kode);
@@ -607,7 +593,7 @@ function handleAddTransaksi(data) {
       throw writeError;
     }
 
-    logAudit('CREATE', 'BUKU_KAS', transaksiId, '-', JSON.stringify({
+    logAudit_('CREATE', 'BUKU_KAS', transaksiId, '-', JSON.stringify({
       jenis: type, keterangan: description, jumlah: amount, ppn: vat,
       total_debit: totalDebit, total_kredit: totalKredit
     }));
@@ -715,7 +701,7 @@ function generateJurnalDoubleEntry(transaksi) {
 /**
  * Reversal jurnal (koreksi tanpa edit)
  */
-function handleReversal(data) {
+function handleReversal_(data) {
   const transaksiId = data.transaksi_id;
   const alasan = data.alasan || 'Reversal';
   
@@ -767,7 +753,7 @@ function handleReversal(data) {
   });
   
   // Log ke audit trail
-  logAudit('REVERSAL', 'JURNAL', transaksiId, 'Original', `Reversal: ${alasan}`);
+  logAudit_('REVERSAL', 'JURNAL', transaksiId, 'Original', `Reversal: ${alasan}`);
   
   return {
     success: true,
@@ -783,7 +769,7 @@ function handleReversal(data) {
 /**
  * Generate laporan Laba Rugi
  */
-function generateLabaRugi() {
+function generateLabaRugi_() {
   const ss = getErpSpreadsheet_();
   const jurnalSheet = ss.getSheetByName('JURNAL');
   
@@ -821,7 +807,7 @@ function generateLabaRugi() {
 /**
  * Generate laporan Neraca
  */
-function generateNeraca() {
+function generateNeraca_() {
   const ss = getErpSpreadsheet_();
   const jurnalSheet = ss.getSheetByName('JURNAL');
   
@@ -867,7 +853,7 @@ function generateNeraca() {
 /**
  * Get saldo kas
  */
-function getSaldoKas() {
+function getSaldoKas_() {
   const ss = getErpSpreadsheet_();
   const jurnalSheet = ss.getSheetByName('JURNAL');
   
@@ -896,7 +882,7 @@ function getSaldoKas() {
 /**
  * Log aktivitas ke audit trail
  */
-function logAudit(aksi, tabel, recordId, nilaiLama, nilaiBaru) {
+function logAudit_(aksi, tabel, recordId, nilaiLama, nilaiBaru) {
   const ss = getErpSpreadsheet_();
   let sheet = ss.getSheetByName('AUDIT_LOG');
   
@@ -925,7 +911,7 @@ function logAudit(aksi, tabel, recordId, nilaiLama, nilaiBaru) {
 /**
  * Setup database sheets (jalankan sekali)
  */
-function setupDatabase() {
+function setupDatabase_() {
   const ss = getErpSpreadsheet_();
   
   // Sheets use stable headers; append new columns to existing databases without overwriting rows.
@@ -1008,7 +994,7 @@ function setupDatabase() {
 /**
  * Return JSON response
  */
-function jsonResponse(data, statusCode = 200) {
+function jsonResponse_(data, statusCode = 200) {
   return ContentService
     .createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);

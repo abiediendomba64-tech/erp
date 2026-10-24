@@ -344,3 +344,155 @@ assert.deepEqual(operational.calculateBudgetVariance(10000000, 12500000), {
 console.log('PASS: rumus RAB, stok, penjualan, pembelian, produksi, payroll, dan realisasi anggaran dari fungsi aktual');
 
 console.log('\nALL PRODUCTION ACCOUNTING REGRESSION TESTS PASSED');
+
+
+// Cloud backend regression checks: ensure all public data calls pass through verified identity.
+const securitySource = await readFile(new URL('./google-apps-script/Security.gs', import.meta.url), 'utf8');
+runInNewContext(securitySource, gasContext, { filename: 'Security.gs' });
+gasContext.jsonResponse_ = payload => payload; // capture HTTP response bodies in this isolated unit-test context
+
+assert.equal(typeof gasContext.doGet, 'function', 'Google Web App wrapper entry point must exist');
+assert.equal(typeof gasContext.doPost, 'function', 'Google Web App POST entry point must exist');
+assert.equal(typeof gasContext.apiDispatch, 'function', 'Authenticated dispatch must exist');
+const publicHealth = gasContext.doGet({ parameter: { path: '/health' } });
+assert.equal(publicHealth.success, true, 'health check remains available without reading business data');
+const legacyRead = gasContext.doGet({ parameter: { path: '/akun' } });
+assert.equal(legacyRead.code, 'legacy_api_disabled', 'legacy direct data read endpoint must be disabled');
+const legacyWrite = gasContext.doPost({ parameter: { path: '/transaksi' }, postData: { contents: '{}' } });
+assert.equal(legacyWrite.code, 'endpoint_disabled', 'legacy unauthenticated transaction write endpoint must be disabled');
+const noToken = gasContext.apiDispatch({ action: 'auth.me', idToken: '' });
+assert.equal(noToken.success, false, 'cloud API rejects missing Google ID token');
+assert.equal(noToken.code, 'unauthenticated', 'missing token has explicit auth error');
+
+const trustedAudit = [{ id: 'SERVER-LOG-1', actor_email: 'admin@example.com' }];
+const incomingAudit = [...trustedAudit, { id: 'BROWSER-FAKE-LOG' }];
+const preservedAdminData = gasContext.preserveRestrictedCollections_(
+  { role: 'ADMIN' },
+  'operational',
+  { auditLog: trustedAudit, tanah: [] },
+  { auditLog: incomingAudit, tanah: [] }
+);
+assert.deepEqual(JSON.parse(JSON.stringify(preservedAdminData.auditLog)), trustedAudit,
+  'browser payload may not append or rewrite the authoritative server audit log');
+
+const viewerBefore = { bukuKas: [], auditLog: [], tanah: [], beko: [], housingUnits: [] };
+const viewerAfter = { ...viewerBefore, tanah: [{ id: 'UNAUTHORIZED' }] };
+assert.throws(() => gasContext.validateRoleChanges_(
+  { role: 'VIEWER' }, 'operational', viewerBefore, viewerAfter
+), /tidak berhak mengubah bagian/,
+'VIEWER must not be able to mutate operational records on the server');
+
+assert.match(securitySource, /version_conflict/, 'version conflicts must be rejected rather than silently overwriting');
+assert.match(securitySource, /tokeninfo\?id_token=/, 'Google ID tokens must be verified server-side');
+assert.match(securitySource, /claims\.iss/, 'Google ID token issuer must be checked');
+assert.match(securitySource, /readWorkspaceSlice_\(workspaceId, 'workspace'\)/,
+  'operational and accounting data must load from one canonical workspace snapshot');
+const wrapperSource = await readFile(new URL('./google-apps-script/Wrapper.html', import.meta.url), 'utf8');
+assert.match(wrapperSource, /event\.origin !== FRONTEND_ORIGIN/, 'bridge must validate frontend origin');
+assert.match(wrapperSource, /event\.source !== frame\.contentWindow/, 'bridge must validate the calling frame');
+const appServiceSource = await readFile(new URL('./src/services/api.ts', import.meta.url), 'utf8');
+assert.doesNotMatch(appServiceSource, /fetch\s*\(/, 'ERP client helpers must not bypass the authenticated Apps Script bridge');
+const userManagementSource = await readFile(new URL('./src/pages/UserManagementPage.tsx', import.meta.url), 'utf8');
+assert.doesNotMatch(userManagementSource, /admin@proyek\.com|keuangan@proyek\.com|proyek@proyek\.com/,
+  'user management must not seed fake users');
+console.log('PASS: Google cloud backend auth guard, legacy API shutdown, server audit immutability, and role limits');
+
+
+const accountFixture = [
+  { kode: '1-1001', nama: 'Kas', tipe: 'Aset', kategori: 'Aset Lancar', saldo_normal: 'Debit', saldo: 0 },
+  { kode: '4-1001', nama: 'Pendapatan', tipe: 'Pendapatan', kategori: 'Pendapatan Usaha', saldo_normal: 'Kredit', saldo: 0 },
+  { kode: '5-1001', nama: 'Beban Material', tipe: 'Beban', kategori: 'Beban Langsung', saldo_normal: 'Debit', saldo: 0 }
+];
+const journalFixture = {
+  id: 'J-CLOUD-1',
+  tanggal: '2026-10-24',
+  no_jurnal: 'JU-CLOUD-1',
+  keterangan: 'Uji cloud',
+  entries: [
+    { id: 'E-1', akun_kode: '1-1001', akun_nama: 'Nama dari browser tidak dipercaya', debit: 100, kredit: 0 },
+    { id: 'E-2', akun_kode: '4-1001', akun_nama: 'Nama palsu', debit: 0, kredit: 100 }
+  ],
+  total_debit: 999,
+  total_kredit: 999,
+  status: 'Posted',
+  createdBy: 'browser-supplied-user',
+  createdAt: '2026-10-24T00:00:00.000Z'
+};
+const accountingFixture = {
+  akun: accountFixture,
+  jurnal: [journalFixture],
+  invoice: [],
+  purchaseOrder: [],
+  rab: [],
+  schedule: []
+};
+const serverValidatedAccounting = gasContext.validateSlice_('accounting', accountingFixture);
+assert.equal(serverValidatedAccounting.jurnal[0].total_debit, 100,
+  'backend derives the journal debit total from entries instead of trusting the browser');
+assert.equal(serverValidatedAccounting.jurnal[0].total_kredit, 100,
+  'backend derives the journal credit total from entries instead of trusting the browser');
+assert.equal(serverValidatedAccounting.jurnal[0].entries[0].akun_nama, 'Kas',
+  'account display name comes from the server chart of accounts');
+const invalidAccounting = JSON.parse(JSON.stringify(accountingFixture));
+invalidAccounting.jurnal[0].entries[1].kredit = 90;
+assert.throws(() => gasContext.validateSlice_('accounting', invalidAccounting), /tidak balance/,
+  'backend rejects a posted journal with unbalanced entries');
+
+const reportSnapshot = {
+  accounting: {
+    akun: accountFixture,
+    jurnal: [
+      { ...journalFixture, id: 'J-REV', no_jurnal: 'JU-REV', status: 'Posted', entries: [
+        { id: 'R1', akun_kode: '1-1001', debit: 100, kredit: 0 },
+        { id: 'R2', akun_kode: '4-1001', debit: 0, kredit: 100 }
+      ] },
+      { ...journalFixture, id: 'J-EXP', no_jurnal: 'JU-EXP', status: 'Posted', entries: [
+        { id: 'E3', akun_kode: '5-1001', debit: 30, kredit: 0 },
+        { id: 'E4', akun_kode: '1-1001', debit: 0, kredit: 30 }
+      ] }
+    ]
+  }
+};
+gasContext.loadWorkspace_ = () => reportSnapshot;
+const cloudPnl = gasContext.buildProfitLossFromCloud_({ role: 'ADMIN' }, 'W-TEST', '2026-10');
+assert.equal(cloudPnl.total_pendapatan, 100);
+assert.equal(cloudPnl.total_beban, 30);
+assert.equal(cloudPnl.laba_bersih, 70);
+const cloudBalance = gasContext.buildBalanceSheetFromCloud_({ role: 'ADMIN' }, 'W-TEST', '2026-10-24');
+assert.equal(cloudBalance.aset.total_aset, 70);
+assert.equal(cloudBalance.total_kewajiban_ekuitas, 70);
+assert.equal(cloudBalance.balance, true);
+console.log('PASS: backend recalculates journal totals, rejects imbalance, and computes cloud reports from the canonical workspace');
+
+
+const immutablePosted = JSON.parse(JSON.stringify(serverValidatedAccounting));
+const tamperedPosted = JSON.parse(JSON.stringify(serverValidatedAccounting));
+tamperedPosted.jurnal[0].keterangan = 'Edited posted journal';
+assert.throws(() => gasContext.enforceJournalIntegrity_(
+  { email: 'finance@example.com' }, immutablePosted, tamperedPosted
+), /tidak boleh diedit/,
+'posted journals must be immutable and corrections must use reversal entries');
+const draftBefore = JSON.parse(JSON.stringify(serverValidatedAccounting));
+draftBefore.jurnal[0].status = 'Draft';
+const draftAfter = JSON.parse(JSON.stringify(draftBefore));
+draftAfter.jurnal[0].status = 'Posted';
+draftAfter.jurnal[0].createdBy = 'spoofed-browser-identity';
+const promoted = gasContext.enforceJournalIntegrity_(
+  { email: 'finance@example.com' }, draftBefore, draftAfter
+);
+assert.equal(promoted.jurnal[0].status, 'Posted', 'balanced drafts can be promoted through a permitted workflow');
+assert.equal(promoted.jurnal[0].createdBy, draftBefore.jurnal[0].createdBy,
+  'the browser cannot rewrite the author of an existing journal');
+const newDraft = JSON.parse(JSON.stringify(serverValidatedAccounting));
+newDraft.jurnal.push({
+  ...JSON.parse(JSON.stringify(journalFixture)),
+  id: 'J-CLOUD-NEW',
+  no_jurnal: 'JU-CLOUD-NEW',
+  createdBy: 'forged',
+});
+const stamped = gasContext.enforceJournalIntegrity_(
+  { email: 'admin@example.com' }, serverValidatedAccounting, newDraft
+);
+assert.equal(stamped.jurnal.find(journal => journal.id === 'J-CLOUD-NEW').createdBy, 'admin@example.com',
+  'new journal author is stamped from verified server identity');
+console.log('PASS: posted-journal immutability, controlled promotion, and server-authenticated authorship');

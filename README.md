@@ -23,6 +23,15 @@
 
 Repository berisi aplikasi React untuk akuntansi dan operasional proyek, serta integrasi Google Apps Script yang masih memerlukan konfigurasi.
 
+### Tahap cloud Google terbaru (branch belum production)
+
+Branch `feat/erp-google-cloud-ssot-20261024` menambahkan login Google yang diverifikasi server, role server, workspace cloud, snapshot Google Sheets berversi, konflik antarperangkat yang ditolak alih-alih ditimpa, dan audit log server. UI tidak lagi memakai tombol pergantian role palsu. Implementasi ini tidak menggunakan Supabase.
+
+Panduan konfigurasi yang benar: [docs/GOOGLE_BACKEND_SETUP.md](docs/GOOGLE_BACKEND_SETUP.md).
+
+**Batas penting:** branch ini belum di-deploy ke akun Google/Cloudflare pemilik aplikasi. OCR, WhatsApp/Telegram, dan upload Drive tetap dinonaktifkan di gateway baru. Model penyimpanan saat ini adalah satu snapshot JSON workspace berversi global di Google Sheets (bagian operasional dan akuntansi masing-masing maksimum 3 MB, snapshot total maksimum 6 MB), belum tabel relasional per modul; satu proses bisnis lintas modul juga belum dijamin sebagai satu transaksi atomik. Jangan memakai ini untuk transaksi produksi sebelum uji end-to-end dan rekonsiliasi berhasil.
+
+
 ### Fungsi yang tersedia pada aplikasi
 - Input transaksi akuntansi dengan preview jurnal dan validasi debit/kredit.
 - Dashboard dan laporan laba rugi, neraca, serta arus kas yang dihitung dari jurnal modul akuntansi.
@@ -187,37 +196,11 @@ LEVEL 5: LAPORAN KEUANGAN (Auto-Generate)
 
 ## 🚀 SETUP FULL GOOGLE STACK
 
-### **Langkah 1: Dapatkan Gemini API Key (10 menit)**
-1. Buka https://aistudio.google.com/app/apikey
-2. Login dengan akun Google
-3. Klik "Create API key"
-4. Copy API key (format: `AIzaSy...`)
+### Setup backend Google (auth + sumber data cloud)
 
-### Langkah 2: Siapkan Google Apps Script
-1. Mulai dari spreadsheet uji dan pilih Extensions → Apps Script.
-2. Salin kode dari google-apps-script/Code.gs.
-3. Pada Project Settings → Script Properties, isi GEMINI_API_KEY hanya jika ingin mengaktifkan OCR. Jangan simpan kunci di source code atau frontend.
-4. Jika project tidak terikat ke spreadsheet, tambahkan Script Property SPREADSHEET_ID.
-5. Jalankan setupDatabase() lalu periksa header semua sheet.
+Ikuti [panduan Google Backend Setup](docs/GOOGLE_BACKEND_SETUP.md) secara berurutan untuk membuat tiga file Apps Script, menyiapkan OAuth Client ID, Script Properties, environment frontend, deployment Web App, dan workspace pertama.
 
-### Langkah 3: Deployment dengan kontrol akses
-- Mulai dengan data uji, bukan data keuangan sensitif.
-- Jangan membuka endpoint tulis keuangan ke publik dengan akses “Anyone”; otentikasi/otorisasi produksi belum tersedia.
-- Webhook provider perlu verifikasi masing-masing. Deployment berhasil tidak berarti integrasinya sudah aktif.
-
-### Langkah 4: Konfigurasi frontend
-- Set environment build VITE_ERP_API_URL ke URL Web App Apps Script.
-- Setelah mengganti environment Cloudflare Pages, jalankan build/deploy baru.
-- Ini hanya mengonfigurasi helper API; komponen UI belum seluruhnya memakai backend dan sebagian state masih localStorage.
-
-### **Langkah 5: Test End-to-End (30 menit)**
-1. Test OCR dengan foto kwitansi
-2. Test input transaksi
-3. Test laporan keuangan
-4. Test reversal journal
-
-**Total Waktu:** 2 jam  
-**Total Biaya:** Rp0
+Gemini OCR, Drive upload, serta webhook WhatsApp/Telegram **belum diaktifkan** pada gateway aman ini. Jangan gunakan petunjuk lama di bawah ini untuk membuka endpoint tulis publik. Data browser tidak otomatis dipindahkan ke cloud; administrator harus memilih impor setelah memeriksa data lama.
 
 **Dokumentasi Detail:** Lihat `IMPLEMENTASI_NYATA.md`
 
@@ -301,30 +284,21 @@ LEVEL 5: LAPORAN KEUANGAN (Auto-Generate)
 
 ---
 
-## 💰 ANALISIS BIAYA
+## 💰 Biaya — estimasi harus sesuai pemakaian
 
-### **Sebelum (Dengan Backend Sendiri):**
-```
-- Server hosting: $20-50/bulan
-- Database: $10-30/bulan
-- OCR API: $10-50/bulan
-- File storage: $5-10/bulan
-─────────────────────────────
-Total: $45-140/bulan = Rp700.000-2.200.000/bulan
-```
+Target rancangan ini adalah meminimalkan biaya server. **Tidak tepat menjanjikan seluruh stack selalu Rp0/bulan**, karena kuota, kapasitas, dan tarif integrasi berbeda.
 
-### **Sesudah (Full Google Stack):**
-```
-- Google Apps Script: Rp0
-- Google Sheets: Rp0
-- Gemini API: Rp0
-- Google Drive: Rp0
-- WhatsApp Business API: Rp0
-─────────────────────────────
-Total: Rp0/bulan = GRATIS!
-```
+| Komponen | Kondisi biaya |
+|---|---|
+| Google Apps Script + Google Sheets | Dapat digunakan tanpa biaya server/database terpisah selama akun dan penggunaan masih dalam kuota serta batas layanan. Apps Script memiliki kuota harian, timeout, dan batas eksekusi yang bisa menghentikan proses ketika terlampaui. Lihat [kuota resmi Apps Script](https://developers.google.com/apps-script/guides/services/quotas). |
+| Google Sign-In | Tidak memerlukan server autentikasi terpisah untuk arsitektur ini; tetap perlu konfigurasi OAuth dan kebijakan akun Google. |
+| Google Drive | Mengikuti kuota penyimpanan akun atau Google Workspace. Lampiran/arsip berkas yang bertambah tetap perlu dipantau. |
+| Gemini API OCR | Memiliki free tier dengan kuota dan model tertentu; pemakaian di luar batas bisa berbayar. Data yang dikirim melalui free tier dapat digunakan untuk meningkatkan produk Google. Jangan kirim dokumen finansial sensitif sebelum menilai kebijakan privasi dan kebutuhan penggunaan tier berbayar. Lihat [harga Gemini API](https://ai.google.dev/gemini-api/docs/pricing). |
+| n8n | Community Edition dapat di-self-host tanpa biaya lisensi untuk workflow internal sesuai lisensinya; server/VPS, domain, listrik, dan pemeliharaan bisa tetap menimbulkan biaya. [Ketentuan lisensi n8n](https://support.n8n.io/article/can-i-use-your-license-for-my-use-case). |
+| Telegram Bot API | Bot API tidak memerlukan paket langganan bot; mesin yang menjalankan n8n dan layanan pendukung tetap perlu diperhitungkan. |
+| WhatsApp Business Platform | **Jangan diasumsikan gratis.** Tarif resmi mengenakan biaya per pesan yang tersampaikan berdasarkan tujuan dan kategori pesan. Pesan layanan dan sebagian pesan utilitas yang membalas pengguna memiliki perlakuan tarif berbeda. Periksa [harga resmi WhatsApp Business Platform](https://whatsappbusiness.com/id/products/platform-pricing/). |
 
-**Penghematan:** Rp8.4-26.4 juta/tahun
+Untuk uji coba kecil, skenario **mendekati Rp0** mungkin tercapai dengan input manual atau Telegram, Google Sheets/Apps Script, dan OCR yang masih dalam free tier. Untuk penggunaan lapangan rutin—terutama WhatsApp resmi, banyak nota, atau arsip besar—hitung kuota aktual dan potensi biaya lebih dulu.
 
 ---
 

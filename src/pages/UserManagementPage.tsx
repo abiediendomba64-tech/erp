@@ -1,231 +1,222 @@
-import { FormEvent, useEffect, useState } from 'react';
-import { Users, Plus, Pencil, Shield, Save, X, RefreshCw, AlertCircle, CheckCircle2, UserCheck, UserX } from 'lucide-react';
-import type { UserRole } from '../types';
-import { getActiveWorkspaceId, googleErpApi } from '../lib/googleErpApi';
+import { useCallback, useEffect, useState } from 'react';
+import { Users, Plus, Edit, UserX, Shield, Save, X, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
+import { gasRpc, CloudUser } from '../lib/gasBridge';
+import { useCloudAuth } from '../auth/CloudAuthGate';
 
+type UserRole = CloudUser['role'];
 interface ManagedUser {
   id: string;
   nama: string;
   email: string;
-  phone: string;
   role: UserRole;
   status: 'active' | 'inactive';
   createdAt: string;
-  updatedAt?: string;
+  lastLogin?: string;
 }
-type UserDraft = Pick<ManagedUser, 'nama' | 'email' | 'phone' | 'role' | 'status'>;
+interface UserForm {
+  nama: string;
+  email: string;
+  role: UserRole;
+  status: 'active' | 'inactive';
+}
+const emptyForm: UserForm = { nama: '', email: '', role: 'VIEWER', status: 'active' };
 
-const blankDraft: UserDraft = {
-  nama: '', email: '', phone: '',
-  role: 'VIEWER', status: 'active',
+const roleInfo: Record<UserRole, string> = {
+  ADMIN: 'Mengatur pengguna dan semua modul ERP.',
+  KEUANGAN: 'Mengelola pencatatan keuangan dan administrasi yang diizinkan server.',
+  PROYEK: 'Mengelola data pekerjaan, RAB, QC, aset, dan unit yang diizinkan server.',
+  VIEWER: 'Hanya membaca ringkasan/progress yang disaring backend.',
 };
 
-const roles: { value: UserRole; label: string; detail: string }[] = [
-  { value: 'ADMIN', label: 'Admin', detail: 'Master, konfigurasi, pengguna, seluruh modul' },
-  { value: 'KEUANGAN', label: 'Keuangan', detail: 'Buku kas, bukti, kewajiban, jurnal dan laporan' },
-  { value: 'PROYEK', label: 'Tim proyek', detail: 'Tanah, beko, stok, pembelian, QC, unit dan progres' },
-  { value: 'VIEWER', label: 'Pemilik / Viewer', detail: 'Ringkasan dan progres read-only' },
-];
-
-function explain(error: unknown) {
-  return error instanceof Error ? error.message : 'Permintaan pengguna gagal.';
-}
-
 export default function UserManagementPage() {
+  const { user, workspace } = useCloudAuth();
   const [users, setUsers] = useState<ManagedUser[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [editingEmail, setEditingEmail] = useState<string | null>(null);
-  const [draft, setDraft] = useState<UserDraft>(blankDraft);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<ManagedUser | null>(null);
+  const [form, setForm] = useState<UserForm>(emptyForm);
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
+  const [notice, setNotice] = useState('');
 
-  const loadUsers = async () => {
+  const loadUsers = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const result = await googleErpApi<{ users: ManagedUser[] }>('users.list');
-      setUsers(Array.isArray(result.users) ? result.users : []);
-    } catch (failure) {
-      setError(explain(failure));
+      const data = await gasRpc<ManagedUser[]>('user.list', { workspaceId: workspace.id });
+      setUsers(data);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Daftar pengguna gagal dimuat dari cloud.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [workspace.id]);
 
-  useEffect(() => { void loadUsers(); }, []);
+  useEffect(() => { void loadUsers(); }, [loadUsers]);
 
-  const startAdd = () => {
-    setEditingEmail(null);
-    setDraft(blankDraft);
+  const openNew = () => {
+    setEditing(null);
+    setForm(emptyForm);
     setError('');
-    setMessage('');
+    setNotice('');
     setShowForm(true);
   };
 
-  const startEdit = (user: ManagedUser) => {
-    setEditingEmail(user.email);
-    setDraft({
-      nama: user.nama,
-      email: user.email,
-      phone: user.phone || '',
-      role: user.role,
-      status: user.status,
-    });
+  const openEdit = (target: ManagedUser) => {
+    setEditing(target);
+    setForm({ nama: target.nama, email: target.email, role: target.role, status: target.status });
     setError('');
-    setMessage('');
+    setNotice('');
     setShowForm(true);
   };
 
-  const saveUser = async (event: FormEvent) => {
-    event.preventDefault();
-    setError('');
-    setMessage('');
-    const email = draft.email.trim().toLowerCase();
-    if (!draft.nama.trim()) return setError('Nama pengguna wajib diisi.');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setError('Alamat email tidak valid.');
-    if (!draft.phone.trim()) return setError('Nomor WhatsApp wajib diisi agar staf mudah dihubungi.');
-
+  const save = async () => {
+    if (!form.nama.trim() || !form.email.trim()) {
+      setError('Nama dan email Google wajib diisi.');
+      return;
+    }
     setSaving(true);
+    setError('');
+    setNotice('');
     try {
-      const result = await googleErpApi<{ user: ManagedUser }>('users.upsert', {
-        user: { ...draft, email, nama: draft.nama.trim(), phone: draft.phone.trim() },
+      const updated = await gasRpc<ManagedUser[]>('user.upsert', {
+        workspaceId: workspace.id,
+        nama: form.nama.trim(),
+        email: form.email.trim().toLowerCase(),
+        role: form.role,
+        status: form.status
       });
-      const workspaceId = getActiveWorkspaceId();
-      if (workspaceId && draft.status === 'active') {
-        await googleErpApi('workspace.member.add', {
-          workspaceId,
-          email,
-          role: draft.role,
-        });
-      }
-      setMessage(editingEmail
-        ? 'Data pengguna diperbarui pada Google Sheets. Perubahan izin berlaku saat permintaan berikutnya.'
-        : 'Pengguna ditambahkan ke daftar akses dan workspace aktif. Orang tersebut harus login memakai akun Google dengan email yang sama.');
+      setUsers(updated);
       setShowForm(false);
-      setEditingEmail(null);
-      setDraft(blankDraft);
-      await loadUsers();
-      if (!result.user) throw new Error('Backend tidak mengembalikan data pengguna setelah penyimpanan.');
-    } catch (failure) {
-      setError(explain(failure));
+      setEditing(null);
+      setForm(emptyForm);
+      setNotice('Data pengguna tersimpan di Google Sheets. Login memakai akun Google pada email terdaftar.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Perubahan pengguna gagal disimpan.');
     } finally {
       setSaving(false);
     }
   };
 
-  const toggleStatus = async (user: ManagedUser) => {
-    const nextStatus = user.status === 'active' ? 'inactive' : 'active';
-    const action = nextStatus === 'inactive' ? 'nonaktifkan' : 'aktifkan kembali';
-    if (!window.confirm(`Yakin ${action} akun ${user.email}?`)) return;
+  const disable = async (target: ManagedUser) => {
+    if (target.email === user.email) {
+      setError('Akun yang sedang dipakai tidak dapat dinonaktifkan dari sesi ini.');
+      return;
+    }
+    if (!window.confirm('Nonaktifkan akses ' + target.email + '? Pengguna ini tidak dapat masuk lagi setelah sesi Google divalidasi ulang.')) return;
     setError('');
-    setMessage('');
-    setSaving(true);
+    setNotice('');
     try {
-      await googleErpApi('users.upsert', {
-        user: {
-          email: user.email, nama: user.nama, phone: user.phone,
-          role: user.role, status: nextStatus,
-        },
-      });
-      if (nextStatus === 'active') {
-        const workspaceId = getActiveWorkspaceId();
-        if (workspaceId) await googleErpApi('workspace.member.add', { workspaceId, email: user.email, role: user.role });
-      }
-      setMessage(`Akun ${user.email} sekarang ${nextStatus === 'active' ? 'aktif' : 'nonaktif'}.`);
+      await gasRpc('user.disable', { email: target.email });
       await loadUsers();
-    } catch (failure) {
-      setError(explain(failure));
-    } finally {
-      setSaving(false);
+      setNotice('Akses pengguna dinonaktifkan di backend.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Akses pengguna gagal dinonaktifkan.');
     }
   };
 
-  const roleColor: Record<UserRole, string> = {
-    ADMIN: 'bg-red-100 text-red-800',
-    KEUANGAN: 'bg-blue-100 text-blue-800',
-    PROYEK: 'bg-emerald-100 text-emerald-800',
-    VIEWER: 'bg-gray-100 text-gray-800',
-  };
+  if (user.role !== 'ADMIN') {
+    return <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">Menu Manajemen User hanya dapat diakses oleh Administrator. Backend tetap memeriksa role meskipun halaman dibuka secara langsung.</div>;
+  }
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900"><Users size={24} className="text-indigo-600" />Manajemen User</h1>
-          <p className="mt-1 text-sm text-gray-500">Pengguna, status dan hak akses diatur server lewat Google Apps Script, bukan daftar contoh di browser.</p>
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900"><Users size={24} className="text-indigo-600" /> Manajemen User</h1>
+          <p className="mt-1 text-sm text-slate-500">Workspace: {workspace.name}. Daftar ini dibaca dari Google Sheets, bukan seed lokal.</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => void loadUsers()} disabled={loading || saving} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"><RefreshCw size={16} />Muat ulang</button>
-          <button onClick={startAdd} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"><Plus size={17} />Tambah user</button>
+          <button onClick={() => void loadUsers()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 disabled:opacity-50"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh</button>
+          <button onClick={openNew} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"><Plus size={16} /> Tambah user</button>
         </div>
-      </header>
+      </div>
 
-      {error && <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><AlertCircle size={18} className="shrink-0" />{error}</div>}
-      {message && <div role="status" className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"><CheckCircle2 size={18} className="shrink-0" />{message}</div>}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {(Object.keys(roleInfo) as UserRole[]).map(role => (
+          <div key={role} className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700"><Shield size={13} /> {role}</div>
+            <p className="text-sm text-slate-600">{roleInfo[role]}</p>
+          </div>
+        ))}
+      </div>
 
-      <section className="rounded-xl border bg-white p-5">
-        <h2 className="mb-3 flex items-center gap-2 font-semibold text-gray-900"><Shield size={18} className="text-indigo-600" />Hak akses per role</h2>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {roles.map(role => (
-            <div key={role.value} className="rounded-lg bg-gray-50 p-3">
-              <span className={`inline-block rounded px-2 py-1 text-xs font-bold ${roleColor[role.value]}`}>{role.label}</span>
-              <p className="mt-2 text-sm font-medium">{role.value}</p>
-              <p className="mt-1 text-xs leading-5 text-gray-600">{role.detail}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      {error && <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><AlertCircle size={17} className="mt-0.5 shrink-0" /> {error}</div>}
+      {notice && <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</div>}
 
-      {showForm && <form onSubmit={saveUser} className="rounded-xl border border-indigo-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">{editingEmail ? 'Ubah pengguna' : 'Tambah pengguna baru'}</h2><button type="button" onClick={() => setShowForm(false)} aria-label="Tutup form" className="rounded p-1 hover:bg-gray-100"><X size={18} /></button></div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <label className="text-sm font-medium">Nama lengkap *
-            <input value={draft.nama} onChange={e => setDraft({ ...draft, nama: e.target.value })} maxLength={100} className="mt-1 w-full rounded-lg border px-3 py-2" required />
-          </label>
-          <label className="text-sm font-medium">Email Google *
-            <input type="email" value={draft.email} onChange={e => setDraft({ ...draft, email: e.target.value })} disabled={Boolean(editingEmail)} className="mt-1 w-full rounded-lg border px-3 py-2 disabled:bg-gray-100" required />
-          </label>
-          <label className="text-sm font-medium">Nomor WhatsApp *
-            <input type="tel" value={draft.phone} onChange={e => setDraft({ ...draft, phone: e.target.value })} maxLength={40} className="mt-1 w-full rounded-lg border px-3 py-2" required />
-          </label>
-          <label className="text-sm font-medium">Role *
-            <select value={draft.role} onChange={e => setDraft({ ...draft, role: e.target.value as UserRole })} className="mt-1 w-full rounded-lg border px-3 py-2">
-              {roles.map(role => <option key={role.value} value={role.value}>{role.value} — {role.label}</option>)}
-            </select>
-          </label>
-          <label className="text-sm font-medium">Status akun
-            <select value={draft.status} onChange={e => setDraft({ ...draft, status: e.target.value as UserDraft['status'] })} className="mt-1 w-full rounded-lg border px-3 py-2">
-              <option value="active">Aktif</option><option value="inactive">Nonaktif</option>
-            </select>
-          </label>
-        </div>
-        <p className="mt-3 rounded-lg bg-amber-50 p-3 text-xs leading-5 text-amber-900">Pengguna wajib masuk memakai Google dengan email yang sama. Sistem tidak membuat atau mengirim password. Folder Google Drive harus dibagikan secara terpisah sesuai hak akses dokumen.</p>
-        <div className="mt-4 flex gap-2"><button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"><Save size={16} />{saving ? 'Menyimpan…' : 'Simpan user'}</button><button type="button" onClick={() => setShowForm(false)} className="inline-flex items-center gap-2 rounded-lg bg-gray-100 px-4 py-2 text-sm">Batal</button></div>
-      </form>}
-
-      <section className="overflow-hidden rounded-xl border bg-white">
-        <div className="border-b p-4"><h2 className="font-semibold">Daftar pengguna ({users.length})</h2></div>
-        {loading ? <div className="p-8 text-center text-gray-500">Mengambil data dari Google Sheets…</div> : users.length === 0 ? <div className="p-8 text-center text-gray-500">Belum ada pengguna selain akun Admin pertama.</div> : (
-          <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm">
-            <thead className="bg-gray-50 text-left text-gray-600"><tr><th className="p-3">Nama / email</th><th className="p-3">WhatsApp</th><th className="p-3">Role</th><th className="p-3">Status</th><th className="p-3">Dibuat</th><th className="p-3">Aksi</th></tr></thead>
-            <tbody className="divide-y">{users.map(user => (
-              <tr key={user.email} className="hover:bg-gray-50">
-                <td className="p-3"><div className="font-medium text-gray-900">{user.nama}</div><div className="mt-1 text-xs text-gray-500">{user.email}</div></td>
-                <td className="p-3">{user.phone || '—'}</td>
-                <td className="p-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${roleColor[user.role]}`}>{user.role}</span></td>
-                <td className="p-3"><span className={user.status === 'active' ? 'text-emerald-700' : 'text-gray-500'}>{user.status === 'active' ? '● Aktif' : '○ Nonaktif'}</span></td>
-                <td className="p-3 text-xs text-gray-500">{user.createdAt ? new Date(user.createdAt).toLocaleDateString('id-ID') : '—'}</td>
-                <td className="p-3"><div className="flex gap-2">
-                  <button disabled={saving} onClick={() => startEdit(user)} className="inline-flex items-center gap-1 rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"><Pencil size={13} />Edit</button>
-                  <button disabled={saving} onClick={() => void toggleStatus(user)} className={`inline-flex items-center gap-1 rounded border px-2 py-1 text-xs disabled:opacity-50 ${user.status === 'active' ? 'border-red-200 text-red-700 hover:bg-red-50' : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'}`}>{user.status === 'active' ? <><UserX size={13} />Nonaktifkan</> : <><UserCheck size={13} />Aktifkan</>}</button>
-                </div></td>
-              </tr>
-            ))}</tbody>
-          </table></div>
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        {loading ? (
+          <div className="flex items-center justify-center gap-2 p-10 text-slate-500"><Loader2 className="animate-spin" size={20} /> Mengambil data pengguna dari cloud…</div>
+        ) : users.length === 0 ? (
+          <div className="p-10 text-center text-slate-500">Belum ada pengguna. Tambahkan email Google yang akan digunakan untuk login.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-slate-600">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Nama / Email</th>
+                  <th className="px-4 py-3 font-medium">Role</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Login terakhir</th>
+                  <th className="px-4 py-3 text-right font-medium">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {users.map(target => (
+                  <tr key={target.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3"><p className="font-medium text-slate-900">{target.nama}</p><p className="text-xs text-slate-500">{target.email}</p></td>
+                    <td className="px-4 py-3"><span className="rounded-full bg-indigo-50 px-2 py-1 text-xs font-semibold text-indigo-800">{target.role}</span></td>
+                    <td className="px-4 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${target.status === 'active' ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>{target.status === 'active' ? 'Aktif' : 'Nonaktif'}</span></td>
+                    <td className="px-4 py-3 text-xs text-slate-500">{target.lastLogin ? new Date(target.lastLogin).toLocaleString('id-ID') : 'Belum pernah'}</td>
+                    <td className="px-4 py-3"><div className="flex justify-end gap-2">
+                      <button onClick={() => openEdit(target)} title="Edit user" className="rounded-md border border-slate-200 p-2 text-slate-700 hover:bg-slate-100"><Edit size={15} /></button>
+                      {target.status === 'active' && <button onClick={() => void disable(target)} title="Nonaktifkan akses" className="rounded-md border border-red-200 p-2 text-red-700 hover:bg-red-50"><UserX size={15} /></button>}
+                    </div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </section>
+      </div>
+
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 p-5">
+              <h2 className="text-lg font-bold text-slate-900">{editing ? 'Ubah pengguna' : 'Tambah pengguna'}</h2>
+              <button onClick={() => setShowForm(false)} aria-label="Tutup" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={20} /></button>
+            </div>
+            <div className="space-y-4 p-5">
+              <label className="block text-sm font-medium text-slate-700">Nama lengkap
+                <input value={form.nama} onChange={event => setForm({ ...form, nama: event.target.value })} maxLength={120} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" autoComplete="name" />
+              </label>
+              <label className="block text-sm font-medium text-slate-700">Email akun Google
+                <input value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} type="email" disabled={Boolean(editing)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-100" autoComplete="email" />
+              </label>
+              <label className="block text-sm font-medium text-slate-700">Role
+                <select value={form.role} onChange={event => setForm({ ...form, role: event.target.value as UserRole })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+                  <option value="VIEWER">VIEWER — baca ringkasan/progress</option>
+                  <option value="PROYEK">PROYEK — operasional lapangan</option>
+                  <option value="KEUANGAN">KEUANGAN — transaksi &amp; laporan</option>
+                  <option value="ADMIN">ADMIN — semua modul &amp; pengguna</option>
+                </select>
+              </label>
+              <label className="block text-sm font-medium text-slate-700">Status
+                <select value={form.status} onChange={event => setForm({ ...form, status: event.target.value as 'active' | 'inactive' })} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2">
+                  <option value="active">Aktif</option><option value="inactive">Nonaktif</option>
+                </select>
+              </label>
+              <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Pengguna harus masuk dengan akun Google yang emailnya sama persis. Password tidak disimpan di ERP. Hak akses divalidasi di backend pada setiap permintaan.</p>
+              {error && <p className="text-sm text-red-700">{error}</p>}
+              <div className="flex gap-2 border-t border-slate-100 pt-4">
+                <button onClick={() => void save()} disabled={saving} className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white disabled:opacity-50"><Save size={16} /> {saving ? 'Menyimpan…' : 'Simpan di cloud'}</button>
+                <button onClick={() => setShowForm(false)} disabled={saving} className="rounded-lg border border-slate-300 px-4 py-2 text-slate-700">Batal</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

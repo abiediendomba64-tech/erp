@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react';
+import { LogOut } from 'lucide-react';
+import CloudAuthGate, { useCloudAuth } from './auth/CloudAuthGate';
+import CloudStatusIndicator from './components/CloudStatusIndicator';
 import { AppProvider } from './store';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -37,6 +40,7 @@ import { AccountingProvider } from './store/accounting';
 export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat' | 'unit';
 
 function AppContent() {
+  const { user, workspace, logout } = useCloudAuth();
   useEffect(() => {
     // Remove legacy browser-stored integration secrets as early as possible.
     // Integrations require a server-side secret store, which is not configured in this build.
@@ -57,7 +61,7 @@ function AppContent() {
 
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [currentRole, setCurrentRole] = useState<'ADMIN' | 'VIEWER'>('ADMIN');
+
 
   const renderPage = () => {
     switch (currentPage) {
@@ -105,10 +109,19 @@ function AppContent() {
           setCurrentPage={setCurrentPage}
           isOpen={sidebarOpen}
           setIsOpen={setSidebarOpen}
-          currentRole={currentRole}
-          setCurrentRole={setCurrentRole}
+          currentRole={user.role}
         />
         <main className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
+          <header className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-900">{workspace.name}</p>
+              <p className="truncate text-xs text-slate-500">{user.nama} · {user.email} · {user.role}</p>
+            </div>
+            <button onClick={logout} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+              <LogOut size={16} /> Keluar
+            </button>
+          </header>
+          <CloudStatusIndicator />
           <div className="p-6">
             {renderPage()}
           </div>
@@ -120,5 +133,5 @@ function AppContent() {
 }
 
 export default function App() {
-  return <AppContent />;
+  return <CloudAuthGate><AppContent /></CloudAuthGate>;
 }

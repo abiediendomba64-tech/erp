@@ -1,0 +1,968 @@
+/**
+ * ERP cloud identity, workspace state and permission gateway.
+ * All callable bridge actions validate Google's ID token server-side.
+ * Configure Script Properties: SPREADSHEET_ID (if not sheet-bound),
+ * GOOGLE_CLIENT_ID, ERP_FRONTEND_URL, ERP_ADMIN_EMAILS (comma-separated).
+ */
+
+function doGet(e) {
+  var path = String(e && e.parameter && e.parameter.path || '').trim();
+  if (path === '/health') {
+    return jsonResponse_({ success: true, service: 'erp-google-apps-script', authRequired: true });
+  }
+  // Legacy REST read routes are intentionally disabled. They bypassed authenticated RPC.
+  if (path) {
+    return jsonResponse_({
+      success: false,
+      code: 'legacy_api_disabled',
+      error: 'Endpoint REST lama dinonaktifkan. Buka panel ERP dan masuk dengan Google.'
+    });
+  }
+
+  var config = getCloudConfig_();
+  if (!config.frontendUrl || !config.googleClientId) {
+    return HtmlService.createHtmlOutput(
+      '<!doctype html><html lang="id"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<body style="font:16px Arial,sans-serif;max-width:720px;margin:48px auto;padding:0 20px;color:#172033">' +
+      '<h1>ERP Properti &amp; Konstruksi</h1><p>Backend belum dikonfigurasi sepenuhnya.</p>' +
+      '<p>Isi Script Properties <code>ERP_FRONTEND_URL</code>, <code>GOOGLE_CLIENT_ID</code>, dan <code>ERP_ADMIN_EMAILS</code>, ' +
+      'lalu muat ulang URL Web App.</p><p>Jangan bagikan spreadsheet database kepada pengguna aplikasi.</p></body></html>'
+    ).setTitle('Setup Backend ERP');
+  }
+
+  var template = HtmlService.createTemplateFromFile('Wrapper');
+  template.frontendUrl = config.frontendUrl;
+  template.frontendOrigin = config.frontendOrigin;
+  return template.evaluate()
+    .setTitle('ERP Properti & Konstruksi')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/**
+ * Public Google Apps Script bridge entry. The token is verified against Google's
+ * tokeninfo endpoint and checked against the configured OAuth client ID.
+ */
+function apiDispatch(request) {
+  try {
+    if (!request || typeof request !== 'object') throw apiError_('invalid_request', 'Permintaan tidak valid.');
+    var action = String(request.action || '');
+    var payload = request.payload && typeof request.payload === 'object' ? request.payload : {};
+    var idToken = String(request.idToken || '');
+    var identity = verifyGoogleIdToken_(idToken);
+    var user = resolveErpUser_(identity);
+    if (user.status !== 'active') throw apiError_('user_inactive', 'Akun Anda dinonaktifkan. Hubungi administrator.');
+
+    var data;
+    switch (action) {
+      case 'auth.me':
+        data = {
+          user: publicUser_(user),
+          workspaces: listWorkspacesForUser_(user)
+        };
+        break;
+      case 'workspace.list':
+        data = listWorkspacesForUser_(user);
+        break;
+      case 'workspace.create':
+        data = createWorkspace_(user, payload);
+        break;
+      case 'workspace.load':
+        data = loadWorkspace_(user, String(payload.workspaceId || ''));
+        break;
+      case 'workspace.save':
+        data = saveWorkspaceSlice_(user, payload);
+        break;
+      case 'user.list':
+        requireRole_(user, ['ADMIN']);
+        data = listUsers_(String(payload.workspaceId || user.workspace_id || ''));
+        break;
+      case 'user.upsert':
+        requireRole_(user, ['ADMIN']);
+        data = upsertUser_(user, payload);
+        break;
+      case 'user.disable':
+        requireRole_(user, ['ADMIN']);
+        data = disableUser_(user, String(payload.email || ''));
+        break;
+      case 'audit.list':
+        requireRole_(user, ['ADMIN', 'KEUANGAN']);
+        data = listCloudAudit_(user, String(payload.workspaceId || user.workspace_id || ''), Number(payload.limit || 100));
+        break;
+      case 'accounting.accounts.list':
+        requireWorkspaceAccess_(user, String(payload.workspaceId || user.workspace_id || ''));
+        data = loadWorkspace_(user, String(payload.workspaceId || user.workspace_id || '')).accounting.akun;
+        break;
+      case 'accounting.report.profit-loss':
+        requireRole_(user, ['ADMIN', 'KEUANGAN']);
+        data = buildProfitLossFromCloud_(user, String(payload.workspaceId || user.workspace_id || ''), String(payload.period || ''));
+        break;
+      case 'accounting.report.balance-sheet':
+        requireRole_(user, ['ADMIN', 'KEUANGAN']);
+        data = buildBalanceSheetFromCloud_(user, String(payload.workspaceId || user.workspace_id || ''), String(payload.asOfDate || ''));
+        break;
+      case 'accounting.transaction.create':
+        requireRole_(user, ['ADMIN', 'KEUANGAN']);
+        throw apiError_('legacy_finance_write_disabled', 'Pencatatan transaksi lewat tabel jurnal lama dinonaktifkan. Gunakan formulir ERP yang tersimpan pada workspace cloud.');
+      case 'accounting.transaction.reverse':
+        requireRole_(user, ['ADMIN', 'KEUANGAN']);
+        throw apiError_('legacy_finance_write_disabled', 'Reversal endpoint lama dinonaktifkan sampai jurnal dipindahkan sepenuhnya ke store cloud.');
+      case 'ocr.scan':
+        requireRole_(user, ['ADMIN', 'KEUANGAN', 'PROYEK']);
+        throw apiError_('ocr_not_enabled', 'OCR belum diaktifkan pada gateway aman ini. Tidak ada foto yang diproses atau transaksi yang dibuat.');
+      default:
+        throw apiError_('unknown_action', 'Aksi backend tidak dikenal: ' + action);
+    }
+
+    return { success: true, data: data };
+  } catch (error) {
+    var message = String(error && error.message ? error.message : error);
+    var code = error && error.apiCode ? error.apiCode : 'request_failed';
+    return { success: false, code: code, error: message };
+  }
+}
+
+/**
+ * Direct POST API is not used by the React client. Webhooks remain disabled until
+ * their individual provider signatures/secrets are configured and end-to-end tested.
+ */
+function doPost(e) {
+  var path = String(e && e.parameter && e.parameter.path || '').trim();
+  if (path === '/webhook/whatsapp' || path === '/webhook/telegram' || path === '/ocr' ||
+      path === '/transaksi' || path === '/reversal') {
+    return jsonResponse_({
+      success: false,
+      code: 'endpoint_disabled',
+      error: 'Endpoint ini belum diaktifkan melalui jalur terautentikasi. Tidak ada transaksi yang diproses.'
+    });
+  }
+  return jsonResponse_({ success: false, code: 'unknown_endpoint', error: 'Endpoint POST tidak dikenal.' });
+}
+
+function getCloudConfig_() {
+  var props = PropertiesService.getScriptProperties();
+  var rawUrl = String(props.getProperty('ERP_FRONTEND_URL') || '').trim();
+  var frontendOrigin = '';
+  if (rawUrl) {
+    // Apps Script server-side runtime does not reliably expose the browser URL API.
+    // Accept only an HTTPS origin; paths, query strings, credentials and fragments
+    // are prohibited because this origin is used as the postMessage trust boundary.
+    var match = rawUrl.match(/^https:\/\/([a-z0-9.-]+)(?::([0-9]{1,5}))?\/?$/i);
+    if (!match || match[1].indexOf('..') !== -1) {
+      throw apiError_('invalid_config', 'ERP_FRONTEND_URL harus berupa origin HTTPS saja, tanpa path, query, atau kredensial.');
+    }
+    if (match[2] && (Number(match[2]) < 1 || Number(match[2]) > 65535)) {
+      throw apiError_('invalid_config', 'Port pada ERP_FRONTEND_URL tidak valid.');
+    }
+    frontendOrigin = 'https://' + match[1].toLowerCase() + (match[2] ? ':' + match[2] : '');
+  }
+  return {
+    frontendUrl: frontendOrigin,
+    frontendOrigin: frontendOrigin,
+    googleClientId: String(props.getProperty('GOOGLE_CLIENT_ID') || '').trim(),
+    adminEmails: String(props.getProperty('ERP_ADMIN_EMAILS') || '')
+      .split(',')
+      .map(function (email) { return email.trim().toLowerCase(); })
+      .filter(Boolean)
+  };
+}
+
+function verifyGoogleIdToken_(idToken) {
+  if (!idToken || idToken.length > 10000) throw apiError_('unauthenticated', 'Silakan masuk menggunakan akun Google.');
+  var config = getCloudConfig_();
+  if (!config.googleClientId) throw apiError_('not_configured', 'GOOGLE_CLIENT_ID belum dikonfigurasi di Apps Script.');
+  var digest = Utilities.base64EncodeWebSafe(Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256, idToken, Utilities.Charset.UTF_8
+  )).replace(/=+$/g, '');
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'erp_google_identity_' + digest.slice(0, 40);
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (ignore) {
+      cache.remove(cacheKey);
+    }
+  }
+
+  var response = UrlFetchApp.fetch(
+    'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
+    { method: 'get', muteHttpExceptions: true }
+  );
+  if (response.getResponseCode() !== 200) throw apiError_('unauthenticated', 'Sesi Google tidak valid atau kedaluwarsa. Silakan masuk ulang.');
+  var claims = JSON.parse(response.getContentText() || '{}');
+  if (['accounts.google.com', 'https://accounts.google.com'].indexOf(String(claims.iss || '')) === -1) {
+    throw apiError_('unauthenticated', 'Penerbit token identitas tidak valid.');
+  }
+  if (String(claims.aud || '') !== config.googleClientId) throw apiError_('unauthenticated', 'Token Google bukan untuk aplikasi ERP ini.');
+  if (String(claims.email_verified || '').toLowerCase() !== 'true') throw apiError_('email_unverified', 'Akun Google harus memiliki email terverifikasi.');
+  if (!claims.email || !claims.sub || Number(claims.exp || 0) <= Math.floor(Date.now() / 1000)) {
+    throw apiError_('unauthenticated', 'Token Google tidak lengkap atau sudah kedaluwarsa.');
+  }
+  var identity = {
+    email: String(claims.email).trim().toLowerCase(),
+    subject: String(claims.sub),
+    name: String(claims.name || claims.given_name || claims.email).slice(0, 120),
+    email_verified: true
+  };
+  cache.put(cacheKey, JSON.stringify(identity), 240);
+  return identity;
+}
+
+function ensureIdentitySheets_() {
+  var ss = getErpSpreadsheet_();
+  var users = ss.getSheetByName('ERP_USERS') || ss.insertSheet('ERP_USERS');
+  ensureSheetHeaders_(users, ['user_id', 'email', 'nama', 'role', 'status', 'workspace_id', 'created_at', 'updated_at', 'last_login']);
+  var workspaces = ss.getSheetByName('ERP_WORKSPACES') || ss.insertSheet('ERP_WORKSPACES');
+  ensureSheetHeaders_(workspaces, ['workspace_id', 'nama', 'status', 'created_by', 'created_at']);
+  var state = ss.getSheetByName('ERP_STATE') || ss.insertSheet('ERP_STATE');
+  ensureSheetHeaders_(state, ['workspace_id', 'slice', 'version', 'chunk_index', 'chunk_count', 'data_chunk', 'updated_at', 'updated_by']);
+  var audit = ss.getSheetByName('AUDIT_LOG') || ss.insertSheet('AUDIT_LOG');
+  ensureSheetHeaders_(audit, [
+    'id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan',
+    'workspace_id', 'actor_email', 'slice', 'changed_keys', 'version_before', 'version_after'
+  ]);
+  return { users: users, workspaces: workspaces, state: state, audit: audit };
+}
+
+function resolveErpUser_(identity) {
+  var sheets = ensureIdentitySheets_();
+  var config = getCloudConfig_();
+  var users = sheetRecords_(sheets.users);
+  var found = users.find(function (item) { return String(item.email || '').toLowerCase() === identity.email; });
+
+  if (config.adminEmails.indexOf(identity.email) !== -1) {
+    if (!found) {
+      var now = new Date().toISOString();
+      sheets.users.appendRow([Utilities.getUuid(), identity.email, identity.name, 'ADMIN', 'active', '', now, now, now]);
+      found = sheetRecords_(sheets.users).find(function (item) { return String(item.email || '').toLowerCase() === identity.email; });
+    } else if (found.role !== 'ADMIN') {
+      updateRecordByKey_(sheets.users, 'email', identity.email, {
+        role: 'ADMIN', status: 'active', nama: identity.name, updated_at: new Date().toISOString()
+      });
+      found = sheetRecords_(sheets.users).find(function (item) { return String(item.email || '').toLowerCase() === identity.email; });
+    }
+  }
+  if (!found) throw apiError_('user_not_registered', 'Akun ini belum didaftarkan. Minta administrator menambahkan email Google Anda.');
+  if (String(found.status || '').toLowerCase() !== 'active') throw apiError_('user_inactive', 'Akun Anda dinonaktifkan.');
+  updateRecordByKey_(sheets.users, 'email', identity.email, {
+    last_login: new Date().toISOString(), nama: found.nama || identity.name
+  });
+  found.last_login = new Date().toISOString();
+  return found;
+}
+
+function publicUser_(user) {
+  return {
+    id: String(user.user_id || ''),
+    email: String(user.email || ''),
+    nama: String(user.nama || ''),
+    role: String(user.role || 'VIEWER'),
+    status: String(user.status || 'inactive'),
+    workspaceId: String(user.workspace_id || '')
+  };
+}
+
+function listWorkspacesForUser_(user) {
+  var sheet = ensureIdentitySheets_().workspaces;
+  var all = sheetRecords_(sheet).filter(function (row) { return row.status === 'active'; });
+  if (user.role === 'ADMIN') return all.map(publicWorkspace_);
+  return all.filter(function (row) { return String(row.workspace_id) === String(user.workspace_id); }).map(publicWorkspace_);
+}
+
+function publicWorkspace_(row) {
+  return {
+    id: String(row.workspace_id || ''),
+    name: String(row.nama || ''),
+    status: String(row.status || '')
+  };
+}
+
+function createWorkspace_(user, payload) {
+  requireRole_(user, ['ADMIN']);
+  var name = String(payload.name || '').trim();
+  if (name.length < 2 || name.length > 100) throw apiError_('invalid_workspace', 'Nama workspace harus 2-100 karakter.');
+  var snapshot = validateSnapshot_(payload.snapshot);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var sheets = ensureIdentitySheets_();
+    if (sheets.workspaces.getLastRow() > 1) throw apiError_('workspace_exists', 'Workspace sudah ada. Pilih workspace yang tersedia.');
+    var workspaceId = Utilities.getUuid();
+    var now = new Date().toISOString();
+    sheets.workspaces.appendRow([workspaceId, name, 'active', user.email, now]);
+    writeSliceInitial_(workspaceId, 'workspace', snapshot, user.email);
+    updateRecordByKey_(sheets.users, 'email', user.email, {
+      workspace_id: workspaceId, updated_at: now
+    });
+    appendCloudAudit_(workspaceId, user.email, 'WORKSPACE_CREATE', 'ERP_WORKSPACES', workspaceId, '-', JSON.stringify({ name: name }), '', 0, 1);
+    return { workspaceId: workspaceId, name: name };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function loadWorkspace_(user, workspaceId) {
+  if (!workspaceId) workspaceId = String(user.workspace_id || '');
+  if (!workspaceId) throw apiError_('workspace_required', 'Workspace belum dibuat. Minta admin membuat workspace terlebih dahulu.');
+  requireWorkspaceAccess_(user, workspaceId);
+  var sheets = ensureIdentitySheets_();
+  var ws = sheetRecords_(sheets.workspaces).find(function (row) { return String(row.workspace_id) === workspaceId && row.status === 'active'; });
+  if (!ws) throw apiError_('workspace_not_found', 'Workspace tidak ditemukan atau tidak aktif.');
+  var canonical = readWorkspaceSlice_(workspaceId, 'workspace');
+  if (!canonical || !canonical.data || !canonical.data.operational || !canonical.data.accounting) {
+    throw apiError_('workspace_state_missing', 'Snapshot cloud workspace belum lengkap. Hubungi administrator; data lokal tidak akan diunggah otomatis.');
+  }
+  var safeData = redactWorkspaceForUser_(user, canonical.data.operational, canonical.data.accounting);
+  return {
+    workspace: publicWorkspace_(ws),
+    operational: safeData.operational,
+    accounting: safeData.accounting,
+    versions: { operational: canonical.version, accounting: canonical.version, workspace: canonical.version }
+  };
+}
+
+function saveWorkspaceSlice_(user, payload) {
+  var workspaceId = String(payload.workspaceId || user.workspace_id || '');
+  var slice = String(payload.slice || '');
+  if (['operational', 'accounting'].indexOf(slice) === -1) throw apiError_('invalid_slice', 'Bagian data tidak dikenal.');
+  requireWorkspaceAccess_(user, workspaceId);
+  requireRole_(user, ['ADMIN', 'KEUANGAN', 'PROYEK']);
+  var nextData = validateSlice_(slice, payload.data);
+  var lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    var current = readWorkspaceSlice_(workspaceId, 'workspace');
+    if (!current || !current.data || !current.data.operational || !current.data.accounting) {
+      throw apiError_('workspace_state_missing', 'Snapshot cloud workspace tidak ditemukan. Muat ulang dan hubungi admin.');
+    }
+    var expectedVersion = Number(payload.expectedVersion);
+    if (!Number.isInteger(expectedVersion) || expectedVersion !== current.version) {
+      throw apiError_('version_conflict', 'Data workspace diubah dari perangkat lain. Perubahan ini belum tersimpan; buat backup jika diperlukan lalu muat ulang dari cloud.');
+    }
+    var currentSlice = current.data[slice];
+    nextData = preserveRestrictedCollections_(user, slice, currentSlice, nextData);
+    if (slice === 'accounting') nextData = enforceJournalIntegrity_(user, currentSlice, nextData);
+    var changedKeys = validateRoleChanges_(user, slice, currentSlice, nextData);
+    if (!changedKeys.length) return { version: current.version, unchanged: true };
+
+    var candidate = {
+      operational: slice === 'operational' ? nextData : current.data.operational,
+      accounting: slice === 'accounting' ? nextData : current.data.accounting
+    };
+    candidate = validateSnapshot_(candidate);
+    var operationalJson = JSON.stringify(candidate.operational);
+    var accountingJson = JSON.stringify(candidate.accounting);
+    var workspaceJson = JSON.stringify(candidate);
+    if (operationalJson.length > 3000000 || accountingJson.length > 3000000 || workspaceJson.length > 6000000) {
+      throw apiError_('payload_too_large', 'Data workspace melampaui batas penyimpanan. Arsipkan lampiran besar dan pisahkan bukti melalui Drive.');
+    }
+    var nextVersion = current.version + 1;
+    replaceWorkspaceSlice_(workspaceId, 'workspace', nextVersion, workspaceJson, user.email);
+    appendCloudAudit_(workspaceId, user.email, 'WORKSPACE_UPDATE', 'ERP_STATE', slice, JSON.stringify({ version: current.version }), JSON.stringify({ version: nextVersion, changedKeys: changedKeys }), slice, current.version, nextVersion);
+    return { version: nextVersion, changedKeys: changedKeys };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function validateSnapshot_(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') throw apiError_('invalid_snapshot', 'Snapshot ERP tidak valid.');
+  return {
+    operational: validateSlice_('operational', snapshot.operational),
+    accounting: validateSlice_('accounting', snapshot.accounting)
+  };
+}
+
+function validateSlice_(slice, data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw apiError_('invalid_payload', 'Data ERP harus berupa object.');
+  var keys = slice === 'operational'
+    ? ['bukuKas','arsipBukti','posKewajiban','auditLog','tanah','beko','notaMaterial','stok','produksi','penjualan','pembelian','penggajian','anggaran','arusKas','ocr','whatsapp','menuConfig','qcRecords','assets','taxRecords','housingUnits']
+    : ['akun','jurnal','invoice','purchaseOrder','rab','schedule'];
+  keys.forEach(function (key) {
+    if (!Array.isArray(data[key])) throw apiError_('invalid_payload', 'Bagian data ' + slice + ' tidak lengkap: ' + key);
+  });
+
+  var normalized = JSON.parse(JSON.stringify(data));
+  if (slice === 'accounting') normalized = validateAccountingSnapshot_(normalized);
+  return normalized;
+}
+
+function validateAccountingSnapshot_(data) {
+  var accountsByCode = {};
+  if (!data.akun.length) throw apiError_('invalid_chart_of_accounts', 'Chart of Accounts tidak boleh kosong.');
+  data.akun.forEach(function (account) {
+    if (!account || typeof account.kode !== 'string' || !account.kode.trim() ||
+        typeof account.nama !== 'string' || !account.nama.trim()) {
+      throw apiError_('invalid_chart_of_accounts', 'Setiap akun wajib memiliki kode dan nama.');
+    }
+    if (accountsByCode[account.kode]) throw apiError_('duplicate_account_code', 'Kode akun duplikat: ' + account.kode);
+    if (['Aset','Kewajiban','Ekuitas','Pendapatan','Beban'].indexOf(account.tipe) === -1 ||
+        ['Debit','Kredit'].indexOf(account.saldo_normal) === -1) {
+      throw apiError_('invalid_chart_of_accounts', 'Tipe atau saldo normal akun tidak valid: ' + account.kode);
+    }
+    var openingBalance = Number(account.saldo || 0);
+    if (!isFinite(openingBalance)) throw apiError_('invalid_chart_of_accounts', 'Saldo awal akun harus berupa angka: ' + account.kode);
+    account.saldo = openingBalance;
+    accountsByCode[account.kode] = account;
+  });
+
+  var seenJournalIds = {};
+  var seenJournalNumbers = {};
+  data.jurnal.forEach(function (journal) {
+    if (!journal || typeof journal.id !== 'string' || !journal.id.trim()) {
+      throw apiError_('invalid_journal', 'Setiap jurnal harus memiliki ID.');
+    }
+    if (seenJournalIds[journal.id]) throw apiError_('duplicate_journal_id', 'ID jurnal duplikat: ' + journal.id);
+    seenJournalIds[journal.id] = true;
+    if (journal.no_jurnal) {
+      if (seenJournalNumbers[journal.no_jurnal]) throw apiError_('duplicate_journal_number', 'Nomor jurnal duplikat: ' + journal.no_jurnal);
+      seenJournalNumbers[journal.no_jurnal] = true;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(journal.tanggal || '')) ||
+        isNaN(Date.parse(String(journal.tanggal) + 'T00:00:00')) ||
+        ['Draft','Posted','Cancelled'].indexOf(journal.status) === -1) {
+      throw apiError_('invalid_journal', 'Tanggal atau status jurnal tidak valid: ' + journal.id);
+    }
+    if (!Array.isArray(journal.entries)) throw apiError_('invalid_journal', 'Baris jurnal tidak valid: ' + journal.id);
+    var debit = 0;
+    var credit = 0;
+    journal.entries.forEach(function (entry) {
+      var code = String(entry && entry.akun_kode || '');
+      var account = accountsByCode[code];
+      if (!account) throw apiError_('unknown_account', 'Jurnal ' + journal.id + ' memakai akun yang tidak ada: ' + code);
+      var entryDebit = Number(entry.debit);
+      var entryCredit = Number(entry.kredit);
+      if (!isFinite(entryDebit) || !isFinite(entryCredit) || entryDebit < 0 || entryCredit < 0 ||
+          (entryDebit > 0 && entryCredit > 0)) {
+        throw apiError_('invalid_journal_entry', 'Nominal debit/kredit tidak valid pada jurnal ' + journal.id);
+      }
+      entry.debit = entryDebit;
+      entry.kredit = entryCredit;
+      // The account master is authoritative for the displayed account name.
+      entry.akun_nama = account.nama;
+      debit += entryDebit;
+      credit += entryCredit;
+    });
+
+    if (journal.entries.length > 0 && Math.abs(debit - credit) > 0.005) {
+      throw apiError_('journal_not_balanced', 'Jurnal ' + journal.id + ' tidak balance. Debit=' + debit + ', kredit=' + credit + '.');
+    }
+    if (journal.status === 'Posted' &&
+        (journal.entries.length < 2 || debit <= 0 || Math.abs(debit - credit) > 0.005)) {
+      throw apiError_('journal_not_postable', 'Jurnal Posted wajib memiliki minimal dua baris dan total debit/kredit seimbang serta lebih besar dari nol.');
+    }
+
+    // Never trust client-supplied derived totals.
+    journal.total_debit = debit;
+    journal.total_kredit = credit;
+  });
+  return data;
+}
+
+function readWorkspaceSlice_(workspaceId, slice) {
+  var sheet = ensureIdentitySheets_().state;
+  var rows = sheetRecords_(sheet).filter(function (row) {
+    return String(row.workspace_id) === workspaceId && String(row.slice) === slice;
+  });
+  if (!rows.length) return null;
+  var versions = rows.reduce(function (max, row) { return Math.max(max, Number(row.version) || 0); }, 0);
+  var latest = rows.filter(function (row) { return Number(row.version) === versions; });
+  if (!latest.length || latest.length !== Number(latest[0].chunk_count)) {
+    throw apiError_('incomplete_snapshot', 'Snapshot cloud tidak lengkap. Penyimpanan ditolak untuk mencegah data parsial.');
+  }
+  latest.sort(function (a, b) { return Number(a.chunk_index) - Number(b.chunk_index); });
+  for (var i = 0; i < latest.length; i++) {
+    if (Number(latest[i].chunk_index) !== i) throw apiError_('incomplete_snapshot', 'Urutan potongan data cloud tidak lengkap.');
+  }
+  var raw = latest.map(function (row) { return String(row.data_chunk || ''); }).join('');
+  try {
+    return { version: versions, data: JSON.parse(raw) };
+  } catch (error) {
+    throw apiError_('invalid_snapshot_json', 'Data cloud tidak bisa dibaca sebagai JSON valid.');
+  }
+}
+
+function writeSliceInitial_(workspaceId, slice, data, email) {
+  var validated = slice === 'workspace' ? validateSnapshot_(data) : validateSlice_(slice, data);
+  var json = JSON.stringify(validated);
+  if (json.length > 6000000) throw apiError_('payload_too_large', 'Data workspace awal melebihi batas 6 MB.');
+  if (slice !== 'workspace' && json.length > 3000000) throw apiError_('payload_too_large', 'Data awal melebihi batas 3 MB.');
+  var chunks = splitData_(json, 30000);
+  var sheet = ensureIdentitySheets_().state;
+  var now = new Date().toISOString();
+  var values = chunks.map(function (chunk, index) {
+    return [workspaceId, slice, 1, index, chunks.length, chunk, now, email];
+  });
+  if (values.length) sheet.getRange(sheet.getLastRow() + 1, 1, values.length, values[0].length).setValues(values);
+}
+
+function replaceWorkspaceSlice_(workspaceId, slice, version, json, email) {
+  var sheet = ensureIdentitySheets_().state;
+  var chunks = splitData_(json, 30000);
+  var now = new Date().toISOString();
+  var start = sheet.getLastRow() + 1;
+  var values = chunks.map(function (chunk, index) {
+    return [workspaceId, slice, version, index, chunks.length, chunk, now, email];
+  });
+  // Write complete new snapshot before removing old rows; keep the last valid version
+  // if the sheet write fails. Reads and writes use the script lock.
+  sheet.getRange(start, 1, values.length, values[0].length).setValues(values);
+  SpreadsheetApp.flush();
+  var data = sheet.getDataRange().getValues();
+  var deleteRows = [];
+  for (var rowIndex = 1; rowIndex < data.length; rowIndex++) {
+    if (String(data[rowIndex][0]) === workspaceId && String(data[rowIndex][1]) === slice &&
+        Number(data[rowIndex][2]) < version) deleteRows.push(rowIndex + 1);
+  }
+  deleteRows.reverse().forEach(function (rowNumber) { sheet.deleteRow(rowNumber); });
+}
+
+function splitData_(value, size) {
+  var result = [];
+  for (var start = 0; start < value.length; start += size) result.push(value.slice(start, start + size));
+  return result.length ? result : ['{}'];
+}
+
+function redactWorkspaceForUser_(user, operational, accounting) {
+  var op = JSON.parse(JSON.stringify(operational));
+  var acc = JSON.parse(JSON.stringify(accounting));
+  if (user.role === 'ADMIN' || user.role === 'KEUANGAN') return { operational: op, accounting: acc };
+
+  var opAllowed = user.role === 'PROYEK'
+    ? ['tanah','beko','notaMaterial','stok','produksi','anggaran','qcRecords','assets','housingUnits','menuConfig']
+    : ['tanah','beko','housingUnits'];
+  Object.keys(op).forEach(function (key) {
+    if (opAllowed.indexOf(key) === -1) op[key] = [];
+  });
+  if (!Array.isArray(op.menuConfig)) op.menuConfig = [];
+  var accAllowed = user.role === 'PROYEK' ? ['akun','rab','schedule'] : [];
+  Object.keys(acc).forEach(function (key) {
+    if (accAllowed.indexOf(key) === -1) acc[key] = [];
+  });
+  return { operational: op, accounting: acc };
+}
+
+function preserveRestrictedCollections_(user, slice, before, submitted) {
+  var next = JSON.parse(JSON.stringify(submitted));
+  // The client cannot create, edit, or delete authoritative audit entries. The
+  // backend appends its own identity-stamped events to AUDIT_LOG.
+  if (slice === 'operational') next.auditLog = before.auditLog;
+  if (user.role === 'ADMIN') return next;
+  var allowed = slice === 'operational'
+    ? {
+        KEUANGAN: ['bukuKas','arsipBukti','posKewajiban','tanah','beko','notaMaterial','penggajian','anggaran','penjualan','pembelian','taxRecords'],
+        PROYEK: ['tanah','beko','notaMaterial','stok','produksi','anggaran','qcRecords','assets','housingUnits','menuConfig']
+      }
+    : {
+        KEUANGAN: ['jurnal','invoice','purchaseOrder'],
+        PROYEK: ['akun','rab','schedule']
+      };
+  var mutable = allowed[user.role] || [];
+  Object.keys(before).forEach(function (key) {
+    if (mutable.indexOf(key) === -1) next[key] = before[key];
+  });
+  return next;
+}
+
+function enforceJournalIntegrity_(user, before, after) {
+  var oldById = {};
+  (before.jurnal || []).forEach(function (journal) { oldById[String(journal.id)] = journal; });
+  var newById = {};
+  (after.jurnal || []).forEach(function (journal) { newById[String(journal.id)] = journal; });
+
+  Object.keys(oldById).forEach(function (id) {
+    var oldJournal = oldById[id];
+    var newJournal = newById[id];
+    if (!newJournal) {
+      throw apiError_('journal_delete_forbidden', 'Jurnal lama tidak boleh dihapus. Buat reversal/koreksi dengan jurnal baru.');
+    }
+    if (oldJournal.status === 'Posted' || oldJournal.status === 'Cancelled') {
+      if (journalImmutableFingerprint_(oldJournal) !== journalImmutableFingerprint_(newJournal)) {
+        throw apiError_('posted_journal_immutable', 'Jurnal Posted/Cancelled tidak boleh diedit. Catat reversal lalu buat jurnal koreksi baru.');
+      }
+    }
+    // Creation metadata is server-owned; retain it even when a Draft is edited/promoted.
+    newJournal.createdBy = oldJournal.createdBy || user.email;
+    newJournal.createdAt = oldJournal.createdAt || newJournal.createdAt;
+  });
+
+  (after.jurnal || []).forEach(function (journal) {
+    if (!oldById[String(journal.id)]) {
+      journal.createdBy = user.email;
+      journal.createdAt = new Date().toISOString();
+    }
+  });
+  return after;
+}
+
+function journalImmutableFingerprint_(journal) {
+  return stableJson_({
+    id: journal.id,
+    tanggal: journal.tanggal,
+    no_jurnal: journal.no_jurnal,
+    keterangan: journal.keterangan,
+    referensi: journal.referensi || '',
+    status: journal.status,
+    entries: (journal.entries || []).map(function (entry) {
+      return {
+        id: entry.id,
+        akun_kode: entry.akun_kode,
+        debit: Number(entry.debit || 0),
+        kredit: Number(entry.kredit || 0),
+        keterangan: entry.keterangan || ''
+      };
+    })
+  });
+}
+
+function validateRoleChanges_(user, slice, before, after) {
+  var allKeys = Array.from(new Set(Object.keys(before).concat(Object.keys(after))));
+  var changed = allKeys.filter(function (key) {
+    return stableJson_(before[key]) !== stableJson_(after[key]);
+  });
+  if (!changed.length) return [];
+  if (changed.some(function (key) { return !(key in before) || !(key in after); })) {
+    throw apiError_('schema_change_forbidden', 'Pengguna tidak boleh mengubah struktur data cloud.');
+  }
+  if (slice === 'operational' && changed.indexOf('auditLog') !== -1) {
+    var prior = Array.isArray(before.auditLog) ? before.auditLog : [];
+    var next = Array.isArray(after.auditLog) ? after.auditLog : [];
+    if (next.length < prior.length) throw apiError_('audit_log_immutable', 'Audit log tidak boleh dihapus.');
+    for (var i = 0; i < prior.length; i++) {
+      if (stableJson_(prior[i]) !== stableJson_(next[i])) throw apiError_('audit_log_immutable', 'Entri audit lama tidak boleh diubah.');
+    }
+  }
+
+  if (user.role === 'ADMIN') return changed;
+  var operationalAllow = {
+    KEUANGAN: ['bukuKas','arsipBukti','posKewajiban','tanah','beko','notaMaterial','penggajian','anggaran','penjualan','pembelian','taxRecords'],
+    PROYEK: ['tanah','beko','notaMaterial','stok','produksi','anggaran','qcRecords','assets','housingUnits','rab','schedule'],
+    VIEWER: []
+  };
+  var accountingAllow = {
+    KEUANGAN: ['jurnal','invoice','purchaseOrder'],
+    PROYEK: ['rab','schedule'],
+    VIEWER: []
+  };
+  var allowed = slice === 'operational' ? operationalAllow[user.role] || [] : accountingAllow[user.role] || [];
+  var forbidden = changed.filter(function (key) { return key !== 'auditLog' && allowed.indexOf(key) === -1; });
+  if (forbidden.length) throw apiError_('forbidden_fields', 'Role ' + user.role + ' tidak berhak mengubah bagian: ' + forbidden.join(', '));
+  if (changed.indexOf('auditLog') !== -1) {
+    var oldLog = before.auditLog || [];
+    var newLog = after.auditLog || [];
+    if (newLog.length < oldLog.length) throw apiError_('audit_log_immutable', 'Audit log tidak boleh dihapus.');
+    for (var j = 0; j < oldLog.length; j++) {
+      if (stableJson_(oldLog[j]) !== stableJson_(newLog[j])) throw apiError_('audit_log_immutable', 'Entri audit lama tidak boleh diubah.');
+    }
+  }
+  return changed;
+}
+
+function stableJson_(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return '[' + value.map(stableJson_).join(',') + ']';
+  return '{' + Object.keys(value).sort().map(function (key) {
+    return JSON.stringify(key) + ':' + stableJson_(value[key]);
+  }).join(',') + '}';
+}
+
+function requireWorkspaceAccess_(user, workspaceId) {
+  if (!workspaceId) throw apiError_('workspace_required', 'Pilih workspace ERP terlebih dahulu.');
+  if (user.role !== 'ADMIN' && String(user.workspace_id || '') !== workspaceId) {
+    throw apiError_('forbidden_workspace', 'Akun Anda tidak terdaftar pada workspace ini.');
+  }
+  var workspace = sheetRecords_(ensureIdentitySheets_().workspaces).find(function (row) {
+    return String(row.workspace_id) === workspaceId && row.status === 'active';
+  });
+  if (!workspace) throw apiError_('workspace_not_found', 'Workspace tidak ditemukan atau sudah nonaktif.');
+}
+
+function requireRole_(user, roles) {
+  if (roles.indexOf(user.role) === -1) throw apiError_('forbidden', 'Akun Anda tidak memiliki izin untuk tindakan ini.');
+}
+
+function listUsers_(workspaceId) {
+  if (!workspaceId) throw apiError_('workspace_required', 'Workspace belum dipilih.');
+  return sheetRecords_(ensureIdentitySheets_().users)
+    .filter(function (row) { return String(row.workspace_id || '') === workspaceId; })
+    .map(function (row) {
+      return {
+        id: String(row.user_id || ''), email: String(row.email || ''),
+        nama: String(row.nama || ''), role: String(row.role || ''),
+        status: String(row.status || ''), createdAt: String(row.created_at || ''),
+        lastLogin: String(row.last_login || '')
+      };
+    });
+}
+
+function upsertUser_(actor, payload) {
+  var email = String(payload.email || '').trim().toLowerCase();
+  var name = String(payload.nama || '').trim();
+  var role = String(payload.role || 'VIEWER').toUpperCase();
+  var status = String(payload.status || 'active').toLowerCase();
+  var workspaceId = String(payload.workspaceId || actor.workspace_id || '');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw apiError_('invalid_email', 'Alamat email Google tidak valid.');
+  if (!name || name.length > 120) throw apiError_('invalid_name', 'Nama pengguna wajib diisi (maksimal 120 karakter).');
+  if (['ADMIN','KEUANGAN','PROYEK','VIEWER'].indexOf(role) === -1) throw apiError_('invalid_role', 'Role tidak valid.');
+  if (['active','inactive'].indexOf(status) === -1) throw apiError_('invalid_status', 'Status pengguna tidak valid.');
+  requireWorkspaceAccess_(actor, workspaceId);
+  var sheets = ensureIdentitySheets_();
+  var existing = sheetRecords_(sheets.users).find(function (row) { return String(row.email || '').toLowerCase() === email; });
+  if (existing && String(existing.workspace_id || '') !== workspaceId) throw apiError_('user_workspace_conflict', 'Email tersebut sudah terdaftar pada workspace lain.');
+  if (existing && existing.email === actor.email && (role !== 'ADMIN' || status !== 'active')) {
+    var activeAdmins = sheetRecords_(sheets.users).filter(function (row) { return row.role === 'ADMIN' && row.status === 'active'; });
+    if (activeAdmins.length <= 1) throw apiError_('last_admin_required', 'Sistem harus memiliki minimal satu admin aktif.');
+  }
+  var now = new Date().toISOString();
+  if (existing) {
+    updateRecordByKey_(sheets.users, 'email', email, { nama: name, role: role, status: status, updated_at: now, workspace_id: workspaceId });
+  } else {
+    sheets.users.appendRow([Utilities.getUuid(), email, name, role, status, workspaceId, now, now, '']);
+  }
+  appendCloudAudit_(workspaceId, actor.email, 'USER_UPSERT', 'ERP_USERS', email, JSON.stringify(existing || {}), JSON.stringify({ email: email, nama: name, role: role, status: status }), '', 0, 0);
+  return listUsers_(workspaceId);
+}
+
+function disableUser_(actor, email) {
+  email = String(email || '').trim().toLowerCase();
+  if (!email) throw apiError_('invalid_email', 'Email pengguna wajib diisi.');
+  if (email === actor.email) throw apiError_('self_disable', 'Administrator tidak dapat menonaktifkan akunnya sendiri.');
+  var users = sheetRecords_(ensureIdentitySheets_().users);
+  var found = users.find(function (row) { return String(row.email || '').toLowerCase() === email; });
+  if (!found) throw apiError_('user_not_found', 'Pengguna tidak ditemukan.');
+  if (found.role === 'ADMIN' && found.status === 'active' &&
+      users.filter(function (row) { return row.role === 'ADMIN' && row.status === 'active'; }).length <= 1) {
+    throw apiError_('last_admin_required', 'Sistem harus memiliki minimal satu admin aktif.');
+  }
+  updateRecordByKey_(ensureIdentitySheets_().users, 'email', email, { status: 'inactive', updated_at: new Date().toISOString() });
+  appendCloudAudit_(String(found.workspace_id || ''), actor.email, 'USER_DISABLE', 'ERP_USERS', email, JSON.stringify(found), JSON.stringify({ status: 'inactive' }), '', 0, 0);
+  return { disabled: true, email: email };
+}
+
+function buildProfitLossFromCloud_(user, workspaceId, period) {
+  var workspace = loadWorkspace_(user, workspaceId);
+  var selectedPeriod = period || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
+  if (!/^\d{4}(-\d{2})?$/.test(selectedPeriod)) {
+    throw apiError_('invalid_period', 'Periode laba rugi harus YYYY-MM atau YYYY.');
+  }
+  var accounts = workspace.accounting.akun || [];
+  var journals = workspace.accounting.jurnal || [];
+  var byCode = {};
+  accounts.forEach(function (account) { byCode[String(account.kode)] = account; });
+  var balances = {};
+  journals.filter(function (journal) {
+    return journal.status === 'Posted' && String(journal.tanggal || '').slice(0, selectedPeriod.length) === selectedPeriod;
+  }).forEach(function (journal) {
+    (journal.entries || []).forEach(function (entry) {
+      var account = byCode[String(entry.akun_kode)];
+      if (!account) throw apiError_('unknown_account', 'Jurnal mengacu akun yang tidak tersedia: ' + entry.akun_kode);
+      var movement = String(account.saldo_normal) === 'Debit'
+        ? Number(entry.debit || 0) - Number(entry.kredit || 0)
+        : Number(entry.kredit || 0) - Number(entry.debit || 0);
+      balances[String(account.kode)] = (balances[String(account.kode)] || 0) + movement;
+    });
+  });
+  function amount(account) {
+    var normal = String(account.saldo_normal) === 'Debit' ? 1 : -1;
+    var statementSign = (account.tipe === 'Aset' || account.tipe === 'Beban')
+      ? (normal === 1 ? 1 : -1)
+      : (normal === -1 ? 1 : -1);
+    return (balances[String(account.kode)] || 0) * statementSign;
+  }
+  var pendapatan = accounts.filter(function (account) { return account.tipe === 'Pendapatan'; })
+    .map(function (account) { return { akun: account.nama, jumlah: amount(account) }; })
+    .filter(function (item) { return item.jumlah !== 0; });
+  var beban = accounts.filter(function (account) { return account.tipe === 'Beban'; })
+    .map(function (account) { return { akun: account.nama, jumlah: amount(account) }; })
+    .filter(function (item) { return item.jumlah !== 0; });
+  var totalPendapatan = pendapatan.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  var totalBeban = beban.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  return {
+    periode: selectedPeriod,
+    pendapatan: pendapatan,
+    total_pendapatan: totalPendapatan,
+    beban: beban,
+    total_beban: totalBeban,
+    laba_bersih: totalPendapatan - totalBeban
+  };
+}
+
+function buildBalanceSheetFromCloud_(user, workspaceId, asOfDate) {
+  var workspace = loadWorkspace_(user, workspaceId);
+  var cutoff = asOfDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cutoff)) {
+    throw apiError_('invalid_date', 'Tanggal neraca harus YYYY-MM-DD.');
+  }
+  var accounts = workspace.accounting.akun || [];
+  var journals = workspace.accounting.jurnal || [];
+  var byCode = {};
+  var balances = {};
+  accounts.forEach(function (account) {
+    byCode[String(account.kode)] = account;
+    balances[String(account.kode)] = Number(account.saldo || 0);
+  });
+  journals.filter(function (journal) {
+    return journal.status === 'Posted' && /^\d{4}-\d{2}-\d{2}$/.test(String(journal.tanggal || '').slice(0, 10))
+      && String(journal.tanggal).slice(0, 10) <= cutoff;
+  }).forEach(function (journal) {
+    (journal.entries || []).forEach(function (entry) {
+      var code = String(entry.akun_kode);
+      var account = byCode[code];
+      if (!account) throw apiError_('unknown_account', 'Jurnal mengacu akun yang tidak tersedia: ' + code);
+      var movement = String(account.saldo_normal) === 'Debit'
+        ? Number(entry.debit || 0) - Number(entry.kredit || 0)
+        : Number(entry.kredit || 0) - Number(entry.debit || 0);
+      balances[code] = (balances[code] || 0) + movement;
+    });
+  });
+  function amount(account) {
+    var normalDebit = String(account.saldo_normal) === 'Debit';
+    var sign = (account.tipe === 'Aset' || account.tipe === 'Beban')
+      ? (normalDebit ? 1 : -1)
+      : (normalDebit ? -1 : 1);
+    return (balances[String(account.kode)] || 0) * sign;
+  }
+  function group(type, category) {
+    return accounts.filter(function (account) {
+      return account.tipe === type && (!category || account.kategori === category);
+    }).map(function (account) {
+      return { akun: account.nama, jumlah: amount(account) };
+    }).filter(function (item) { return item.jumlah !== 0; });
+  }
+  var asetLancar = group('Aset', 'Aset Lancar');
+  var asetTetap = group('Aset', 'Aset Tetap');
+  var totalAsetLancar = asetLancar.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  var totalAsetTetap = asetTetap.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  var kewajibanPendek = group('Kewajiban', 'Kewajiban Jangka Pendek');
+  var kewajibanPanjang = group('Kewajiban', 'Kewajiban Jangka Panjang');
+  var totalKewajibanPendek = kewajibanPendek.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  var totalKewajibanPanjang = kewajibanPanjang.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  var equity = group('Ekuitas', null);
+  // Cumulative profit/loss through the balance-sheet date is part of equity until closing entries transfer it.
+  var profitToCutoff = calculateProfitLossCumulative_(accounts, journals, cutoff);
+  var retainedIndex = equity.findIndex(function (item) { return item.akun === 'Laba Ditahan'; });
+  if (retainedIndex >= 0) equity[retainedIndex].jumlah += profitToCutoff;
+  else if (profitToCutoff !== 0) equity.push({ akun: 'Laba Bersih Periode Berjalan', jumlah: profitToCutoff });
+  var totalEkuitas = equity.reduce(function (sum, item) { return sum + item.jumlah; }, 0);
+  var totalAset = totalAsetLancar + totalAsetTetap;
+  var totalKewajiban = totalKewajibanPendek + totalKewajibanPanjang;
+  return {
+    tanggal: cutoff,
+    aset: { aset_lancar: asetLancar, aset_tetap: asetTetap, total_aset_lancar: totalAsetLancar, total_aset_tetap: totalAsetTetap, total_aset: totalAset },
+    kewajiban: { kewajiban_jangka_pendek: kewajibanPendek, kewajiban_jangka_panjang: kewajibanPanjang, total_kewajiban_jangka_pendek: totalKewajibanPendek, total_kewajiban_jangka_panjang: totalKewajibanPanjang, total_kewajiban: totalKewajiban },
+    ekuitas: equity,
+    total_ekuitas: totalEkuitas,
+    total_kewajiban_ekuitas: totalKewajiban + totalEkuitas,
+    balance: Math.abs(totalAset - (totalKewajiban + totalEkuitas)) < 0.005
+  };
+}
+
+function calculateProfitLossCumulative_(accounts, journals, cutoff) {
+  var selected = journals.filter(function (journal) {
+    return journal.status === 'Posted' && String(journal.tanggal || '').slice(0, 10) <= cutoff;
+  });
+  var byCode = {};
+  accounts.forEach(function (account) { byCode[String(account.kode)] = account; });
+  var balances = {};
+  selected.forEach(function (journal) {
+    (journal.entries || []).forEach(function (entry) {
+      var account = byCode[String(entry.akun_kode)];
+      if (!account) return;
+      var movement = String(account.saldo_normal) === 'Debit'
+        ? Number(entry.debit || 0) - Number(entry.kredit || 0)
+        : Number(entry.kredit || 0) - Number(entry.debit || 0);
+      balances[String(account.kode)] = (balances[String(account.kode)] || 0) + movement;
+    });
+  });
+  return accounts.filter(function (account) { return account.tipe === 'Pendapatan' || account.tipe === 'Beban'; })
+    .reduce(function (total, account) {
+      var normalDebit = String(account.saldo_normal) === 'Debit';
+      var sign = (account.tipe === 'Aset' || account.tipe === 'Beban')
+        ? (normalDebit ? 1 : -1)
+        : (normalDebit ? -1 : 1);
+      var value = (balances[String(account.kode)] || 0) * sign;
+      return total + (account.tipe === 'Pendapatan' ? value : -value);
+    }, 0);
+}
+
+function listCloudAudit_(user, workspaceId, limit) {
+  requireWorkspaceAccess_(user, workspaceId);
+  var rows = sheetRecords_(ensureIdentitySheets_().audit)
+    .filter(function (row) { return String(row.workspace_id || '') === workspaceId; });
+  limit = Math.max(1, Math.min(500, Math.floor(limit || 100)));
+  return rows.slice(-limit).reverse();
+}
+
+function appendCloudAudit_(workspaceId, actorEmail, action, table, recordId, oldValue, newValue, slice, oldVersion, newVersion) {
+  var sheet = ensureIdentitySheets_().audit;
+  var headers = ensureSheetHeaders_(sheet, [
+    'id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan',
+    'workspace_id', 'actor_email', 'slice', 'changed_keys', 'version_before', 'version_after'
+  ]);
+  var changedKeys = '';
+  try {
+    var parsedNewValue = typeof newValue === 'string' ? JSON.parse(newValue) : newValue;
+    if (parsedNewValue && Array.isArray(parsedNewValue.changedKeys)) {
+      changedKeys = JSON.stringify(parsedNewValue.changedKeys);
+    }
+  } catch (ignore) {
+    changedKeys = '';
+  }
+  var record = {
+    id: 'LOG-' + Utilities.getUuid(),
+    timestamp: new Date().toISOString(),
+    user: actorEmail,
+    aksi: action,
+    tabel: table,
+    record_id: recordId,
+    nilai_lama: oldValue || '',
+    nilai_baru: newValue || '',
+    alasan: action,
+    workspace_id: workspaceId,
+    actor_email: actorEmail,
+    slice: slice,
+    changed_keys: changedKeys,
+    version_before: oldVersion || '',
+    version_after: newVersion || ''
+  };
+  sheet.appendRow(headers.map(function (header) { return record[header] === undefined ? '' : record[header]; }));
+}
+
+function sheetRecords_(sheet) {
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0].map(function (value) { return String(value || '').trim(); });
+  return data.slice(1).filter(function (row) {
+    return row.some(function (value) { return value !== '' && value !== null; });
+  }).map(function (row) {
+    var record = {};
+    headers.forEach(function (header, index) { if (header) record[header] = row[index]; });
+    return record;
+  });
+}
+
+function updateRecordByKey_(sheet, key, value, updates) {
+  var data = sheet.getDataRange().getValues();
+  if (!data.length) throw apiError_('schema_missing', 'Header sheet belum tersedia.');
+  var headers = data[0].map(function (header) { return String(header || '').trim(); });
+  var keyIndex = headers.indexOf(key);
+  if (keyIndex < 0) throw apiError_('schema_missing', 'Kolom ' + key + ' tidak tersedia.');
+  var targetRow = -1;
+  for (var row = 1; row < data.length; row++) {
+    if (String(data[row][keyIndex] || '').toLowerCase() === String(value).toLowerCase()) {
+      targetRow = row + 1;
+      break;
+    }
+  }
+  if (targetRow < 0) throw apiError_('record_not_found', 'Record tidak ditemukan.');
+  Object.keys(updates).forEach(function (field) {
+    var col = headers.indexOf(field);
+    if (col >= 0) sheet.getRange(targetRow, col + 1).setValue(updates[field]);
+  });
+}
+
+function apiError_(code, message) {
+  var error = new Error(message);
+  error.apiCode = code;
+  return error;
+}
