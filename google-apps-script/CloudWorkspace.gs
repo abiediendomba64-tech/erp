@@ -229,7 +229,8 @@ function apiLoadWorkspace(idToken, workspaceId) {
       id: id, name: String(meta.record.name), role: member.role,
       version: Number(meta.record.version), updated_at: String(meta.record.updated_at || '')
     },
-    snapshot: loaded
+    // Only send modules the effective workspace role is allowed to read.
+    snapshot: _erpFilterSnapshotForRole_(loaded, member.role)
   };
 }
 
@@ -239,9 +240,8 @@ function apiSaveWorkspace(idToken, workspaceId, expectedVersion, snapshot) {
   var member = _erpRequireWorkspaceMember_(user.email, id, user.role);
   if (member.role === 'VIEWER') throw new Error('Role VIEWER hanya boleh membaca data.');
   var validated = _erpValidateSnapshot_(snapshot);
-  var serialized = JSON.stringify(validated);
-  if (serialized.length > ERP_MAX_SNAPSHOT_CHARS_) throw new Error('Snapshot melebihi batas 2 MB.');
-  var checksum = _erpSha256_(serialized);
+  var requestSerialized = JSON.stringify(validated);
+  if (requestSerialized.length > ERP_MAX_SNAPSHOT_CHARS_) throw new Error('Snapshot melebihi batas 2 MB.');
   var lock = LockService.getScriptLock();
   lock.waitLock(10000);
 
@@ -264,7 +264,14 @@ function apiSaveWorkspace(idToken, workspaceId, expectedVersion, snapshot) {
     var previousSnapshot = _erpLoadSnapshot_(
       id, currentVersion, Number(metaFound.record.chunk_count), String(metaFound.record.checksum)
     );
-    _erpAssertRoleMayChange_(member.role, previousSnapshot, validated);
+    _erpAssertIncomingVisibility_(previousSnapshot, validated, member.role);
+    // A scoped role only replaces the modules it can write; hidden modules are retained
+    // from the server's canonical snapshot rather than overwritten with filtered empty arrays.
+    var storedSnapshot = _erpMergeSnapshotForRole_(previousSnapshot, validated, member.role);
+    _erpAssertRoleMayChange_(member.role, previousSnapshot, storedSnapshot);
+    var serialized = JSON.stringify(storedSnapshot);
+    if (serialized.length > ERP_MAX_SNAPSHOT_CHARS_) throw new Error('Snapshot melebihi batas 2 MB setelah merge server.');
+    var checksum = _erpSha256_(serialized);
     var newVersion = currentVersion + 1;
     var now = new Date().toISOString();
     var chunks = _erpSplitChunks_(serialized);
@@ -418,6 +425,137 @@ function _erpValidateSnapshot_(input) {
   return JSON.parse(serialized);
 }
 
+function _erpAllowedOperationalKeys_(role) {
+  if (role === 'ADMIN') return ERP_OPERATIONAL_KEYS_.slice();
+  if (role === 'KEUANGAN') return [
+    'bukuKas', 'arsipBukti', 'posKewajiban', 'auditLog', 'anggaran', 'taxRecords'
+  ];
+  if (role === 'PROYEK') return [
+    'tanah', 'beko', 'notaMaterial', 'stok', 'produksi', 'penjualan', 'pembelian',
+    'auditLog', 'qcRecords', 'assets', 'housingUnits'
+  ];
+  return [];
+}
+
+function _erpAllowedAccountingKeys_(role) {
+  if (role === 'ADMIN') return ERP_ACCOUNTING_KEYS_.slice();
+  if (role === 'KEUANGAN') return ERP_ACCOUNTING_KEYS_.slice();
+  if (role === 'PROYEK') return ['rab', 'schedule'];
+  return [];
+}
+
+function _erpReadableOperationalKeys_(role) {
+  if (role === 'ADMIN') return ERP_OPERATIONAL_KEYS_.slice();
+  if (role === 'KEUANGAN') return [
+    'bukuKas', 'arsipBukti', 'posKewajiban', 'auditLog', 'tanah', 'beko',
+    'notaMaterial', 'stok', 'produksi', 'penjualan', 'pembelian', 'anggaran',
+    'taxRecords', 'qcRecords', 'assets', 'housingUnits', 'arusKas', 'menuConfig'
+  ];
+  if (role === 'PROYEK') return [
+    'tanah', 'beko', 'notaMaterial', 'stok', 'produksi', 'penjualan', 'pembelian',
+    'auditLog', 'qcRecords', 'assets', 'housingUnits', 'menuConfig'
+  ];
+  if (role === 'VIEWER') return ['tanah', 'beko', 'menuConfig'];
+  return [];
+}
+
+function _erpReadableAccountingKeys_(role) {
+  if (role === 'ADMIN' || role === 'KEUANGAN') return ERP_ACCOUNTING_KEYS_.slice();
+  if (role === 'PROYEK') return ['rab', 'schedule'];
+  return [];
+}
+
+function _erpFilterSnapshotForRole_(snapshot, role) {
+  if (role === 'ADMIN') return snapshot;
+  var allowedOperational = _erpReadableOperationalKeys_(role);
+  var allowedAccounting = _erpReadableAccountingKeys_(role);
+  var result = { operational: {}, accounting: {} };
+
+  ERP_OPERATIONAL_KEYS_.forEach(function (key) {
+    var value = snapshot.operational[key];
+    if (allowedOperational.indexOf(key) >= 0) {
+      result.operational[key] = value;
+    } else {
+      result.operational[key] = [];
+    }
+  });
+  ERP_ACCOUNTING_KEYS_.forEach(function (key) {
+    var value = snapshot.accounting[key];
+    result.accounting[key] = allowedAccounting.indexOf(key) >= 0 ? value : [];
+  });
+
+  // Client/VIEWER progress view contains no owner names, payment totals, tariffs,
+  // receipt URLs, or notes. It cannot read the underlying private records via the API.
+  if (role === 'VIEWER') {
+    result.operational.tanah = (snapshot.operational.tanah || []).map(function (land) {
+      return {
+        id: String(land.id || ''),
+        pemilik: '',
+        luas_bt: Math.max(0, Number(land.luas_bt) || 0),
+        harga_per_bt: 0,
+        dp: 0,
+        status: ['Lunas', 'DP', 'Belum_Bayar'].indexOf(String(land.status)) >= 0 ? land.status : 'Belum_Bayar',
+        kode_bukti: '',
+        url_bukti: '',
+        catatan: ''
+      };
+    });
+    result.operational.beko = (snapshot.operational.beko || []).map(function (item) {
+      return {
+        id: String(item.id || ''),
+        item: String(item.item || ''),
+        panjang: Math.max(0, Number(item.panjang) || 0),
+        lebar: Math.max(0, Number(item.lebar) || 0),
+        tinggi: Math.max(0, Number(item.tinggi) || 0),
+        tarif: 0,
+        status: ['Lunas', 'Belum_Ada_Kwitansi', 'Foto_Belum_Tersedia'].indexOf(String(item.status)) >= 0
+          ? item.status : 'Foto_Belum_Tersedia',
+        kode_bukti: '',
+        url_bukti: '',
+        catatan: '',
+        termasuk_rekap: true,
+        satuan_volume: item.satuan_volume === 'unit' || item.satuan_volume === 'ls' ? item.satuan_volume : 'm3'
+      };
+    });
+  }
+  return _erpValidateSnapshot_(result);
+}
+
+function _erpAssertIncomingVisibility_(oldSnapshot, incomingSnapshot, role) {
+  var visibleSnapshot = _erpFilterSnapshotForRole_(oldSnapshot, role);
+  var writableOperational = _erpAllowedOperationalKeys_(role);
+  var writableAccounting = _erpAllowedAccountingKeys_(role);
+
+  ERP_OPERATIONAL_KEYS_.forEach(function (key) {
+    if (writableOperational.indexOf(key) >= 0) return;
+    if (_erpStableJson_(incomingSnapshot.operational[key]) !== _erpStableJson_(visibleSnapshot.operational[key])) {
+      throw new Error('Role ' + role + ' mengirim perubahan pada modul operational.' + key + ' yang tidak diizinkan.');
+    }
+  });
+
+  ERP_ACCOUNTING_KEYS_.forEach(function (key) {
+    if (writableAccounting.indexOf(key) >= 0) return;
+    if (_erpStableJson_(incomingSnapshot.accounting[key]) !== _erpStableJson_(visibleSnapshot.accounting[key])) {
+      throw new Error('Role ' + role + ' mengirim perubahan pada modul accounting.' + key + ' yang tidak diizinkan.');
+    }
+  });
+}
+
+function _erpMergeSnapshotForRole_(oldSnapshot, incomingSnapshot, role) {
+  if (role === 'ADMIN') return incomingSnapshot;
+  var merged = {
+    operational: JSON.parse(JSON.stringify(oldSnapshot.operational)),
+    accounting: JSON.parse(JSON.stringify(oldSnapshot.accounting))
+  };
+  _erpAllowedOperationalKeys_(role).forEach(function (key) {
+    merged.operational[key] = incomingSnapshot.operational[key];
+  });
+  _erpAllowedAccountingKeys_(role).forEach(function (key) {
+    merged.accounting[key] = incomingSnapshot.accounting[key];
+  });
+  return _erpValidateSnapshot_(merged);
+}
+
 function _erpAssertAuditLogAppendOnly_(oldSnapshot, newSnapshot) {
   var oldLog = oldSnapshot && oldSnapshot.operational && oldSnapshot.operational.auditLog;
   var newLog = newSnapshot && newSnapshot.operational && newSnapshot.operational.auditLog;
@@ -436,15 +574,8 @@ function _erpAssertAuditLogAppendOnly_(oldSnapshot, newSnapshot) {
 
 function _erpAssertRoleMayChange_(role, oldSnapshot, newSnapshot) {
   _erpAssertAuditLogAppendOnly_(oldSnapshot, newSnapshot);
-  if (role === 'ADMIN') return;
-  var allowedOperational = role === 'KEUANGAN'
-    ? ['bukuKas', 'arsipBukti', 'posKewajiban', 'auditLog', 'anggaran', 'taxRecords']
-    : (role === 'PROYEK'
-      ? ['tanah', 'beko', 'notaMaterial', 'stok', 'produksi', 'penjualan', 'pembelian', 'auditLog', 'qcRecords', 'assets', 'housingUnits']
-      : []);
-  var allowedAccounting = role === 'KEUANGAN'
-    ? ERP_ACCOUNTING_KEYS_.slice()
-    : (role === 'PROYEK' ? ['rab', 'schedule'] : []);
+  var allowedOperational = _erpAllowedOperationalKeys_(role);
+  var allowedAccounting = _erpAllowedAccountingKeys_(role);
 
   var opKeys = {};
   Object.keys(oldSnapshot.operational || {}).concat(Object.keys(newSnapshot.operational || {})).forEach(function (key) { opKeys[key] = true; });
