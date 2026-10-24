@@ -21,43 +21,46 @@
 
 ## 🎯 Gambaran Sistem
 
-Repository berisi aplikasi React untuk akuntansi dan operasional proyek, serta integrasi Google Apps Script yang masih memerlukan konfigurasi.
+Repository berisi panel React untuk akuntansi dan operasional proyek serta backend Google Apps Script. Branch ini menambahkan Google Sign-In, otorisasi role di server, penyimpanan cloud berversi di Google Sheets, dan log audit server.
 
-### Fungsi yang tersedia pada aplikasi
-- Input transaksi akuntansi dengan preview jurnal dan validasi debit/kredit.
-- Dashboard dan laporan laba rugi, neraca, serta arus kas yang dihitung dari jurnal modul akuntansi.
-- Form invoice dan purchase order; PO tidak otomatis membukukan utang sebelum penerimaan/tagihan benar-benar diakui.
-- Chart of Accounts standar.
-- Penyimpanan browser untuk state modul akuntansi dan sebagian data operasional.
+### Yang sudah ada pada branch Google
+- Panel masuk melalui Google Sign-In; role dibaca dari sheet `USERS`, bukan toggle role di browser.
+- Snapshot modul operasional dan akuntansi dimuat dari Google Sheets melalui Apps Script.
+- Simpanan menggunakan nomor versi dan pemeriksaan konflik; bila cloud gagal atau berubah dari perangkat lain, UI memblokir pencatatan berikutnya dan meminta reload.
+- Workspace baru dimulai kosong secara default. Data browser lama hanya dapat dipindahkan setelah pengguna memilih, mengunduh backup, dan mengonfirmasi migrasi.
+- Endpoint OCR Gemini menghasilkan **draf** untuk ditinjau; OCR tidak otomatis membukukan transaksi.
 
-### Batasan penting
-- localStorage hanya ada pada browser/perangkat yang sama; bukan cloud sync atau database multi-user.
-- Sebagian modul operasional masih memuat seed data awal. Verifikasi setiap record sebelum dipakai sebagai angka aktual.
-- Koneksi frontend ke Google Apps Script belum menyeluruh. URL backend harus dikonfigurasi; URL kosong sengaja menghasilkan error.
-- OCR, upload Google Drive, WhatsApp/Telegram, serta login/otorisasi multi-user belum siap produksi.
-- Export laporan yang tersedia di halaman akuntansi adalah CSV; jangan menganggap PDF/XLSX tersedia hanya dari dokumentasi.
+### Batasan penting — baca sebelum produksi
+- Branch belum dikonfigurasi atau dideploy ke akun Google, dan belum diuji end-to-end terhadap Spreadsheet/OAuth nyata.
+- `ERP_STATE` adalah penyimpanan kanonis internal: satu baris per record dengan payload JSON. Tab laporan yang mudah dibaca per modul (`BUKU_KAS`, `TANAH`, `BEKO`, jurnal dan seterusnya) belum seluruhnya dijadikan proyeksi sinkron otomatis dari state kanonis.
+- Banyak form masih menghitung perubahan di React lalu menyimpan snapshot melalui API; jurnal per transaksi dan reversal belum dijalankan sebagai operasi transaksi atomik khusus di backend. Jangan menganggap seluruh alur akuntansi sudah dipindahkan ke server.
+- OCR dan upload Drive ada sebagai fungsi backend, tetapi belum seluruhnya tersambung ke form UI.
+- Webhook hanya memasukkan event ke `INBOX_OCR`; n8n/provider verification, pengambilan media, OCR otomatis, persetujuan pengguna dan posting buku kas/jurnal belum diaktifkan end-to-end.
+- Lampiran yang hanya tersimpan di IndexedDB browser tidak ikut berpindah ke cloud/Drive ketika migrasi data.
+- Audit Log UI menampilkan aktivitas yang dicatat server (bootstrap dan penyimpanan modul). Jejak perubahan per-field/transaksi yang lengkap masih perlu dibangun pada API khusus tiap modul.
+- Modul tambahan seperti aset, pajak dan register unit tidak berarti jurnal penyusutan, integrasi Coretax/DJP, atau validasi eksternal sudah tersedia.
 
-> Laporan harus direkonsiliasi dengan bukti transaksi, saldo awal, persediaan/HPP, pajak, dan aset tetap sebelum dipakai untuk keputusan resmi.
+> Angka resmi tetap harus direkonsiliasi dengan dokumen asli, saldo awal, bukti, persediaan/HPP, pajak, dan aset tetap sebelum dipakai untuk keputusan usaha/pajak/audit.
 
 ## 📊 Status Implementasi
 
-### Perbaikan inti pada branch ini
-- State akuntansi bertahan setelah navigasi dan reload pada browser yang sama.
-- Data contoh jurnal/invoice/PO/RAB/schedule di modul akuntansi dihapus sebagai nilai awal; data akuntansi baru dimulai kosong.
-- Laba rugi dan arus kas memakai jurnal Posted sesuai periode; neraca memakai saldo kumulatif hingga tanggal laporan.
-- Input nominal menerima format Indonesia, misalnya 750.000, dan divalidasi sebelum jurnal disimpan.
-- Export laporan menghasilkan file CSV nyata, bukan alert placeholder.
-- Endpoint Apps Script untuk GET akun/transaksi/laporan dan POST transaksi/reversal sudah diselaraskan, tetapi perlu uji pada deployment dan spreadsheet nyata.
+### Implementasi cloud pada branch ini
+- Backend memakai Google Apps Script dan Google Sheets; klien Supabase tidak lagi menjadi dependensi.
+- Google ID token diperiksa pada server terhadap client ID, issuer, masa berlaku dan email terverifikasi; sesi backend ditandatangani server, dan status/role dicek ulang pada setiap permintaan.
+- Endpoint tulis transaksi lama yang tidak memeriksa autentikasi dinonaktifkan; API cloud memakai sesi dan izin role.
+- Role `ADMIN`, `KEUANGAN`, `PROYEK`, dan `VIEWER` memiliki batas tulis yang diperiksa di backend, bukan hanya menyembunyikan menu.
+- Snapshot cloud menggunakan lock dan versi agar dua perangkat tidak diam-diam menimpa versi yang sama.
+- Log audit cloud dibaca dari sheet server dan tidak bisa ditulis langsung oleh frontend.
+- Test otomatis ditambahkan untuk batas autentikasi, role, dan snapshot.
 
 ### Belum terbukti / belum tersedia penuh
-- Belum ada cloud database multi-user yang menjadi source of truth untuk seluruh UI.
-- Belum ada autentikasi dan otorisasi produksi yang kuat pada backend keuangan.
-- OCR serta upload Google Drive belum diverifikasi end-to-end.
-- UI OCR/WhatsApp masih memiliki bagian rancangan dan seed data.
+- Setup Script Properties, OAuth Web Client, deployment Apps Script, dan deployment frontend masih harus dilakukan di akun pemilik.
+- Deployment/credential Google nyata dan test end-to-end belum dijalankan pada branch ini.
+- Struktur proyeksi tab per modul, API transaksi atomik, sinkronisasi real-time, serta integrasi OCR/Drive/Telegram/WhatsApp penuh belum selesai.
 - Belum ada validasi independen untuk klaim kepatuhan PSAK atau kesiapan audit.
-- Persediaan/HPP, aset tetap, penyusutan, pajak, dan closing period masih butuh pengembangan dan pengujian.
+- Persediaan/HPP, aset tetap/penyusutan, pajak, dan closing period tetap memerlukan pengembangan serta pengujian.
 
-**Jangan gunakan seed data atau laporan sistem untuk keputusan pajak/audit sebelum direkonsiliasi dengan dokumen asli dan diperiksa akuntan.**
+**Jangan gunakan data contoh/lama sebagai angka aktual tanpa memeriksa sumbernya. Jangan lakukan migrasi sebelum mengunduh backup dan memeriksa data serta bukti asli.**
 
 ## 📝 CARA INPUT & UPDATE DATA
 
@@ -110,41 +113,11 @@ Repository berisi aplikasi React untuk akuntansi dan operasional proyek, serta i
 
 ---
 
-### **Setelah Setup Full Google Stack:**
+### Alur integrasi yang masih perlu diaktifkan
 
-#### **Input via OCR:**
-```
-1. Upload foto kwitansi ke Google Drive
-2. Share sebagai "Anyone with the link"
-3. Di React app, klik "Scan Kwitansi"
-4. Paste link foto
-5. Klik "Scan"
-6. ✅ Gemini OCR extract data
-7. ✅ Data otomatis masuk ke ARSIP_BUKTI
-8. ✅ Jurnal otomatis terbuat
-```
-
-#### **Input via WhatsApp:**
-```
-1. Petugas lapangan kirim foto ke WhatsApp business
-2. Apps Script terima webhook
-3. Download gambar dari WhatsApp
-4. OCR dengan Gemini
-5. ✅ Data masuk ke Google Sheets
-6. ✅ Jurnal自动生成
-7. ✅ Konfirmasi terkirim ke petugas
-```
-
-#### **Input via Telegram:**
-```
-1. Petugas kirim foto ke bot Telegram
-2. Apps Script terima webhook
-3. Download foto dari Telegram
-4. OCR dengan Gemini
-5. ✅ Data masuk ke Google Sheets
-6. ✅ Jurnal自动生成
-7. ✅ Konfirmasi terkirim
-```
+- **OCR/Drive:** backend menerima gambar/PDF dan menghasilkan draf OCR atau menyimpan berkas lewat API. Form UI belum tersambung penuh; hasil OCR tetap memerlukan pemeriksaan manusia dan belum membuat transaksi/jurnal otomatis.
+- **Telegram/WhatsApp:** siapkan n8n untuk menerima webhook provider, verifikasi identitas/signature/secret provider, lalu relay metadata ke `?path=/webhook/inbox` dengan `ERP_INGEST_SECRET`. Backend hanya menulis event ke `INBOX_OCR` berstatus `RECEIVED`; belum mengunduh media atau memposting kas/jurnal.
+- **Pembukuan:** posting, approval, reversal, validasi bukti dan audit per transaksi harus dikerjakan melalui operasi backend khusus sebelum modul ini dipakai sebagai sistem keuangan produksi.
 
 ---
 
@@ -185,41 +158,19 @@ LEVEL 5: LAPORAN KEUANGAN (Auto-Generate)
 
 ---
 
-## 🚀 SETUP FULL GOOGLE STACK
+## 🚀 Setup Google Apps Script Cloud Backend
 
-### **Langkah 1: Dapatkan Gemini API Key (10 menit)**
-1. Buka https://aistudio.google.com/app/apikey
-2. Login dengan akun Google
-3. Klik "Create API key"
-4. Copy API key (format: `AIzaSy...`)
+Ikuti instruksi rinci pada [`google-apps-script/README.md`](google-apps-script/README.md). Urutan ringkasnya:
 
-### Langkah 2: Siapkan Google Apps Script
-1. Mulai dari spreadsheet uji dan pilih Extensions → Apps Script.
-2. Salin kode dari google-apps-script/Code.gs.
-3. Pada Project Settings → Script Properties, isi GEMINI_API_KEY hanya jika ingin mengaktifkan OCR. Jangan simpan kunci di source code atau frontend.
-4. Jika project tidak terikat ke spreadsheet, tambahkan Script Property SPREADSHEET_ID.
-5. Jalankan setupDatabase() lalu periksa header semua sheet.
+1. Buat project Apps Script lalu tambahkan `Code.gs`, `Bridge.html`, dan `appsscript.json` dari folder `google-apps-script/`.
+2. Jalankan `setupErpBackend()` satu kali. Periksa spreadsheet ID sebelum memakai sheet lama; fungsi akan membuat spreadsheet baru bila belum ada yang dikonfigurasi.
+3. Buat OAuth Client ID jenis Web dan daftarkan origin panel web yang sebenarnya.
+4. Isi Script Properties: `ERP_GOOGLE_CLIENT_ID`, `ERP_BOOTSTRAP_ADMIN_EMAIL`, `ERP_ALLOWED_ORIGINS`, dan konfigurasi opsional Gemini/webhook sesuai kebutuhan.
+5. Deploy Web App Apps Script; masukkan URL deployment dan OAuth Client ID sebagai environment frontend `VITE_GAS_WEB_APP_URL` dan `VITE_GOOGLE_CLIENT_ID`.
+6. Login menggunakan akun bootstrap admin, lalu pilih database kosong atau migrasi data browser dengan backup yang sudah diunduh.
+7. Uji auth/role, penyimpanan, konflik dua perangkat dan audit server sebelum memasukkan data keuangan asli.
 
-### Langkah 3: Deployment dengan kontrol akses
-- Mulai dengan data uji, bukan data keuangan sensitif.
-- Jangan membuka endpoint tulis keuangan ke publik dengan akses “Anyone”; otentikasi/otorisasi produksi belum tersedia.
-- Webhook provider perlu verifikasi masing-masing. Deployment berhasil tidak berarti integrasinya sudah aktif.
-
-### Langkah 4: Konfigurasi frontend
-- Set environment build VITE_ERP_API_URL ke URL Web App Apps Script.
-- Setelah mengganti environment Cloudflare Pages, jalankan build/deploy baru.
-- Ini hanya mengonfigurasi helper API; komponen UI belum seluruhnya memakai backend dan sebagian state masih localStorage.
-
-### **Langkah 5: Test End-to-End (30 menit)**
-1. Test OCR dengan foto kwitansi
-2. Test input transaksi
-3. Test laporan keuangan
-4. Test reversal journal
-
-**Total Waktu:** 2 jam  
-**Total Biaya:** Rp0
-
-**Dokumentasi Detail:** Lihat `IMPLEMENTASI_NYATA.md`
+**Status:** sumber kode backend sudah ada di branch ini; setup akun Google, konfigurasi rahasia, deployment dan uji end-to-end nyata belum dilakukan. Jangan mengartikan langkah-langkah ini sebagai backend yang sudah aktif di URL publik.
 
 ---
 
@@ -301,30 +252,18 @@ LEVEL 5: LAPORAN KEUANGAN (Auto-Generate)
 
 ---
 
-## 💰 ANALISIS BIAYA
+## 💰 Biaya dan batas layanan
 
-### **Sebelum (Dengan Backend Sendiri):**
-```
-- Server hosting: $20-50/bulan
-- Database: $10-30/bulan
-- OCR API: $10-50/bulan
-- File storage: $5-10/bulan
-─────────────────────────────
-Total: $45-140/bulan = Rp700.000-2.200.000/bulan
-```
+**Target biaya rendah:** Apps Script, Google Sheets dan Google Sign-In bisa dipakai tanpa biaya server terpisah selama penggunaan sesuai ketentuan dan kuota akun. Ini bukan jaminan semua komponen ERP selalu Rp0.
 
-### **Sesudah (Full Google Stack):**
-```
-- Google Apps Script: Rp0
-- Google Sheets: Rp0
-- Gemini API: Rp0
-- Google Drive: Rp0
-- WhatsApp Business API: Rp0
-─────────────────────────────
-Total: Rp0/bulan = GRATIS!
-```
+- **Google Apps Script:** memiliki kuota harian dan batas eksekusi; layanan dapat berhenti ketika kuota terlampaui. Dokumentasi resmi: https://developers.google.com/apps-script/guides/services/quotas
+- **Gemini API:** memiliki free tier, tetapi batas model/kuota berubah. Halaman pricing saat ini menandai data pada free tier dapat digunakan untuk meningkatkan produk Google; evaluasi sebelum mengirim struk, data bank, identitas atau dokumen finansial sensitif. Dokumentasi: https://ai.google.dev/gemini-api/docs/pricing
+- **Google Drive:** mengikuti kapasitas akun/Workspace dan kebijakan penyimpanan.
+- **Telegram Bot API:** tidak membutuhkan paket layanan bot berbayar, tetapi hosting n8n atau sistem yang selalu aktif tetap menggunakan perangkat/server.
+- **n8n:** Community Edition dapat di-self-host; hosting, domain, listrik, atau VPS tetap dapat menimbulkan biaya.
+- **WhatsApp Business Platform:** tidak tepat dipatok Rp0. Tarif resmi bergantung pada pasar dan kategori pesan, serta dikenakan untuk pesan yang tersampaikan; lihat https://whatsappbusiness.com/id/products/platform-pricing/
 
-**Penghematan:** Rp8.4-26.4 juta/tahun
+Sistem bisa mendekati Rp0 untuk uji coba dengan input manual/Telegram dan penggunaan Gemini yang masih dalam free tier. Integrasi WhatsApp resmi dan volume produksi perlu dihitung berdasarkan tarif serta kuota aktual.
 
 ---
 
