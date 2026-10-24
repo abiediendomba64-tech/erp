@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Cloud, Database, LoaderCircle, LogIn, RefreshCw, ShieldCheck, Users } from 'lucide-react';
+import { Cloud, Database, Loader2, LogIn, RefreshCw, ShieldCheck, Users } from 'lucide-react';
 import {
   FirebaseSession, UserWorkspace, getSavedSession, isFirebaseConfigured, listUserWorkspaces,
   sendPasswordReset, signIn, signOut, signUp,
@@ -94,7 +94,7 @@ function AuthForm({ onAuthenticated }: { onAuthenticated: (session: FirebaseSess
           {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
           {notice && <p role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
           <button disabled={busy} className="w-full flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
-            {busy ? <LoaderCircle size={18} className="animate-spin" /> : <LogIn size={18} />}
+            {busy ? <Loader2 size={18} className="animate-spin" /> : <LogIn size={18} />}
             {busy ? 'Memproses…' : mode === 'login' ? 'Masuk' : mode === 'signup' ? 'Daftar' : 'Kirim instruksi reset'}
           </button>
         </form>
@@ -186,7 +186,7 @@ function WorkspaceChooser({ workspaces, busy, error, onOpen, onLogout }: {
             </button>
           ))}
         </div>
-        {busy && <p className="mt-4 flex items-center gap-2 text-sm text-slate-500"><LoaderCircle size={16} className="animate-spin" />Memuat data cloud…</p>}
+        {busy && <p className="mt-4 flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" />Memuat data cloud…</p>}
         <button onClick={onLogout} className="mt-5 w-full text-sm text-slate-600 hover:underline">Keluar dari akun</button>
       </section>
     </div>
@@ -218,7 +218,12 @@ export default function AuthGate() {
     window.localStorage.getItem('abiedien.erp.accounting.v1')
   ));
 
-  useEffect(() => subscribeCloudStatus(setCloudStatus), []);
+  useEffect(() => {
+    const unsubscribe = subscribeCloudStatus(setCloudStatus);
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   async function loadAvailableWorkspaces(activeSession: FirebaseSession) {
     setWorkspaceError('');
@@ -322,7 +327,7 @@ export default function AuthGate() {
 
   if (!isFirebaseConfigured) return <ConfigurationHelp />;
   if (!ready || workspaceBusy && !session) {
-    return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-600"><LoaderCircle className="animate-spin mr-2" size={19} />Memeriksa sesi dan workspace cloud…</div>;
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-600"><Loader2 className="animate-spin mr-2" size={19} />Memeriksa sesi dan workspace cloud…</div>;
   }
   if (!session) return <AuthForm onAuthenticated={afterAuth} />;
   if (activeWorkspace) {
