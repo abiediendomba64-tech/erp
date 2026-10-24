@@ -27,6 +27,7 @@ export default function CloudAuthGate({ children }: { children: (props: { initia
   const [legacyBackupDownloaded, setLegacyBackupDownloaded] = useState(false);
 
   const enterWorkspace = useCallback(async (sessionToken: string, currentUser: LoginUser) => {
+    setLegacyBackupDownloaded(false);
     const state = await callGoogleBackend<SnapshotResponse>({
       action: 'workspace.load',
       sessionToken,
