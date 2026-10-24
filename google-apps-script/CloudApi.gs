@@ -33,13 +33,15 @@ function ensureCloudSchema_() {
   ensureSheetHeaders_(ss.getSheetByName('ERP_MEMBERS') || ss.insertSheet('ERP_MEMBERS'),
     ['workspace_id', 'email', 'role', 'created_at', 'status']);
   ensureSheetHeaders_(ss.getSheetByName('ERP_STATE_HEAD') || ss.insertSheet('ERP_STATE_HEAD'),
-    ['workspace_id', 'version', 'chunk_count', 'updated_at', 'updated_by']);
+    ['workspace_id', 'version', 'record_count', 'updated_at', 'updated_by', 'pending_version', 'pending_commit_id']);
   ensureSheetHeaders_(ss.getSheetByName('ERP_RECORDS') || ss.insertSheet('ERP_RECORDS'),
-    ['workspace_id', 'version', 'commit_id', 'namespace', 'module', 'record_id', 'payload_json', 'updated_at', 'updated_by', 'deleted']);
+    ['workspace_id', 'namespace', 'module', 'record_id', 'payload_json', 'updated_at', 'updated_by', 'deleted', 'version']);
+  ensureSheetHeaders_(ss.getSheetByName('ERP_RECORD_EVENTS') || ss.insertSheet('ERP_RECORD_EVENTS'),
+    ['workspace_id', 'version', 'commit_id', 'namespace', 'module', 'record_id', 'old_payload', 'new_payload', 'deleted', 'updated_at', 'updated_by']);
   ensureSheetHeaders_(ss.getSheetByName('ERP_COMMITS') || ss.insertSheet('ERP_COMMITS'),
-    ['workspace_id', 'version', 'commit_id', 'committed_at', 'committed_by']);
+    ['workspace_id', 'version', 'commit_id', 'committed_at', 'committed_by', 'record_count', 'event_count']);
   ensureSheetHeaders_(ss.getSheetByName('AUDIT_LOG') || ss.insertSheet('AUDIT_LOG'),
-    ['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan', 'workspace_id']);
+    ['id', 'timestamp', 'user', 'aksi', 'tabel', 'record_id', 'nilai_lama', 'nilai_baru', 'alasan', 'workspace_id', 'commit_id']);
 
 }
 
@@ -211,10 +213,12 @@ function createCloudWorkspace_(user, name, data) {
     ss.getSheetByName('ERP_WORKSPACES').appendRow([id, workspaceName, user.email, now]);
     ss.getSheetByName('ERP_MEMBERS').appendRow([id, user.email, 'ADMIN', now, 'active']);
     const initialCommitId = Utilities.getUuid();
+    // A version-0 head with a pending marker lets the next request recover an interrupted
+    // workspace bootstrap if Apps Script stops after its durable commit marker.
+    ss.getSheetByName('ERP_STATE_HEAD').appendRow([id, 0, 0, now, user.email, 1, initialCommitId]);
     const recordCount = writeCloudRecords_(id, 1, initialCommitId, data, user.email, now);
-    ss.getSheetByName('ERP_STATE_HEAD').appendRow([id, 1, recordCount, now, user.email]);
     cloudAudit_(user.email, 'CREATE_WORKSPACE', 'ERP_WORKSPACES', id, '', workspaceName);
-    return { success: true, workspace_id: id, name: workspaceName, role: 'ADMIN', version: 1 };
+    return { success: true, workspace_id: id, name: workspaceName, role: 'ADMIN', version: 1, records: recordCount };
   } finally {
     lock.releaseLock();
   }
@@ -234,11 +238,13 @@ function listUserWorkspaces_(user) {
     const workspace = workspaces.slice(1).find(row => String(row[0]) === workspaceId);
     if (!workspace) continue;
     const head = heads.slice(1).find(row => String(row[0]) === workspaceId);
+    // Hide incomplete bootstrap workspaces until their first version commits successfully.
+    if (!head || Number(head[1]) < 1) continue;
     result.push({
       workspace_id: workspaceId,
       name: String(workspace[1] || ''),
       role: String(member[2] || ''),
-      version: head ? Number(head[1]) || 1 : 1
+      version: Number(head[1])
     });
   }
   return result;
@@ -283,7 +289,7 @@ function saveCloudWorkspaceState_(user, workspaceId, data, expectedVersion) {
     if (changes.total === 0) {
       return { success: true, saved: true, version: current.version, error_code: null, records_changed: 0, records_deleted: 0 };
     }
-    updateCloudStateHead_(String(workspaceId), nextVersion, changes.recordCount, now, user.email);
+    // writeCloudRecordDiff_ advances the version head only after the commit is recoverably applied.
     return { success: true, saved: true, version: nextVersion, error_code: null, records_changed: changes.changed, records_deleted: changes.deleted };
   } finally {
     lock.releaseLock();
