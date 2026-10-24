@@ -335,6 +335,7 @@ function saveWorkspaceSlice_(user, payload) {
       throw apiError_('version_conflict', 'Data diubah dari perangkat lain. Perubahan ini belum tersimpan ke cloud; muat ulang sebelum melanjutkan.');
     }
     nextData = preserveRestrictedCollections_(user, slice, current.data, nextData);
+    if (slice === 'accounting') nextData = enforceJournalIntegrity_(user, current.data, nextData);
     var json = JSON.stringify(nextData);
     if (json.length > 3000000) throw apiError_('payload_too_large', 'Bagian data terlalu besar untuk satu penyimpanan. Buat arsip terpisah dan lampirkan melalui Drive.');
     var changedKeys = validateRoleChanges_(user, slice, current.data, nextData);
@@ -543,6 +544,57 @@ function preserveRestrictedCollections_(user, slice, before, submitted) {
     if (mutable.indexOf(key) === -1) next[key] = before[key];
   });
   return next;
+}
+
+function enforceJournalIntegrity_(user, before, after) {
+  var oldById = {};
+  (before.jurnal || []).forEach(function (journal) { oldById[String(journal.id)] = journal; });
+  var newById = {};
+  (after.jurnal || []).forEach(function (journal) { newById[String(journal.id)] = journal; });
+
+  Object.keys(oldById).forEach(function (id) {
+    var oldJournal = oldById[id];
+    var newJournal = newById[id];
+    if (!newJournal) {
+      throw apiError_('journal_delete_forbidden', 'Jurnal lama tidak boleh dihapus. Buat reversal/koreksi dengan jurnal baru.');
+    }
+    if (oldJournal.status === 'Posted' || oldJournal.status === 'Cancelled') {
+      if (journalImmutableFingerprint_(oldJournal) !== journalImmutableFingerprint_(newJournal)) {
+        throw apiError_('posted_journal_immutable', 'Jurnal Posted/Cancelled tidak boleh diedit. Catat reversal lalu buat jurnal koreksi baru.');
+      }
+    }
+    // Creation metadata is server-owned; retain it even when a Draft is edited/promoted.
+    newJournal.createdBy = oldJournal.createdBy || user.email;
+    newJournal.createdAt = oldJournal.createdAt || newJournal.createdAt;
+  });
+
+  (after.jurnal || []).forEach(function (journal) {
+    if (!oldById[String(journal.id)]) {
+      journal.createdBy = user.email;
+      journal.createdAt = new Date().toISOString();
+    }
+  });
+  return after;
+}
+
+function journalImmutableFingerprint_(journal) {
+  return stableJson_({
+    id: journal.id,
+    tanggal: journal.tanggal,
+    no_jurnal: journal.no_jurnal,
+    keterangan: journal.keterangan,
+    referensi: journal.referensi || '',
+    status: journal.status,
+    entries: (journal.entries || []).map(function (entry) {
+      return {
+        id: entry.id,
+        akun_kode: entry.akun_kode,
+        debit: Number(entry.debit || 0),
+        kredit: Number(entry.kredit || 0),
+        keterangan: entry.keterangan || ''
+      };
+    })
+  });
 }
 
 function validateRoleChanges_(user, slice, before, after) {
