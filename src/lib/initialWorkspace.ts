@@ -117,3 +117,98 @@ export function downloadLocalWorkspaceBackup(snapshot: WorkspaceSnapshot): void 
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+
+const CLOUD_CACHE_META_KEY = 'abiedien.erp.cloud.cache.meta.v1';
+
+export interface CloudCacheMeta {
+  workspaceId: string;
+  version: number;
+  fingerprint: string;
+}
+
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return '[' + value.map(stableJson).join(',') + ']';
+  const record = value as Record<string, unknown>;
+  return '{' + Object.keys(record).sort().map((key) =>
+    JSON.stringify(key) + ':' + stableJson(record[key])
+  ).join(',') + '}';
+}
+
+// A compact cache-integrity fingerprint, not a cryptographic security signature.
+export function snapshotFingerprint(snapshot: WorkspaceSnapshot): string {
+  const text = stableJson(snapshot);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index++) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+export function getCloudCacheMeta(): CloudCacheMeta | null {
+  try {
+    const raw = window.localStorage.getItem(CLOUD_CACHE_META_KEY);
+    if (!raw) return null;
+    const value: unknown = JSON.parse(raw);
+    if (!isRecord(value) || typeof value.workspaceId !== 'string' ||
+        !Number.isInteger(value.version) || typeof value.fingerprint !== 'string') return null;
+    return {
+      workspaceId: value.workspaceId,
+      version: Number(value.version),
+      fingerprint: value.fingerprint,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function setCloudCacheMeta(
+  workspaceId: string,
+  version: number,
+  snapshot: WorkspaceSnapshot,
+): void {
+  const meta: CloudCacheMeta = {
+    workspaceId,
+    version,
+    fingerprint: snapshotFingerprint(snapshot),
+  };
+  window.localStorage.setItem(CLOUD_CACHE_META_KEY, JSON.stringify(meta));
+}
+
+export function isLocalSnapshotSyncedForWorkspace(
+  snapshot: WorkspaceSnapshot | null,
+  workspaceId: string,
+): boolean {
+  if (!snapshot) return false;
+  const meta = getCloudCacheMeta();
+  return Boolean(
+    meta &&
+    meta.workspaceId === workspaceId &&
+    meta.fingerprint === snapshotFingerprint(snapshot)
+  );
+}
+
+export function downloadRawLocalWorkspaceBackup(): boolean {
+  const operational = window.localStorage.getItem('abiedien.erp.app.v1');
+  const accounting = window.localStorage.getItem('abiedien.erp.accounting.v1');
+  if (operational === null && accounting === null) return false;
+  const payload = {
+    version: 'ERP_LOCAL_RAW_BACKUP_V1',
+    timestamp: new Date().toISOString(),
+    note: 'Cache JSON mentah karena parsing gagal. Perlu pemeriksaan sebelum impor. Lampiran IndexedDB tidak termasuk.',
+    operationalRaw: operational,
+    accountingRaw: accounting,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = \`erp-local-raw-backup-\${new Date().toISOString().slice(0, 10)}.json\`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
+}
