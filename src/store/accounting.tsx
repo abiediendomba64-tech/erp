@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useReducer, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useReducer, useRef, ReactNode } from 'react';
+import { persistWorkspaceSlice } from '../lib/googleBackend';
 import { Akun, JurnalUmum, Invoice, PurchaseOrder, RAB, Schedule } from '../types/accounting';
 import { initialAkun } from '../data/accounting';
 
@@ -58,63 +59,59 @@ function accountingReducer(state: AccountingState, action: Action): AccountingSt
 
 const STORAGE_KEY = 'abiedien.erp.accounting.v1';
 
-function loadInitialState(): AccountingState {
-  const emptyState: AccountingState = {
-    akun: initialAkun,
-    jurnal: [],
-    invoice: [],
-    purchaseOrder: [],
-    rab: [],
-    schedule: [],
-  };
-
-  if (typeof window === 'undefined') return emptyState;
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return emptyState;
-    const saved = JSON.parse(raw) as Partial<AccountingState>;
-    const accountsAreValid = Array.isArray(saved.akun) &&
-      saved.akun.every((account) => account && typeof account.kode === 'string' && typeof account.tipe === 'string');
-
+function loadInitialState(saved?: Partial<AccountingState>): AccountingState {
+  const emptyState: AccountingState = { akun: initialAkun, jurnal: [], invoice: [], purchaseOrder: [], rab: [], schedule: [] };
+  if (saved) {
     return {
-      akun: accountsAreValid && saved.akun!.length > 0 ? saved.akun! : initialAkun,
+      akun: Array.isArray(saved.akun) ? saved.akun : initialAkun,
       jurnal: Array.isArray(saved.jurnal) ? saved.jurnal : [],
       invoice: Array.isArray(saved.invoice) ? saved.invoice : [],
       purchaseOrder: Array.isArray(saved.purchaseOrder) ? saved.purchaseOrder : [],
-      rab: Array.isArray(saved.rab) ? saved.rab.filter((record: RAB) => !(
-        record.id === 'RAB-001' &&
-        record.nama_proyek === 'Pembangunan Gudang' &&
-        record.tanggal === '2026-01-01' &&
-        record.total_biaya === 23000000 &&
-        record.items?.length === 5 &&
-        record.items[0]?.deskripsi === 'Semen'
-      )) : [],
+      rab: Array.isArray(saved.rab) ? saved.rab : [],
       schedule: Array.isArray(saved.schedule) ? saved.schedule : [],
     };
+  }
+  // Development fallback only. Production authentication always passes the cloud snapshot.
+  if (typeof window === 'undefined') return emptyState;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return emptyState;
+    const local = JSON.parse(raw) as Partial<AccountingState>;
+    const validAccounts = Array.isArray(local.akun) && local.akun.every(a => a && typeof a.kode === 'string' && typeof a.tipe === 'string');
+    return {
+      akun: validAccounts && local.akun!.length > 0 ? local.akun! : initialAkun,
+      jurnal: Array.isArray(local.jurnal) ? local.jurnal : [],
+      invoice: Array.isArray(local.invoice) ? local.invoice : [],
+      purchaseOrder: Array.isArray(local.purchaseOrder) ? local.purchaseOrder : [],
+      rab: Array.isArray(local.rab) ? local.rab : [],
+      schedule: Array.isArray(local.schedule) ? local.schedule : [],
+    };
   } catch (error) {
-    console.error('Tidak dapat membaca data akuntansi tersimpan; menggunakan data kosong.', error);
+    console.error('Data akuntansi lokal lama tidak terbaca; pulihkan dari backup jika masih diperlukan.', error);
     return emptyState;
   }
 }
-
-
 
 const AccountingContext = createContext<{
   state: AccountingState;
   dispatch: React.Dispatch<Action>;
 } | null>(null);
 
-export function AccountingProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(accountingReducer, undefined, loadInitialState);
+export function AccountingProvider({ children, initialState }: { children: ReactNode; initialState?: Partial<AccountingState> }) {
+  const [state, dispatch] = useReducer(accountingReducer, initialState, initial => loadInitialState(initial));
+  const previousSerialized = useRef<string | null>(null);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch (error) {
-      console.error('Gagal menyimpan data akuntansi ke browser. Export backup data sesegera mungkin.', error);
+    const serialized = JSON.stringify(state);
+    if (previousSerialized.current === null) {
+      previousSerialized.current = serialized;
+      return;
     }
+    if (previousSerialized.current === serialized) return;
+    previousSerialized.current = serialized;
+    void persistWorkspaceSlice('accounting', state).catch(() => undefined);
   }, [state]);
+
   return (
     <AccountingContext.Provider value={{ state, dispatch }}>
       {children}
