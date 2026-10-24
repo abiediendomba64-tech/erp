@@ -36,7 +36,7 @@ import { AccountingProvider } from './store/accounting';
 
 export type Page = 'dashboard' | 'auditrekap' | 'bukukas' | 'arsipbukti' | 'poskewajiban' | 'tanah' | 'beko' | 'auditlog' | 'laporan' | 'stok' | 'produksi' | 'penjualan' | 'pembelian' | 'penggajian' | 'anggaran' | 'alokasi' | 'ocr' | 'whatsapp' | 'menuconfig' | 'users' | 'settings' | 'accounting' | 'inputtransaksi' | 'laporankeuangan' | 'invoicepo' | 'rab' | 'qc' | 'aset' | 'pajak' | 'surat' | 'unit';
 
-function AppContent() {
+function AppContent({ workspaceRole, workspaceId, workspaceName, onSignOut, onSwitchWorkspace }: { workspaceRole: 'owner' | 'admin' | 'editor' | 'viewer'; workspaceId: string; workspaceName: string; onSignOut: () => void; onSwitchWorkspace: () => void }) {
   useEffect(() => {
     // Remove legacy browser-stored integration secrets as early as possible.
     // Integrations require a server-side secret store, which is not configured in this build.
@@ -57,7 +57,8 @@ function AppContent() {
 
   const [currentPage, setCurrentPage] = useState<Page>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [currentRole, setCurrentRole] = useState<'ADMIN' | 'VIEWER'>('ADMIN');
+  const isViewerRole = workspaceRole === 'viewer';
+  const [currentRole, setCurrentRole] = useState<'ADMIN' | 'VIEWER'>(isViewerRole ? 'VIEWER' : 'ADMIN');
 
   const renderPage = () => {
     switch (currentPage) {
@@ -80,7 +81,7 @@ function AppContent() {
       case 'ocr': return <OCRPage />;
       case 'whatsapp': return <WhatsAppPage />;
       case 'menuconfig': return <MenuConfigPage />;
-      case 'users': return <UserManagementPage />;
+      case 'users': return <UserManagementPage workspaceId={workspaceId} workspaceName={workspaceName} canManageUsers={workspaceRole === 'owner'} />;
       case 'settings': return <SettingsPage />;
       case 'accounting': return <AccountingDashboard />;
       case 'inputtransaksi': return <InputTransaksiPage />;
@@ -100,13 +101,20 @@ function AppContent() {
     <AppProvider>
       <AccountingProvider>
       <div className="flex h-screen bg-gray-50 overflow-hidden">
+        <div className="fixed right-3 top-3 z-30 flex max-w-[calc(100vw-5rem)] items-center gap-2 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm">
+          <span className="max-w-40 truncate font-semibold">{workspaceName}</span>
+          <span className="rounded bg-indigo-50 px-1.5 py-1 text-indigo-800">{workspaceRole}</span>
+          <button onClick={onSwitchWorkspace} className="rounded border border-slate-300 px-2 py-1 hover:bg-slate-50">Workspace</button>
+          <button onClick={onSignOut} className="rounded bg-slate-800 px-2 py-1 text-white hover:bg-slate-700">Keluar</button>
+        </div>
         <Sidebar
           currentPage={currentPage}
           setCurrentPage={setCurrentPage}
           isOpen={sidebarOpen}
           setIsOpen={setSidebarOpen}
-          currentRole={currentRole}
-          setCurrentRole={setCurrentRole}
+          currentRole={isViewerRole ? 'VIEWER' : currentRole}
+          setCurrentRole={isViewerRole ? () => undefined : setCurrentRole}
+          roleLocked={isViewerRole}
         />
         <main className={`flex-1 overflow-auto transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-16'}`}>
           <div className="p-6">
@@ -119,6 +127,6 @@ function AppContent() {
   );
 }
 
-export default function App() {
-  return <AppContent />;
+export default function App({ workspaceRole = 'owner', workspaceId = '', workspaceName = 'ERP', onSignOut = () => undefined, onSwitchWorkspace = () => undefined }: { workspaceRole?: 'owner' | 'admin' | 'editor' | 'viewer'; workspaceId?: string; workspaceName?: string; onSignOut?: () => void; onSwitchWorkspace?: () => void }) {
+  return <AppContent workspaceRole={workspaceRole} workspaceId={workspaceId} workspaceName={workspaceName} onSignOut={onSignOut} onSwitchWorkspace={onSwitchWorkspace} />;
 }

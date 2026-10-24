@@ -14,6 +14,7 @@ interface SidebarProps {
   setIsOpen: (open: boolean) => void;
   currentRole: 'ADMIN' | 'VIEWER';
   setCurrentRole: (role: 'ADMIN' | 'VIEWER') => void;
+  roleLocked?: boolean;
 }
 
 // Menu untuk ADMIN (full access)
@@ -58,7 +59,7 @@ const clientMenu: { id: Page; label: string; icon: React.ReactNode; section: str
   { id: 'beko', label: 'Progress Beko', icon: <Truck size={20} />, section: 'Info' },
 ];
 
-export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen, currentRole, setCurrentRole }: SidebarProps) {
+export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen, currentRole, setCurrentRole, roleLocked = false }: SidebarProps) {
   const menuItems = currentRole === 'ADMIN' ? adminMenu : clientMenu;
   let currentSection = '';
 
@@ -81,31 +82,37 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
             {isOpen && (
               <div className="overflow-hidden">
                 <h1 className="font-bold text-sm whitespace-nowrap">Audit System</h1>
-                <p className="text-xs text-slate-400 whitespace-nowrap">Data lokal • Belum cloud sync</p>
+                <p className="text-xs text-slate-400 whitespace-nowrap">Sumber data: Firebase Cloud</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Role Switcher */}
+        {/* Workspace role comes from the authenticated cloud membership, not a client-side claim. */}
         {isOpen && (
           <div className="px-4 py-3 border-b border-slate-700">
-            <p className="text-xs text-amber-300 mb-2">Mode tampilan (bukan autentikasi):</p>
-            <div className="flex gap-1">
-              <button
-                onClick={() => { setCurrentRole('ADMIN'); setCurrentPage('dashboard'); }}
-                className={`flex-1 text-xs py-1.5 rounded font-medium transition-colors ${currentRole === 'ADMIN' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
-              >
-                🔑 Admin
-              </button>
-              <button
-                onClick={() => { setCurrentRole('VIEWER'); setCurrentPage('dashboard'); }}
-                className={`flex-1 text-xs py-1.5 rounded font-medium transition-colors ${currentRole === 'VIEWER' ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
-              >
-                👁 Client
-              </button>
-            </div>
-            <p className="mt-2 text-[10px] leading-4 text-amber-300">Pergantian Admin/Client hanya memfilter menu browser. Ini belum mengamankan data atau API.</p>
+            {roleLocked ? (
+              <p className="text-xs leading-5 text-emerald-300">Akses VIEWER ditetapkan oleh role workspace cloud.</p>
+            ) : (
+              <>
+                <p className="text-xs text-amber-300 mb-2">Mode menu (preview saja):</p>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => { setCurrentRole('ADMIN'); setCurrentPage('dashboard'); }}
+                    className={`flex-1 text-xs py-1.5 rounded font-medium transition-colors ${currentRole === 'ADMIN' ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+                  >
+                    🔑 ERP
+                  </button>
+                  <button
+                    onClick={() => { setCurrentRole('VIEWER'); setCurrentPage('dashboard'); }}
+                    className={`flex-1 text-xs py-1.5 rounded font-medium transition-colors ${currentRole === 'VIEWER' ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+                  >
+                    👁 Client
+                  </button>
+                </div>
+                <p className="mt-2 text-[10px] leading-4 text-amber-300">Pratinjau menu tidak mengubah role akun. Aturan data tetap diperiksa oleh Firestore.</p>
+              </>
+            )}
           </div>
         )}
 
@@ -149,7 +156,7 @@ export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen
               </div>
               <div>
                 <p className="text-xs font-medium">{currentRole === 'ADMIN' ? 'Administrator' : 'Client / Viewer'}</p>
-                <p className="text-xs text-slate-400">Mode tampilan saja; izin server belum aktif</p>
+                <p className="text-xs text-slate-400">Hak data ditentukan Firestore Rules</p>
               </div>
             </div>
           </div>
