@@ -141,8 +141,9 @@ function getCloudConfig_() {
   if (rawUrl) {
     try {
       var parsed = new URL(rawUrl);
-      if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
-        throw new Error('URL harus HTTPS tanpa kredensial.');
+      if (parsed.protocol !== 'https:' || parsed.username || parsed.password ||
+          (parsed.pathname !== '/' && parsed.pathname !== '') || parsed.search || parsed.hash) {
+        throw new Error('Nilai harus berupa origin HTTPS saja, tanpa path, query, atau kredensial.');
       }
       frontendOrigin = parsed.origin;
     } catch (error) {
@@ -150,7 +151,7 @@ function getCloudConfig_() {
     }
   }
   return {
-    frontendUrl: rawUrl,
+    frontendUrl: frontendOrigin,
     frontendOrigin: frontendOrigin,
     googleClientId: String(props.getProperty('GOOGLE_CLIENT_ID') || '').trim(),
     adminEmails: String(props.getProperty('ERP_ADMIN_EMAILS') || '')
@@ -303,10 +304,11 @@ function loadWorkspace_(user, workspaceId) {
   var operational = readWorkspaceSlice_(workspaceId, 'operational');
   var accounting = readWorkspaceSlice_(workspaceId, 'accounting');
   if (!operational || !accounting) throw apiError_('workspace_state_missing', 'Data workspace belum lengkap. Hubungi administrator; data lokal tidak akan dikirim otomatis.');
+  var safeData = redactWorkspaceForUser_(user, operational.data, accounting.data);
   return {
     workspace: publicWorkspace_(ws),
-    operational: operational.data,
-    accounting: accounting.data,
+    operational: safeData.operational,
+    accounting: safeData.accounting,
     versions: { operational: operational.version, accounting: accounting.version }
   };
 }
@@ -318,8 +320,6 @@ function saveWorkspaceSlice_(user, payload) {
   requireWorkspaceAccess_(user, workspaceId);
   requireRole_(user, ['ADMIN', 'KEUANGAN', 'PROYEK']);
   var nextData = validateSlice_(slice, payload.data);
-  var json = JSON.stringify(nextData);
-  if (json.length > 3000000) throw apiError_('payload_too_large', 'Bagian data terlalu besar untuk satu penyimpanan. Buat arsip terpisah dan lampirkan melalui Drive.');
   var lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
@@ -329,6 +329,9 @@ function saveWorkspaceSlice_(user, payload) {
     if (!Number.isInteger(expectedVersion) || expectedVersion !== current.version) {
       throw apiError_('version_conflict', 'Data diubah dari perangkat lain. Perubahan ini belum tersimpan ke cloud; muat ulang sebelum melanjutkan.');
     }
+    nextData = preserveRestrictedCollections_(user, slice, current.data, nextData);
+    var json = JSON.stringify(nextData);
+    if (json.length > 3000000) throw apiError_('payload_too_large', 'Bagian data terlalu besar untuk satu penyimpanan. Buat arsip terpisah dan lampirkan melalui Drive.');
     var changedKeys = validateRoleChanges_(user, slice, current.data, nextData);
     if (!changedKeys.length) return { version: current.version, unchanged: true };
     var nextVersion = current.version + 1;
@@ -419,6 +422,47 @@ function splitData_(value, size) {
   var result = [];
   for (var start = 0; start < value.length; start += size) result.push(value.slice(start, start + size));
   return result.length ? result : ['{}'];
+}
+
+function redactWorkspaceForUser_(user, operational, accounting) {
+  var op = JSON.parse(JSON.stringify(operational));
+  var acc = JSON.parse(JSON.stringify(accounting));
+  if (user.role === 'ADMIN' || user.role === 'KEUANGAN') return { operational: op, accounting: acc };
+
+  var opAllowed = user.role === 'PROYEK'
+    ? ['tanah','beko','notaMaterial','stok','produksi','anggaran','qcRecords','assets','housingUnits','menuConfig']
+    : ['tanah','beko','housingUnits'];
+  Object.keys(op).forEach(function (key) {
+    if (opAllowed.indexOf(key) === -1) op[key] = [];
+  });
+  if (!Array.isArray(op.menuConfig)) op.menuConfig = [];
+  var accAllowed = user.role === 'PROYEK' ? ['akun','rab','schedule'] : [];
+  Object.keys(acc).forEach(function (key) {
+    if (accAllowed.indexOf(key) === -1) acc[key] = [];
+  });
+  return { operational: op, accounting: acc };
+}
+
+function preserveRestrictedCollections_(user, slice, before, submitted) {
+  if (user.role === 'ADMIN') return submitted;
+  var allowed = slice === 'operational'
+    ? {
+        KEUANGAN: ['bukuKas','arsipBukti','posKewajiban','tanah','beko','notaMaterial','penggajian','anggaran','penjualan','pembelian','taxRecords'],
+        PROYEK: ['tanah','beko','notaMaterial','stok','produksi','anggaran','qcRecords','assets','housingUnits','menuConfig']
+      }
+    : {
+        KEUANGAN: ['jurnal','invoice','purchaseOrder'],
+        PROYEK: ['akun','rab','schedule']
+      };
+  var mutable = allowed[user.role] || [];
+  var next = JSON.parse(JSON.stringify(submitted));
+  Object.keys(before).forEach(function (key) {
+    if (mutable.indexOf(key) === -1) next[key] = before[key];
+  });
+  // Audit records must be extended by an authorized server action; never accept
+  // edits/deletions of existing rows from non-admin clients.
+  if (slice === 'operational' && user.role !== 'ADMIN') next.auditLog = before.auditLog;
+  return next;
 }
 
 function validateRoleChanges_(user, slice, before, after) {
