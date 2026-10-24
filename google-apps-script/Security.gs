@@ -402,7 +402,7 @@ function validateAccountingSnapshot_(data) {
       if (seenJournalNumbers[journal.no_jurnal]) throw apiError_('duplicate_journal_number', 'Nomor jurnal duplikat: ' + journal.no_jurnal);
       seenJournalNumbers[journal.no_jurnal] = true;
     }
-    if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(String(journal.tanggal || '')) ||
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(journal.tanggal || '')) ||
         isNaN(Date.parse(String(journal.tanggal) + 'T00:00:00')) ||
         ['Draft','Posted','Cancelled'].indexOf(journal.status) === -1) {
       throw apiError_('invalid_journal', 'Tanggal atau status jurnal tidak valid: ' + journal.id);
@@ -724,7 +724,7 @@ function disableUser_(actor, email) {
 function buildProfitLossFromCloud_(user, workspaceId, period) {
   var workspace = loadWorkspace_(user, workspaceId);
   var selectedPeriod = period || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
-  if (!/^\\d{4}(-\\d{2})?$/.test(selectedPeriod)) {
+  if (!/^\d{4}(-\d{2})?$/.test(selectedPeriod)) {
     throw apiError_('invalid_period', 'Periode laba rugi harus YYYY-MM atau YYYY.');
   }
   var accounts = workspace.accounting.akun || [];
@@ -772,7 +772,7 @@ function buildProfitLossFromCloud_(user, workspaceId, period) {
 function buildBalanceSheetFromCloud_(user, workspaceId, asOfDate) {
   var workspace = loadWorkspace_(user, workspaceId);
   var cutoff = asOfDate || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(cutoff)) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cutoff)) {
     throw apiError_('invalid_date', 'Tanggal neraca harus YYYY-MM-DD.');
   }
   var accounts = workspace.accounting.akun || [];
@@ -784,7 +784,7 @@ function buildBalanceSheetFromCloud_(user, workspaceId, asOfDate) {
     balances[String(account.kode)] = Number(account.saldo || 0);
   });
   journals.filter(function (journal) {
-    return journal.status === 'Posted' && /^\\d{4}-\\d{2}-\\d{2}$/.test(String(journal.tanggal || '').slice(0, 10))
+    return journal.status === 'Posted' && /^\d{4}-\d{2}-\d{2}$/.test(String(journal.tanggal || '').slice(0, 10))
       && String(journal.tanggal).slice(0, 10) <= cutoff;
   }).forEach(function (journal) {
     (journal.entries || []).forEach(function (entry) {
