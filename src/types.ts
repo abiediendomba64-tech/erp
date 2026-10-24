@@ -48,6 +48,7 @@ export interface ArsipBukti {
     | 'NIB'
     | 'Lainnya';
   link_drive: string;
+  drive_file_id?: string;
   tgl_upload: string;
   terverifikasi: 'Ya' | 'Tidak' | 'Perlu_Konfirmasi';
   catatan_audit: string;
@@ -323,6 +324,7 @@ export interface QCRecord {
   tenggat_perbaikan: string;
   tautan_bukti: string;
   local_file_key?: string;
+  drive_file_id?: string;
   nama_file?: string;
   mime_type?: string;
   ukuran_bytes?: number;
