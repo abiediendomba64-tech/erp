@@ -81,3 +81,7 @@ Tahap ini **tidak** mengaktifkan Google Drive attachment upload, Sheets row-per-
 Snapshot JSON adalah tahap migrasi untuk menyatukan dua store browser agar tidak memakai dua sumber cloud. Untuk laporan besar, audit row-per-event, dan transaksi bersamaan yang tinggi, data akan perlu dipindahkan bertahap ke tabel terstruktur dengan ID/foreign key serta RPC server yang menjaga debit-kredit, bukti, status, dan reversal secara atomik.
 
 Untuk kegagalan/konflik, simpan backup JSON sebelum reload. Jangan memaksa overwrite versi cloud. Cadangan biasa tidak mencakup lampiran IndexedDB.
+
+
+## Quality gate CI
+Workflow `.github/workflows/google-cloud-ssot.yml` memeriksa Apps Script syntax, TypeScript, tes regression accounting + cloud backend, dan production build menggunakan Node.js 22. Status workflow tetap harus dilihat di GitHub Actions; menambahkan file workflow tidak berarti tes sudah lulus.
