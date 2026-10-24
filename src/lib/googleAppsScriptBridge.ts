@@ -38,18 +38,24 @@ function getTrustedParentOrigin(): string {
   if (typeof window === 'undefined' || window.parent === window) {
     throw new Error('ERP cloud API hanya tersedia dari web app resmi Apps Script.');
   }
-  let origin = '';
+  const configuredWebAppUrl = (import.meta.env.VITE_GOOGLE_APPS_SCRIPT_WEBAPP_URL || '').trim();
+  if (!configuredWebAppUrl) {
+    throw new Error('VITE_GOOGLE_APPS_SCRIPT_WEBAPP_URL belum dikonfigurasi saat build frontend.');
+  }
+  let referrer: URL;
+  let expected: URL;
   try {
-    origin = new URL(document.referrer).origin;
+    referrer = new URL(document.referrer);
+    expected = new URL(configuredWebAppUrl);
   } catch {
     throw new Error('Asal halaman Apps Script tidak dapat diverifikasi.');
   }
-  const host = new URL(origin).hostname.toLowerCase();
-  const isAppsScript = host === 'script.google.com' ||
-    host === 'script.googleusercontent.com' ||
-    host.endsWith('.script.googleusercontent.com');
-  if (!isAppsScript) throw new Error('ERP harus dibuka dari URL resmi Apps Script, bukan dari tab frontend langsung.');
-  return origin;
+  const host = referrer.hostname.toLowerCase();
+  const isAppsScript = host === 'script.google.com';
+  if (!isAppsScript || referrer.origin !== expected.origin || referrer.pathname !== expected.pathname) {
+    throw new Error('Aplikasi harus dibuka melalui deployment Apps Script yang terdaftar untuk ERP ini.');
+  }
+  return referrer.origin;
 }
 
 function installListener() {
