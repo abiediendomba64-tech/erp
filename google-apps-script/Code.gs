@@ -1144,7 +1144,7 @@ function apiError_(code, message) {
 }
 
 function loginWithGoogle_(credential) {
-  if (!credential || credential.length < 10000 || credential.length > 20000) {
+  if (!credential || credential.length < 100 || credential.length > 20000) {
     throw new Error('Token Google tidak valid.');
   }
   const props = PropertiesService.getScriptProperties();
