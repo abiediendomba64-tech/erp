@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef, ReactNode } from 'react';
+import { persistWorkspaceSlice } from './lib/cloudWorkspace';
 import { BukuKas, ArsipBukti, PosKewajiban, AuditLog, Tanah, Beko, NotaMaterial, StokBarang, Produksi, Penjualan, Pembelian, Penggajian, Anggaran, ArusKas, OCRResult, WhatsAppLog, MenuItem, QCRecord, AssetRecord, TaxRecord, HousingUnit } from './types';
 import {
   initialBukuKas, initialArsipBukti, initialPosKewajiban,
@@ -311,12 +312,29 @@ const AppContext = createContext<{
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, undefined, loadAppState);
 
+  const lastSerialized = useRef<string | null>(null);
+
   useEffect(() => {
+    const serialized = JSON.stringify(state);
+    let previousCache: string | null = null;
     try {
-      window.localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(state));
+      previousCache = window.localStorage.getItem(APP_STORAGE_KEY);
+      window.localStorage.setItem(APP_STORAGE_KEY, serialized);
     } catch (error) {
-      console.error('Gagal menyimpan data ERP ke browser. Buat backup JSON sesegera mungkin.', error);
+      console.error('Cache browser ERP tidak dapat ditulis. Google Sheets tetap sumber data utama.', error);
     }
+
+    if (lastSerialized.current === null) {
+      lastSerialized.current = serialized;
+      // Initial render is hydrated from cloud; only persist if store migrations changed it.
+      if (previousCache !== serialized) {
+        void persistWorkspaceSlice('operational', state).catch(() => undefined);
+      }
+      return;
+    }
+    if (lastSerialized.current === serialized) return;
+    lastSerialized.current = serialized;
+    void persistWorkspaceSlice('operational', state).catch(() => undefined);
   }, [state]);
   return (
     <AppContext.Provider value={{ state, dispatch }}>
