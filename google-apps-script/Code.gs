@@ -1025,7 +1025,7 @@ const ERP_OPERATIONAL_MODULES_ = [
 ];
 const ERP_ACCOUNTING_MODULES_ = ['akun', 'jurnal', 'invoice', 'purchaseOrder', 'rab', 'schedule'];
 const ERP_STATE_HEADERS_ = ['module', 'record_id', 'sort_index', 'payload_json', 'version', 'updated_at', 'updated_by'];
-const ERP_USERS_HEADERS_ = ['google_sub', 'email', 'nama', 'role', 'status', 'created_at', 'last_login'];
+const ERP_USERS_HEADERS_ = ['google_sub', 'email', 'nama', 'role', 'status', 'created_at', 'last_login', 'phone'];
 const ERP_ALLOWED_ROLES_ = ['ADMIN', 'KEUANGAN', 'PROYEK', 'VIEWER'];
 
 function getAllowedOrigins_() {
@@ -1200,7 +1200,7 @@ function loginWithGoogle_(credential) {
       matched = { sub: sub, email: email, nama: String(claims.name || email), role: 'ADMIN', status: 'ACTIVE' };
       matchedRow = users.getLastRow() + 1;
       users.getRange(matchedRow, 1, 1, ERP_USERS_HEADERS_.length).setValues([[
-        sub, email, matched.nama, matched.role, matched.status, new Date().toISOString(), new Date().toISOString()
+        sub, email, matched.nama, matched.role, matched.status, new Date().toISOString(), new Date().toISOString(), ''
       ]]);
     } else {
       if (matched.sub && matched.sub !== sub) throw new Error('Alamat email ini terikat ke akun Google yang berbeda.');
@@ -1309,6 +1309,7 @@ function listUsers_() {
     email: String(row[index.email] || ''), nama: String(row[index.nama] || ''),
     role: String(row[index.role] || '').toUpperCase(), status: String(row[index.status] || '').toUpperCase(),
     created_at: String(row[index.created_at] || ''), last_login: String(row[index.last_login] || ''),
+    phone: String(row[index.phone] || ''),
     google_sub_linked: Boolean(String(row[index.google_sub] || ''))
   }));
 }
@@ -1317,10 +1318,12 @@ function saveUser_(input, actor) {
   if (!input || typeof input !== 'object') throw new Error('Data user tidak valid.');
   const email = String(input.email || '').trim().toLowerCase();
   const name = String(input.nama || '').trim();
+  const phone = String(input.phone || '').trim();
   const role = String(input.role || 'VIEWER').toUpperCase();
   const status = String(input.status || 'ACTIVE').toUpperCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Email user tidak valid.');
   if (name.length > 100) throw new Error('Nama maksimum 100 karakter.');
+  if (phone.length > 30) throw new Error('Nomor WhatsApp maksimum 30 karakter.');
   if (!ERP_ALLOWED_ROLES_.includes(role) || !['ACTIVE', 'INACTIVE'].includes(status)) throw new Error('Role atau status tidak valid.');
   if (email === actor.email && (status !== 'ACTIVE' || role !== 'ADMIN')) throw new Error('Admin tidak boleh menonaktifkan atau menurunkan role dirinya sendiri.');
 
@@ -1336,10 +1339,11 @@ function saveUser_(input, actor) {
         sheet.getRange(i + 1, index.nama + 1).setValue(name || email);
         sheet.getRange(i + 1, index.role + 1).setValue(role);
         sheet.getRange(i + 1, index.status + 1).setValue(status);
+        if (index.phone !== undefined) sheet.getRange(i + 1, index.phone + 1).setValue(phone);
         return { saved: true, email: email, role: role, status: status };
       }
     }
-    sheet.appendRow(['', email, name || email, role, status, new Date().toISOString(), '']);
+    sheet.appendRow(['', email, name || email, role, status, new Date().toISOString(), '', phone]);
     return { saved: true, email: email, role: role, status: status, invited: true };
   } finally {
     lock.releaseLock();
