@@ -63,8 +63,8 @@ const clientMenu: { id: Page; label: string; icon: React.ReactNode; section: str
 export default function Sidebar({ currentPage, setCurrentPage, isOpen, setIsOpen, currentRole, userEmail, onLogout }: SidebarProps) {
   const roleMenus: Record<UserRole, typeof adminMenu> = {
     ADMIN: adminMenu,
-    KEUANGAN: adminMenu.filter(item => ['dashboard','auditrekap','laporan','bukukas','arsipbukti','poskewajiban','penggajian','anggaran','alokasi','accounting','inputtransaksi','laporankeuangan','invoicepo','rab','pajak','aset','auditlog'].includes(item.id)),
-    PROYEK: adminMenu.filter(item => ['dashboard','tanah','beko','stok','produksi','penjualan','pembelian','anggaran','ocr','qc','aset','surat','unit','auditlog'].includes(item.id)),
+    KEUANGAN: adminMenu.filter(item => ['dashboard','auditrekap','laporan','bukukas','arsipbukti','poskewajiban','penggajian','anggaran','alokasi','accounting','inputtransaksi','laporankeuangan','invoicepo','rab','pajak','auditlog'].includes(item.id)),
+    PROYEK: adminMenu.filter(item => ['dashboard','tanah','beko','stok','produksi','penjualan','pembelian','ocr','qc','aset','surat','unit','rab','auditlog'].includes(item.id)),
     VIEWER: clientMenu,
   };
   const menuItems = roleMenus[currentRole];
