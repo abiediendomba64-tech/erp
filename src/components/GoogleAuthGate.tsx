@@ -24,7 +24,7 @@ declare global {
   }
 }
 
-interface ActiveCloudSession {
+export interface ActiveCloudSession {
   user: ApiUser;
   workspace: WorkspaceSummary;
   onSignOut: () => void;
