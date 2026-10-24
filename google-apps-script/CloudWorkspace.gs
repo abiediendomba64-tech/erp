@@ -322,7 +322,10 @@ function apiSaveWorkspace(idToken, workspaceId, expectedVersion, snapshot) {
 function apiGetWorkspaceAudit(idToken, workspaceId, limit) {
   var user = _erpRequireUser_(idToken);
   var id = String(workspaceId || '').trim();
-  _erpRequireWorkspaceMember_(user.email, id, user.role);
+  var member = _erpRequireWorkspaceMember_(user.email, id, user.role);
+  if (member.role !== 'ADMIN' && member.role !== 'KEUANGAN') {
+    throw new Error('Riwayat audit administratif hanya tersedia untuk ADMIN dan KEUANGAN.');
+  }
   var sheet = _erpSheet_('ERP_AUDIT_LOG', [
     'event_id', 'timestamp', 'actor_email', 'workspace_id', 'action',
     'previous_version', 'new_version', 'checksum', 'details_json'
