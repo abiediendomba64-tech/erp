@@ -284,30 +284,21 @@ Gemini OCR, Drive upload, serta webhook WhatsApp/Telegram **belum diaktifkan** p
 
 ---
 
-## 💰 ANALISIS BIAYA
+## 💰 Biaya — estimasi harus sesuai pemakaian
 
-### **Sebelum (Dengan Backend Sendiri):**
-```
-- Server hosting: $20-50/bulan
-- Database: $10-30/bulan
-- OCR API: $10-50/bulan
-- File storage: $5-10/bulan
-─────────────────────────────
-Total: $45-140/bulan = Rp700.000-2.200.000/bulan
-```
+Target rancangan ini adalah meminimalkan biaya server. **Tidak tepat menjanjikan seluruh stack selalu Rp0/bulan**, karena kuota, kapasitas, dan tarif integrasi berbeda.
 
-### **Sesudah (Full Google Stack):**
-```
-- Google Apps Script: Rp0
-- Google Sheets: Rp0
-- Gemini API: Rp0
-- Google Drive: Rp0
-- WhatsApp Business API: Rp0
-─────────────────────────────
-Total: Rp0/bulan = GRATIS!
-```
+| Komponen | Kondisi biaya |
+|---|---|
+| Google Apps Script + Google Sheets | Dapat digunakan tanpa biaya server/database terpisah selama akun dan penggunaan masih dalam kuota serta batas layanan. Apps Script memiliki kuota harian, timeout, dan batas eksekusi yang bisa menghentikan proses ketika terlampaui. Lihat [kuota resmi Apps Script](https://developers.google.com/apps-script/guides/services/quotas). |
+| Google Sign-In | Tidak memerlukan server autentikasi terpisah untuk arsitektur ini; tetap perlu konfigurasi OAuth dan kebijakan akun Google. |
+| Google Drive | Mengikuti kuota penyimpanan akun atau Google Workspace. Lampiran/arsip berkas yang bertambah tetap perlu dipantau. |
+| Gemini API OCR | Memiliki free tier dengan kuota dan model tertentu; pemakaian di luar batas bisa berbayar. Data yang dikirim melalui free tier dapat digunakan untuk meningkatkan produk Google. Jangan kirim dokumen finansial sensitif sebelum menilai kebijakan privasi dan kebutuhan penggunaan tier berbayar. Lihat [harga Gemini API](https://ai.google.dev/gemini-api/docs/pricing). |
+| n8n | Community Edition dapat di-self-host tanpa biaya lisensi untuk workflow internal sesuai lisensinya; server/VPS, domain, listrik, dan pemeliharaan bisa tetap menimbulkan biaya. [Ketentuan lisensi n8n](https://support.n8n.io/article/can-i-use-your-license-for-my-use-case). |
+| Telegram Bot API | Bot API tidak memerlukan paket langganan bot; mesin yang menjalankan n8n dan layanan pendukung tetap perlu diperhitungkan. |
+| WhatsApp Business Platform | **Jangan diasumsikan gratis.** Tarif resmi mengenakan biaya per pesan yang tersampaikan berdasarkan tujuan dan kategori pesan. Pesan layanan dan sebagian pesan utilitas yang membalas pengguna memiliki perlakuan tarif berbeda. Periksa [harga resmi WhatsApp Business Platform](https://whatsappbusiness.com/id/products/platform-pricing/). |
 
-**Penghematan:** Rp8.4-26.4 juta/tahun
+Untuk uji coba kecil, skenario **mendekati Rp0** mungkin tercapai dengan input manual atau Telegram, Google Sheets/Apps Script, dan OCR yang masih dalam free tier. Untuk penggunaan lapangan rutin—terutama WhatsApp resmi, banyak nota, atau arsip besar—hitung kuota aktual dan potensi biaya lebih dulu.
 
 ---
 
