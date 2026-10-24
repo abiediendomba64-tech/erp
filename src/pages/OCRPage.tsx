@@ -38,6 +38,7 @@ export default function OCRPage() {
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState('');
   const [scanMessage, setScanMessage] = useState('');
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
 
   const terverifikasi = state.ocr.filter(o => o.status === 'Terverifikasi');
   const pending = state.ocr.filter(o => o.status === 'Pending');
@@ -105,6 +106,45 @@ export default function OCRPage() {
     }
   };
 
+
+  const reviewOcr = async (item: OCRResult, nextStatus: 'Terverifikasi' | 'Ditolak') => {
+    if (!window.confirm(nextStatus === 'Terverifikasi'
+      ? 'Sudah cocokkan toko, tanggal, nominal, uraian dan dokumen asli? Ini hanya memverifikasi hasil OCR, bukan menandai pembayaran lunas.'
+      : 'Tolak hasil OCR ini? Tidak ada transaksi atau jurnal yang dibuat.')) return;
+    setScanError('');
+    setScanMessage('');
+    setReviewingId(item.id);
+    try {
+      const auth = await googleErpApi<{ user: { email: string } }>('auth.me');
+      const now = new Date().toISOString();
+      const revised: OCRResult = {
+        ...item,
+        status: nextStatus,
+        diverifikasi_oleh: auth.user.email,
+        waktu_verifikasi: now,
+        catatan: (item.catatan ? item.catatan + ' ' : '') +
+          (nextStatus === 'Terverifikasi'
+            ? 'Hasil OCR diperiksa manual oleh ' + auth.user.email + ' pada ' + now + '. Belum menjadi transaksi final.'
+            : 'Hasil OCR ditolak oleh ' + auth.user.email + ' pada ' + now + '. Tidak ada pembukuan.'),
+      };
+      dispatch({ type: 'UPDATE_OCR', payload: revised });
+      dispatch({ type: 'ADD_AUDIT_LOG', payload: {
+        id: 'LOG-OCR-' + Date.now().toString(36).toUpperCase(),
+        timestamp: now, user: auth.user.email, aksi: nextStatus === 'Terverifikasi' ? 'REVIEW_OCR' : 'REJECT_OCR',
+        tabel: 'OCR', record_id: item.id, nilai_lama: JSON.stringify(item),
+        nilai_baru: JSON.stringify(revised), alasan: 'Review hasil AI manual; tidak mem-posting transaksi.',
+        sumber_bukti: item.image_url
+      } });
+      setScanMessage(nextStatus === 'Terverifikasi'
+        ? 'Draft OCR sudah ditinjau manual. Data tetap belum menjadi Buku Kas atau jurnal; buat transaksi terpisah setelah mengonfirmasi pembayaran dan bukti.'
+        : 'Draft OCR ditolak. Tidak ada transaksi atau jurnal yang dibuat.');
+    } catch (failure) {
+      setScanError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setReviewingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -161,7 +201,7 @@ export default function OCRPage() {
               <td className="p-3 text-right font-medium">{item.data_ekstrak.nominal == null ? '—' : formatRupiah(item.data_ekstrak.nominal)}</td>
               <td className="p-3">{item.data_ekstrak.tanggal || '—'}</td>
               <td className="p-3 text-center">{Math.max(0, Math.min(100, item.confidence)).toFixed(0)}%</td>
-              <td className="max-w-sm p-3"><span className={item.status === 'Terverifikasi' ? 'rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-800' : item.status === 'Ditolak' ? 'rounded-full bg-red-100 px-2 py-1 text-xs text-red-800' : 'rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-800'}>{item.status}</span><p className="mt-2 text-xs text-gray-600">{item.catatan}</p></td>
+              <td className="max-w-sm p-3"><span className={item.status === 'Terverifikasi' ? 'rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-800' : item.status === 'Ditolak' ? 'rounded-full bg-red-100 px-2 py-1 text-xs text-red-800' : 'rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-800'}>{item.status}</span><p className="mt-2 text-xs text-gray-600">{item.catatan}</p>{item.status === 'Pending' && <div className="mt-3 flex flex-wrap gap-2"><button disabled={reviewingId === item.id} onClick={() => void reviewOcr(item, 'Terverifikasi')} className="rounded border border-emerald-200 px-2 py-1 text-xs text-emerald-800 hover:bg-emerald-50 disabled:opacity-50">Cocok & tinjau</button><button disabled={reviewingId === item.id} onClick={() => void reviewOcr(item, 'Ditolak')} className="rounded border border-red-200 px-2 py-1 text-xs text-red-800 hover:bg-red-50 disabled:opacity-50">Tolak</button></div>}{item.diverifikasi_oleh && <p className="mt-2 text-xs text-gray-500">Ditinjau oleh {item.diverifikasi_oleh} · {item.waktu_verifikasi}</p>}</td>
             </tr>
           ))}{state.ocr.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-gray-500">Belum ada hasil OCR. Upload dokumen asli untuk membuat draft; tidak ada hasil contoh yang dimasukkan otomatis.</td></tr>}</tbody>
         </table></div>
