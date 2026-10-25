@@ -55,7 +55,7 @@ async function main() {
   let pageToken = '';
   for (let page = 0; page < 20; page += 1) {
     const url = new URL(apiBase);
-    url.searchParams.set('pageSize', '100');
+    url.searchParams.set('pageSize', '50');
     if (pageToken) url.searchParams.set('pageToken', pageToken);
     const response = await fetch(url, { headers: { authorization: 'Bearer ' + accessToken }, signal: AbortSignal.timeout(20000) })
       .catch(() => fail('Apps Script Deployments API request failed. Verify API access and target permissions.'));
@@ -72,7 +72,10 @@ async function main() {
   const deployment = matches[0];
   const config = deployment.deploymentConfig || {};
   if (config.scriptId && String(config.scriptId) !== expectedScriptId) fail('Live deployment metadata references a different Script ID.');
-  if (!config.webApp) fail('The exact matching deployment is not configured as a Web App deployment.');
+  const webAppEntry = Array.isArray(deployment.entryPoints)
+    ? deployment.entryPoints.find(item => String(item.entryPointType || '') === 'WEB_APP' && item.webApp)
+    : null;
+  if (!webAppEntry) fail('The exact matching deployment does not contain a WEB_APP entry point.');
 
   const webAppUrl = 'https://script.google.com/macros/s/' + encodeURIComponent(expectedDeploymentId) + '/exec';
   if (process.env.GITHUB_OUTPUT) {
