@@ -71,7 +71,7 @@ async function main() {
   if (matches.length !== 1) fail('Expected exactly one deployment matching GAS_DEPLOYMENT_ID in the configured Script ID; found ' + matches.length + '. No deployment was changed.');
   const deployment = matches[0];
   const config = deployment.deploymentConfig || {};
-  if (config.scriptId && String(config.scriptId) !== expectedScriptId) fail('Live deployment metadata references a different Script ID.');
+  if (String(config.scriptId || '') !== expectedScriptId) fail('Live deployment metadata Script ID is missing or does not exactly match GAS_SCRIPT_ID.');
   const webAppEntry = Array.isArray(deployment.entryPoints)
     ? deployment.entryPoints.find(item => String(item.entryPointType || '') === 'WEB_APP' && item.webApp)
     : null;
