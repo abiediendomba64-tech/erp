@@ -11,6 +11,8 @@
 
 On GitHub, open Settings → Branches or Rulesets and create an enforced rule for `main`: require a pull request, require at least one authorized review, dismiss stale approvals when applicable, require the named CI checks, require conversation resolution, and block force-push and branch deletion. Limit bypass permissions. Then re-query the branch/ruleset state and record the URL and UTC verification timestamp.
 
+For the current PR workflow design, the unique required status checks are `CI / Typecheck, tests, release scripts, frontend build`, `ERP CI / Apps Script syntax, release scripts, tests, build`, and `Google Cloud SSOT / Apps Script syntax, typecheck, tests, build`. Select the exact current check names after they appear on the open PR; never rely on an older duplicated `Typecheck and production build` check name.
+
 The current repository inspection reported `main` as `protected: false`. This workflow change does not enable repository settings or branch protection by itself.
 
 ## Production environment (administrator action)
