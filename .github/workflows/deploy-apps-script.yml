@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: \${{ inputs.confirm_target == 'DEPLOY' }}
+    if: ${{ inputs.confirm_target == 'DEPLOY' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -43,10 +43,10 @@ jobs:
       - name: Configure and validate clasp target
         shell: bash
         env:
-          CLASPRC_JSON: \${{ secrets.CLASPRC_JSON }}
-          CLASP_JSON: \${{ secrets.CLASP_JSON }}
-          EXPECTED_SCRIPT_ID: \${{ vars.GAS_SCRIPT_ID }}
-          GAS_DEPLOYMENT_ID: \${{ secrets.GAS_DEPLOYMENT_ID }}
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CLASP_JSON: ${{ secrets.CLASP_JSON }}
+          EXPECTED_SCRIPT_ID: ${{ vars.GAS_SCRIPT_ID }}
+          GAS_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
         run: |
           set -euo pipefail
           test -n "$CLASPRC_JSON" || { echo "::error::Missing CLASPRC_JSON secret"; exit 1; }
@@ -77,17 +77,17 @@ jobs:
 
       - name: Update existing Web App deployment only
         env:
-          GAS_DEPLOYMENT_ID: \${{ secrets.GAS_DEPLOYMENT_ID }}
+          GAS_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
         run: |
           set -euo pipefail
-          npx --yes @google/clasp create-deployment --deploymentId "$GAS_DEPLOYMENT_ID" --description "Production commit \${GITHUB_SHA:0:7}"
+          npx --yes @google/clasp create-deployment --deploymentId "$GAS_DEPLOYMENT_ID" --description "Production commit ${GITHUB_SHA:0:7}"
 
       - name: Write deployment audit summary
         if: always()
         shell: bash
         env:
-          GAS_SCRIPT_ID: \${{ vars.GAS_SCRIPT_ID }}
-          GAS_DEPLOYMENT_ID: \${{ secrets.GAS_DEPLOYMENT_ID }}
+          GAS_SCRIPT_ID: ${{ vars.GAS_SCRIPT_ID }}
+          GAS_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
         run: |
           {
             echo "## Apps Script deployment audit"
@@ -95,10 +95,10 @@ jobs:
             echo "- UTC time: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
             echo "- Repository: $GITHUB_REPOSITORY"
             echo "- Commit: $GITHUB_SHA"
-            echo "- Script ID: \${GAS_SCRIPT_ID:-NOT_CONFIGURED}"
-            echo "- Deployment ID: \${GAS_DEPLOYMENT_ID:-NOT_CONFIGURED}"
+            echo "- Script ID: ${GAS_SCRIPT_ID:-NOT_CONFIGURED}"
+            echo "- Deployment ID: ${GAS_DEPLOYMENT_ID:-NOT_CONFIGURED}"
             echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-            echo "- Job outcome: \${{ job.status }}"
+            echo "- Job outcome: ${{ job.status }}"
             echo "- Scope: update existing deployment only; source sync is a separate workflow"
           } >> "$GITHUB_STEP_SUMMARY"
 
