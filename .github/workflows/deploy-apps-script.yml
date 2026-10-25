@@ -1,0 +1,68 @@
+name: Deploy Google Apps Script source
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_target:
+        description: "Type DEPLOY to confirm the configured Apps Script project is the intended active project"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-script-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  validate-and-push:
+    if: ${{ inputs.confirm_target == 'DEPLOY' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify application before deployment
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Configure clasp credentials
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CLASP_JSON: ${{ secrets.CLASP_JSON }}
+        run: |
+          set -euo pipefail
+          test -n "$CLASPRC_JSON" || { echo "Missing repository secret CLASPRC_JSON"; exit 1; }
+          test -n "$CLASP_JSON" || { echo "Missing repository secret CLASP_JSON"; exit 1; }
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          printf '%s' "$CLASP_JSON" > .clasp.json
+          chmod 600 "$HOME/.clasprc.json" .clasp.json
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const cfg = JSON.parse(fs.readFileSync(".clasp.json", "utf8"));
+            if (!cfg.scriptId || cfg.rootDir !== "google-apps-script") {
+              throw new Error("CLASP_JSON must include scriptId and rootDir=google-apps-script");
+            }
+          '
+
+      - name: Push source to the configured Apps Script project
+        run: npx --yes @google/clasp push
+
+      - name: Remove temporary credentials
+        if: always()
+        run: |
+          rm -f "$HOME/.clasprc.json" .clasp.json
