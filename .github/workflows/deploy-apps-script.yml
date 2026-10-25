@@ -16,10 +16,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  validate-and-deploy:
-    if: ${{ inputs.confirm_target == 'DEPLOY' }}
+  deploy:
+    if: \${{ inputs.confirm_target == 'DEPLOY' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     environment: production
     steps:
       - name: Checkout repository
@@ -43,16 +43,16 @@ jobs:
       - name: Configure and validate clasp target
         shell: bash
         env:
-          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
-          CLASP_JSON: ${{ secrets.CLASP_JSON }}
-          EXPECTED_SCRIPT_ID: ${{ vars.GAS_SCRIPT_ID }}
-          GAS_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
+          CLASPRC_JSON: \${{ secrets.CLASPRC_JSON }}
+          CLASP_JSON: \${{ secrets.CLASP_JSON }}
+          EXPECTED_SCRIPT_ID: \${{ vars.GAS_SCRIPT_ID }}
+          GAS_DEPLOYMENT_ID: \${{ secrets.GAS_DEPLOYMENT_ID }}
         run: |
           set -euo pipefail
           test -n "$CLASPRC_JSON" || { echo "::error::Missing CLASPRC_JSON secret"; exit 1; }
           test -n "$CLASP_JSON" || { echo "::error::Missing CLASP_JSON secret"; exit 1; }
-          test -n "$EXPECTED_SCRIPT_ID" || { echo "::error::Set production environment variable GAS_SCRIPT_ID to the approved Apps Script Script ID"; exit 1; }
-          test -n "$GAS_DEPLOYMENT_ID" || { echo "::error::Set GAS_DEPLOYMENT_ID to the existing Web App deployment ID; initial deployment is intentionally not automated"; exit 1; }
+          test -n "$EXPECTED_SCRIPT_ID" || { echo "::error::Set production environment variable GAS_SCRIPT_ID"; exit 1; }
+          test -n "$GAS_DEPLOYMENT_ID" || { echo "::error::Set the existing GAS_DEPLOYMENT_ID secret"; exit 1; }
 
           printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
           printf '%s' "$CLASP_JSON" > .clasp.json
@@ -61,29 +61,48 @@ jobs:
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const cfg = JSON.parse(fs.readFileSync('.clasp.json', 'utf8'));
-          const expected = process.env.EXPECTED_SCRIPT_ID;
-          if (!cfg.scriptId || cfg.scriptId !== expected) {
+          if (!cfg.scriptId || cfg.scriptId !== process.env.EXPECTED_SCRIPT_ID) {
             throw new Error('Configured scriptId does not match approved production GAS_SCRIPT_ID.');
           }
           if (cfg.rootDir !== 'google-apps-script') {
             throw new Error('CLASP_JSON.rootDir must be google-apps-script.');
           }
-          for (const file of ['appsscript.json', 'Code.gs', 'Security.gs', 'Wrapper.html']) {
-            if (!fs.existsSync('google-apps-script/' + file)) {
-              throw new Error('Required Apps Script file missing: google-apps-script/' + file);
-            }
-          }
           NODE
 
-      - name: Push source without force
-        run: npx --yes @google/clasp push
+          npx --yes @google/clasp deployments > "$RUNNER_TEMP/clasp-deployments.txt"
+          if ! grep -F -- "$GAS_DEPLOYMENT_ID" "$RUNNER_TEMP/clasp-deployments.txt" >/dev/null; then
+            echo "::error::GAS_DEPLOYMENT_ID was not found in deployments for the validated Script ID."
+            exit 1
+          fi
 
-      - name: Update existing Web App deployment
+      - name: Update existing Web App deployment only
         env:
-          GAS_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
-        run: npx --yes @google/clasp create-deployment --deploymentId "$GAS_DEPLOYMENT_ID" --description "Production commit ${GITHUB_SHA:0:7}"
+          GAS_DEPLOYMENT_ID: \${{ secrets.GAS_DEPLOYMENT_ID }}
+        run: |
+          set -euo pipefail
+          npx --yes @google/clasp create-deployment --deploymentId "$GAS_DEPLOYMENT_ID" --description "Production commit \${GITHUB_SHA:0:7}"
+
+      - name: Write deployment audit summary
+        if: always()
+        shell: bash
+        env:
+          GAS_SCRIPT_ID: \${{ vars.GAS_SCRIPT_ID }}
+          GAS_DEPLOYMENT_ID: \${{ secrets.GAS_DEPLOYMENT_ID }}
+        run: |
+          {
+            echo "## Apps Script deployment audit"
+            echo
+            echo "- UTC time: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "- Repository: $GITHUB_REPOSITORY"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Script ID: \${GAS_SCRIPT_ID:-NOT_CONFIGURED}"
+            echo "- Deployment ID: \${GAS_DEPLOYMENT_ID:-NOT_CONFIGURED}"
+            echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Job outcome: \${{ job.status }}"
+            echo "- Scope: update existing deployment only; source sync is a separate workflow"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove temporary credentials
         if: always()
         run: |
-          rm -f "$HOME/.clasprc.json" .clasp.json
+          rm -f "$HOME/.clasprc.json" .clasp.json "$RUNNER_TEMP/clasp-deployments.txt"
