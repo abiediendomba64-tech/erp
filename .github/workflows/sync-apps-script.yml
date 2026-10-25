@@ -1,0 +1,98 @@
+name: Sync Google Apps Script source
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_target:
+        description: "Type SYNC only after verifying the production Script ID"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-script-production-source-sync
+  cancel-in-progress: false
+
+jobs:
+  sync-source:
+    if: ${{ inputs.confirm_target == 'SYNC' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Validate application
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+
+      - name: Configure and validate clasp target
+        shell: bash
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CLASP_JSON: ${{ secrets.CLASP_JSON }}
+          EXPECTED_SCRIPT_ID: ${{ vars.GAS_SCRIPT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$CLASPRC_JSON" || { echo "::error::Missing CLASPRC_JSON secret"; exit 1; }
+          test -n "$CLASP_JSON" || { echo "::error::Missing CLASP_JSON secret"; exit 1; }
+          test -n "$EXPECTED_SCRIPT_ID" || { echo "::error::Set production environment variable GAS_SCRIPT_ID"; exit 1; }
+
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          printf '%s' "$CLASP_JSON" > .clasp.json
+          chmod 600 "$HOME/.clasprc.json" .clasp.json
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const cfg = JSON.parse(fs.readFileSync('.clasp.json', 'utf8'));
+          if (!cfg.scriptId || cfg.scriptId !== process.env.EXPECTED_SCRIPT_ID) {
+            throw new Error('Configured scriptId does not match approved production GAS_SCRIPT_ID.');
+          }
+          if (cfg.rootDir !== 'google-apps-script') {
+            throw new Error('CLASP_JSON.rootDir must be google-apps-script.');
+          }
+          for (const file of ['appsscript.json', 'Code.gs', 'Security.gs', 'Wrapper.html']) {
+            if (!fs.existsSync('google-apps-script/' + file)) {
+              throw new Error('Required Apps Script file missing: google-apps-script/' + file);
+            }
+          }
+          NODE
+
+      - name: Sync source without force
+        run: npx --yes @google/clasp push
+
+      - name: Write source-sync audit summary
+        if: always()
+        shell: bash
+        env:
+          GAS_SCRIPT_ID: ${{ vars.GAS_SCRIPT_ID }}
+        run: |
+          {
+            echo "## Apps Script source-sync audit"
+            echo
+            echo "- UTC time: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "- Repository: $GITHUB_REPOSITORY"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Script ID: ${GAS_SCRIPT_ID:-NOT_CONFIGURED}"
+            echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Job outcome: ${{ job.status }}"
+            echo "- Scope: source sync only; does not create or update a deployment"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary credentials
+        if: always()
+        run: rm -f "$HOME/.clasprc.json" .clasp.json
