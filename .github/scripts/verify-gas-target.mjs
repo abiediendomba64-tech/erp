@@ -77,7 +77,15 @@ async function main() {
     : null;
   if (!webAppEntry) fail('The exact matching deployment does not contain a WEB_APP entry point.');
 
-  const webAppUrl = 'https://script.google.com/macros/s/' + encodeURIComponent(expectedDeploymentId) + '/exec';
+  const webAppUrl = String(webAppEntry.webApp.url || '');
+  let parsedWebAppUrl;
+  try { parsedWebAppUrl = new URL(webAppUrl); } catch { fail('Apps Script API returned an invalid Web App URL.'); }
+  const webAppPathMatch = parsedWebAppUrl.pathname.match(/^\/macros\/s\/([^/]+)\/exec\/?$/);
+  let urlDeploymentId = '';
+  try { urlDeploymentId = webAppPathMatch ? decodeURIComponent(webAppPathMatch[1]) : ''; } catch { urlDeploymentId = ''; }
+  if (parsedWebAppUrl.protocol !== 'https:' || parsedWebAppUrl.hostname !== 'script.google.com' || urlDeploymentId !== expectedDeploymentId) {
+    fail('The Web App URL returned by the live API does not match the exact configured Deployment ID.');
+  }
   if (process.env.GITHUB_OUTPUT) {
     fs.appendFileSync(process.env.GITHUB_OUTPUT, 'web_app_url=' + webAppUrl + '\n');
     fs.appendFileSync(process.env.GITHUB_OUTPUT, 'deployment_version=' + String(config.versionNumber || '') + '\n');
