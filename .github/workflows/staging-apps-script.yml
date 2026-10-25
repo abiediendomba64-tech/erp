@@ -39,6 +39,8 @@ jobs:
           set -euo pipefail
           npm run typecheck
           npm test
+          node --check .github/scripts/verify-gas-target.mjs
+          node --check .github/scripts/smoke-test-gas.mjs
           npm run build
 
       - name: Configure and verify staging-only target
