@@ -28,7 +28,7 @@ Check presence and validity without printing values. Enable the Apps Script API 
 
 ## Staging environment (separate project and data)
 
-Create a separate Apps Script staging project and a separate non-production spreadsheet. Create or provision one existing staging Web App deployment, then configure the `staging` environment with staging-only values for the same four names (`GAS_SCRIPT_ID`, `CLASPRC_JSON`, `CLASP_JSON`, `GAS_DEPLOYMENT_ID`). Never reuse production Script ID, deployment ID, credentials, or business spreadsheet in staging.
+Create a separate Apps Script staging project and a separate non-production spreadsheet. Create or provision one existing staging Web App deployment, then configure the `staging` environment with the distinct names `STAGING_GAS_SCRIPT_ID` (variable) and `STAGING_CLASPRC_JSON`, `STAGING_CLASP_JSON`, `STAGING_GAS_DEPLOYMENT_ID` (secrets). Use these staging-prefixed names so missing staging configuration cannot silently fall back to production-named values. Never reuse production Script ID, deployment ID, credentials, or business spreadsheet in staging.
 
 The `staging-apps-script.yml` workflow only runs when manually dispatched from `main` with input `STAGING`. It runs typecheck/tests/build, validates the staging Script ID and deployment ID against the live API, pushes source to the verified staging script, updates the existing staging deployment, then tests the `/health` response. It fails closed on missing settings, mismatch, API error, non-200 final response, non-JSON response, or a mismatched health payload.
 
