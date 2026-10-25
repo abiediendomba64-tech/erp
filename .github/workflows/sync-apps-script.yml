@@ -1,10 +1,10 @@
-name: Sync Google Apps Script source
+name: Sync Google Apps Script production source
 
 on:
   workflow_dispatch:
     inputs:
       confirm_target:
-        description: "Type SYNC only after verifying the production Script ID"
+        description: "Type SYNC only after verifying the production Script ID and existing deployment"
         required: true
         type: string
 
@@ -17,9 +17,9 @@ concurrency:
 
 jobs:
   sync-source:
-    if: ${{ inputs.confirm_target == 'SYNC' }}
+    if: ${{ inputs.confirm_target == 'SYNC' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     environment: production
     steps:
       - name: Checkout repository
@@ -36,41 +36,28 @@ jobs:
 
       - name: Validate application
         run: |
+          set -euo pipefail
           npm run typecheck
           npm test
           npm run build
 
-      - name: Configure and validate clasp target
+      - name: Configure and verify live Apps Script target
         shell: bash
         env:
           CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
           CLASP_JSON: ${{ secrets.CLASP_JSON }}
           EXPECTED_SCRIPT_ID: ${{ vars.GAS_SCRIPT_ID }}
+          EXPECTED_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
         run: |
           set -euo pipefail
           test -n "$CLASPRC_JSON" || { echo "::error::Missing CLASPRC_JSON secret"; exit 1; }
           test -n "$CLASP_JSON" || { echo "::error::Missing CLASP_JSON secret"; exit 1; }
-          test -n "$EXPECTED_SCRIPT_ID" || { echo "::error::Set production environment variable GAS_SCRIPT_ID"; exit 1; }
-
+          test -n "$EXPECTED_SCRIPT_ID" || { echo "::error::Missing production variable GAS_SCRIPT_ID"; exit 1; }
+          test -n "$EXPECTED_DEPLOYMENT_ID" || { echo "::error::Missing production secret GAS_DEPLOYMENT_ID"; exit 1; }
           printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
           printf '%s' "$CLASP_JSON" > .clasp.json
           chmod 600 "$HOME/.clasprc.json" .clasp.json
-
-          node --input-type=module <<'NODE'
-          import fs from 'node:fs';
-          const cfg = JSON.parse(fs.readFileSync('.clasp.json', 'utf8'));
-          if (!cfg.scriptId || cfg.scriptId !== process.env.EXPECTED_SCRIPT_ID) {
-            throw new Error('Configured scriptId does not match approved production GAS_SCRIPT_ID.');
-          }
-          if (cfg.rootDir !== 'google-apps-script') {
-            throw new Error('CLASP_JSON.rootDir must be google-apps-script.');
-          }
-          for (const file of ['appsscript.json', 'Code.gs', 'Security.gs', 'Wrapper.html']) {
-            if (!fs.existsSync('google-apps-script/' + file)) {
-              throw new Error('Required Apps Script file missing: google-apps-script/' + file);
-            }
-          }
-          NODE
+          node .github/scripts/verify-gas-target.mjs
 
       - name: Sync source without force
         run: npx --yes @google/clasp push
@@ -78,18 +65,16 @@ jobs:
       - name: Write source-sync audit summary
         if: always()
         shell: bash
-        env:
-          GAS_SCRIPT_ID: ${{ vars.GAS_SCRIPT_ID }}
         run: |
           {
-            echo "## Apps Script source-sync audit"
+            echo "## Apps Script production source-sync audit"
             echo
             echo "- UTC time: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
             echo "- Repository: $GITHUB_REPOSITORY"
             echo "- Commit: $GITHUB_SHA"
-            echo "- Script ID: ${GAS_SCRIPT_ID:-NOT_CONFIGURED}"
             echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo "- Job outcome: ${{ job.status }}"
+            echo "- Target verification: exact Script ID and existing Web App Deployment ID verified before source push"
             echo "- Scope: source sync only; does not create or update a deployment"
           } >> "$GITHUB_STEP_SUMMARY"
 
