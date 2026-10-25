@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   sync-source:
-    if: \${{ inputs.confirm_target == 'SYNC' }}
+    if: ${{ inputs.confirm_target == 'SYNC' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -43,9 +43,9 @@ jobs:
       - name: Configure and validate clasp target
         shell: bash
         env:
-          CLASPRC_JSON: \${{ secrets.CLASPRC_JSON }}
-          CLASP_JSON: \${{ secrets.CLASP_JSON }}
-          EXPECTED_SCRIPT_ID: \${{ vars.GAS_SCRIPT_ID }}
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CLASP_JSON: ${{ secrets.CLASP_JSON }}
+          EXPECTED_SCRIPT_ID: ${{ vars.GAS_SCRIPT_ID }}
         run: |
           set -euo pipefail
           test -n "$CLASPRC_JSON" || { echo "::error::Missing CLASPRC_JSON secret"; exit 1; }
@@ -79,7 +79,7 @@ jobs:
         if: always()
         shell: bash
         env:
-          GAS_SCRIPT_ID: \${{ vars.GAS_SCRIPT_ID }}
+          GAS_SCRIPT_ID: ${{ vars.GAS_SCRIPT_ID }}
         run: |
           {
             echo "## Apps Script source-sync audit"
@@ -87,9 +87,9 @@ jobs:
             echo "- UTC time: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
             echo "- Repository: $GITHUB_REPOSITORY"
             echo "- Commit: $GITHUB_SHA"
-            echo "- Script ID: \${GAS_SCRIPT_ID:-NOT_CONFIGURED}"
+            echo "- Script ID: ${GAS_SCRIPT_ID:-NOT_CONFIGURED}"
             echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-            echo "- Job outcome: \${{ job.status }}"
+            echo "- Job outcome: ${{ job.status }}"
             echo "- Scope: source sync only; does not create or update a deployment"
           } >> "$GITHUB_STEP_SUMMARY"
 
