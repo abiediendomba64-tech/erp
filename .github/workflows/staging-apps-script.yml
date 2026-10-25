@@ -47,16 +47,16 @@ jobs:
         id: target
         shell: bash
         env:
-          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
-          CLASP_JSON: ${{ secrets.CLASP_JSON }}
-          EXPECTED_SCRIPT_ID: ${{ vars.GAS_SCRIPT_ID }}
-          EXPECTED_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
+          CLASPRC_JSON: ${{ secrets.STAGING_CLASPRC_JSON }}
+          CLASP_JSON: ${{ secrets.STAGING_CLASP_JSON }}
+          EXPECTED_SCRIPT_ID: ${{ vars.STAGING_GAS_SCRIPT_ID }}
+          EXPECTED_DEPLOYMENT_ID: ${{ secrets.STAGING_GAS_DEPLOYMENT_ID }}
         run: |
           set -euo pipefail
-          test -n "$CLASPRC_JSON" || { echo "::error::Missing staging CLASPRC_JSON secret"; exit 1; }
-          test -n "$CLASP_JSON" || { echo "::error::Missing staging CLASP_JSON secret"; exit 1; }
-          test -n "$EXPECTED_SCRIPT_ID" || { echo "::error::Missing staging variable GAS_SCRIPT_ID"; exit 1; }
-          test -n "$EXPECTED_DEPLOYMENT_ID" || { echo "::error::Missing existing staging GAS_DEPLOYMENT_ID secret"; exit 1; }
+          test -n "$CLASPRC_JSON" || { echo "::error::Missing staging secret STAGING_CLASPRC_JSON"; exit 1; }
+          test -n "$CLASP_JSON" || { echo "::error::Missing staging secret STAGING_CLASP_JSON"; exit 1; }
+          test -n "$EXPECTED_SCRIPT_ID" || { echo "::error::Missing staging variable STAGING_GAS_SCRIPT_ID"; exit 1; }
+          test -n "$EXPECTED_DEPLOYMENT_ID" || { echo "::error::Missing existing staging secret STAGING_GAS_DEPLOYMENT_ID"; exit 1; }
           printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
           printf '%s' "$CLASP_JSON" > .clasp.json
           chmod 600 "$HOME/.clasprc.json" .clasp.json
@@ -67,7 +67,7 @@ jobs:
 
       - name: Update verified staging Web App deployment
         env:
-          GAS_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
+          GAS_DEPLOYMENT_ID: ${{ secrets.STAGING_GAS_DEPLOYMENT_ID }}
         run: |
           set -euo pipefail
           npx --yes @google/clasp create-deployment --deploymentId "$GAS_DEPLOYMENT_ID" --description "Staging commit ${GITHUB_SHA:0:7}"
