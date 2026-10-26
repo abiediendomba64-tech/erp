@@ -1,0 +1,98 @@
+name: Sync, deploy, and smoke-test Apps Script staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_target:
+        description: "Type STAGING only after confirming the staging-only Script ID, spreadsheet, and deployment"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-script-staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  staging-release:
+    if: ${{ inputs.confirm_target == 'STAGING' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: staging
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Validate application
+        run: |
+          set -euo pipefail
+          npm run typecheck
+          npm test
+          node --check .github/scripts/verify-gas-target.mjs
+          node --check .github/scripts/smoke-test-gas.mjs
+          npm run build
+
+      - name: Configure and verify staging-only target
+        id: target
+        shell: bash
+        env:
+          CLASPRC_JSON: ${{ secrets.STAGING_CLASPRC_JSON }}
+          CLASP_JSON: ${{ secrets.STAGING_CLASP_JSON }}
+          EXPECTED_SCRIPT_ID: ${{ vars.STAGING_GAS_SCRIPT_ID }}
+          EXPECTED_DEPLOYMENT_ID: ${{ secrets.STAGING_GAS_DEPLOYMENT_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$CLASPRC_JSON" || { echo "::error::Missing staging secret STAGING_CLASPRC_JSON"; exit 1; }
+          test -n "$CLASP_JSON" || { echo "::error::Missing staging secret STAGING_CLASP_JSON"; exit 1; }
+          test -n "$EXPECTED_SCRIPT_ID" || { echo "::error::Missing staging variable STAGING_GAS_SCRIPT_ID"; exit 1; }
+          test -n "$EXPECTED_DEPLOYMENT_ID" || { echo "::error::Missing existing staging secret STAGING_GAS_DEPLOYMENT_ID"; exit 1; }
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          printf '%s' "$CLASP_JSON" > .clasp.json
+          chmod 600 "$HOME/.clasprc.json" .clasp.json
+          node .github/scripts/verify-gas-target.mjs
+
+      - name: Sync source to staging only
+        run: npx --yes @google/clasp push
+
+      - name: Update verified staging Web App deployment
+        env:
+          GAS_DEPLOYMENT_ID: ${{ secrets.STAGING_GAS_DEPLOYMENT_ID }}
+        run: |
+          set -euo pipefail
+          npx --yes @google/clasp create-deployment --deploymentId "$GAS_DEPLOYMENT_ID" --description "Staging commit ${GITHUB_SHA:0:7}"
+
+      - name: Smoke test staging Web App
+        env:
+          WEB_APP_URL: ${{ steps.target.outputs.web_app_url }}
+        run: node .github/scripts/smoke-test-gas.mjs
+
+      - name: Write staging audit summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Apps Script staging release audit"
+            echo
+            echo "- UTC time: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "- Repository: $GITHUB_REPOSITORY"
+            echo "- Commit: $GITHUB_SHA"
+            echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Job outcome: ${{ job.status }}"
+            echo "- Scope: staging-only source sync, existing deployment update, and health smoke test"
+            echo "- This run must use staging-only Script ID, credentials, deployment ID, and test spreadsheet."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary credentials
+        if: always()
+        run: rm -f "$HOME/.clasprc.json" .clasp.json

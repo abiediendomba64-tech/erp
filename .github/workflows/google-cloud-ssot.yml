@@ -20,6 +20,7 @@ concurrency:
 
 jobs:
   verify:
+    name: Google Cloud SSOT / Apps Script syntax, typecheck, tests, build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -51,6 +52,11 @@ jobs:
 
       - name: TypeScript typecheck
         run: npm run typecheck
+
+      - name: Validate release helper script syntax
+        run: |
+          node --check .github/scripts/verify-gas-target.mjs
+          node --check .github/scripts/smoke-test-gas.mjs
 
       - name: Accounting and cloud backend regression tests
         run: npm test

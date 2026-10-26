@@ -1,4 +1,4 @@
-name: CI
+name: CI - Frontend and release helper validation
 
 on:
   pull_request:
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Typecheck, tests, and production build
+    name: CI / Typecheck, tests, release scripts, frontend build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -37,6 +37,11 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      - name: Validate release helper script syntax
+        run: |
+          node --check .github/scripts/verify-gas-target.mjs
+          node --check .github/scripts/smoke-test-gas.mjs
 
       - name: Build production frontend
         run: npm run build
