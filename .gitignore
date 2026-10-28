@@ -1,5 +1,44 @@
+# Dependencies
 node_modules/
-.next/
+.pnp/
+.pnp.js
+
+# Build/test output
 dist/
 build/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Local environment files: never commit actual runtime configuration
+/.env
+/.env.*
+!/.env.example
+!/.env.*.example
+
+# Local credentials and Apps Script CLI configuration
+.clasprc.json
+.clasp.json
+.clasp.*.json
+.dev.vars
+.dev.vars.*
+.wrangler/
+
+# Private keys / certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
