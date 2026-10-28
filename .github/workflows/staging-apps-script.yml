@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   staging-release:
-    if: ${{ inputs.confirm_target == 'STAGING' && github.ref == 'refs/heads/main' }}
+    if: ${{ inputs.confirm_target == 'STAGING' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/deployment-ready/staging-gates') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     environment: staging
