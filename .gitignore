@@ -3,3 +3,12 @@ node_modules/
 dist/
 build/
 *.log
+
+# Local environment secrets
+.env
+.env.*
+!.env.example
+
+# OS/editor metadata
+.DS_Store
+Thumbs.db
